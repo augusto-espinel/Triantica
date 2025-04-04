@@ -273,22 +273,23 @@ class AIPlayer {
     // Simulate a game for training data generation (AI vs AI)
     async runSelfPlayGame() {
         console.log("Starting self-play game for training...");
-        const tempGridManager = new GridManager(this.gridManager.rows, this.gridManager.cols); // Use a temporary manager
+        // const tempGridManager = new GridManager(this.gridManager.rows, this.gridManager.cols); // Use a temporary manager
         const gameHistory = []; // Store {state, move, player} for reward assignment later
 
         // Create opponent AI (could be same network or a different instance/difficulty)
-        const opponentAI = new AIPlayer(tempGridManager, this.difficulty, this.playerNumber === 1 ? 2 : 1);
+        const opponentAI = new AIPlayer(this.gridManager, this.difficulty, this.playerNumber === 1 ? 2 : 1);
         opponentAI.network.fromJSON(this.network.toJSON()); // Clone network state if using same
         opponentAI.isNetworkLoaded = this.isNetworkLoaded; // Copy flag status
 
         let currentPlayerAI = this.playerNumber === 1 ? this : opponentAI;
         let movesCount = 0;
-        const maxMoves = tempGridManager.rows * tempGridManager.cols * 2 * 1.5; // Safety break
+        const maxMoves = this.gridManager.rows * this.gridManager.cols * 2 * 1.5; // Safety break
 
-        while (!tempGridManager.isGridFull() && movesCount < maxMoves) {
+        while (!this.gridManager.isGridFull() && movesCount < maxMoves) {
             const currentManager = currentPlayerAI.gridManager; // Ensure AI uses the temp manager
             const state = currentPlayerAI._getStateRepresentation(); // Get state BEFORE the move
             const currentPlayerNum = currentPlayerAI.playerNumber;
+            this.gridManager.currentPlayer = currentPlayerNum; // Set current player in the grid manager
             const opponentPlayerNum = currentPlayerNum === 1 ? 2 : 1;
             // --- Conditionally choose move based on flag ---
             let move;
@@ -299,7 +300,7 @@ class AIPlayer {
             } else {
                 // Use random moves if network is not ready
                 // console.log(`Player ${currentPlayerAI.playerNumber} using getRandomValidMove (Network Ready: ${currentPlayerAI.isNetworkLoaded})`); // Optional detailed log
-                move = currentPlayerAI.getRandomValidMove(tempGridManager);
+                move = currentPlayerAI.getRandomValidMove(this.gridManager);
             }
             // --- End conditional move choice ---
 
@@ -309,8 +310,8 @@ class AIPlayer {
             }
 
             // Apply the move to the temporary grid manager
-            tempGridManager.selectedRotation = move.rotation;
-            const success = tempGridManager.placeTriangle(move.x, move.y);
+            this.gridManager.selectedRotation = move.rotation;
+            const success = this.gridManager.placeTriangle(move.x, move.y);
 
             if (!success) {
                 console.error(`Self-play: AI predicted an invalid move (${move.x}, ${move.y}, ${move.rotation}). This shouldn't happen.`);
@@ -320,7 +321,7 @@ class AIPlayer {
             }
 
             // Handle claims and turn switching within the temporary manager
-            const claimed = tempGridManager.claimEnclosedTriangles();
+            const claimed = this.gridManager.claimEnclosedTriangles();
 
             // --- Calculate cluster sizes AFTER the move and claims ---
             const currentPlayerClusterSize = currentManager.getLargestContiguous(currentPlayerNum);
@@ -337,23 +338,24 @@ class AIPlayer {
                 opponentClusterSize: opponentPlayerClusterSize // << Opponent's cluster size AFTER move
             });
 
-            tempGridManager.extraTurns += Math.floor((1 + claimed) / 2);
+            this.gridManager.extraTurns += Math.floor((1 + claimed) / 2);
 
-            if (tempGridManager.extraTurns > 0) {
-                tempGridManager.extraTurns--;
+            if (this.gridManager.extraTurns > 0) {
+                this.gridManager.extraTurns--;
                 // Same player goes again
             } else {
-                tempGridManager.currentPlayer = tempGridManager.currentPlayer === 1 ? 2 : 1;
+                this.gridManager.currentPlayer = this.gridManager.currentPlayer === 1 ? 2 : 1;
                 currentPlayerAI = currentPlayerAI === this ? opponentAI : this;
             }
             movesCount++;
         }
+        // const test = currentPlayerAI._getStateRepresentation(); // use for debugging
 
         // --- Game End: Assign Rewards ---
         let winner = 0; // 0 = draw, 1 = P1 wins, 2 = P2 wins
-        if (tempGridManager.isGridFull()) {
-            const p1Score = tempGridManager.getLargestContiguous(1);
-            const p2Score = tempGridManager.getLargestContiguous(2);
+        if (this.gridManager.isGridFull()) {
+            const p1Score = this.gridManager.getLargestContiguous(1);
+            const p2Score = this.gridManager.getLargestContiguous(2);
             if (p1Score > p2Score) winner = 1;
             else if (p2Score > p1Score) winner = 2;
         } else {
@@ -362,7 +364,8 @@ class AIPlayer {
             console.warn("Self-play game ended prematurely.");
             winner = 0; // Treat as draw for now
         }
-
+        
+        this.gridManager.reset();   // Reset the grid manager for next game
         console.log(`Self-play game finished. Winner: ${winner === 0 ? 'Draw' : `Player ${winner}`}`);
 
         // Add training data with rewards
