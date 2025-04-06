@@ -293,7 +293,7 @@ class AIPlayer {
             const opponentPlayerNum = currentPlayerNum === 1 ? 2 : 1;
             // --- Conditionally choose move based on flag ---
             let move;
-            if (this.isNetworkLoaded) {
+            if (this.isNetworkLoaded && movesCount>0) { // Avoid using network on first move (otherwise it will start at same plce)
                 // Use prediction if network is loaded/trained
                 // console.log(`Player ${currentPlayerAI.playerNumber} using predictMove (Network Ready: ${currentPlayerAI.isNetworkLoaded})`); // Optional detailed log
                 move = currentPlayerAI.predictMove();
