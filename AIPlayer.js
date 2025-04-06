@@ -137,7 +137,7 @@ class AIPlayer {
             this.gridManager.selectedRotation = originalRotation;
 
             if (isValid) {
-                console.log(`AI Prediction: (${move.x}, ${move.y}), Rot: ${move.rotation}, Score: ${move.score.toFixed(4)}`);
+                // console.log(`AI Prediction: (${move.x}, ${move.y}), Rot: ${move.rotation}, Score: ${move.score.toFixed(4)}`);
                 return { x: move.x, y: move.y, rotation: move.rotation };
             }
         }

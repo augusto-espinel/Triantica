@@ -1235,8 +1235,41 @@ class MenuScene extends Phaser.Scene {
               // const success = trainingAI.importNetwork(); // [cite: 90]
               // if (!success) { console.error("Failed to import network data."); }
 
+              // Check if preloading was attempted
+              const loadPromise = this.registry.get('networkLoadPromise');
+              const tempAI = this.registry.get('tempAIInstanceForStatus');
+        
+              let loadedSuccessfully = false;
+              if (loadPromise && tempAI) {
+                  console.log(`AI: Found preload promise. Waiting for it to settle...`);
+                  try {
+                      // Wait for the promise initiated by BootScene to finish
+                      const preloadFinished = await loadPromise; // Waits if still pending, resolves quickly if already done
+        
+                      // Check the status flag on the temporary AI instance used in BootScene
+                      if (tempAI.isNetworkLoaded) {
+                          console.log(`AI: Preload successful. Copying network state...`);
+                          const networkState = tempAI.exportNetwork();
+                          if (networkState) {
+                                // Apply the preloaded state to the actual game AI instance
+                              trainingAI.network.fromJSON(networkState);
+                              trainingAI.isNetworkLoaded = true; // Mark this instance as ready
+                              loadedSuccessfully = true;
+                          } else {
+                              console.error(`AI: Preload seemed successful but failed to export network state from temporary AI.`);
+                          }
+                      } else {
+                            console.log(`AI: Preload attempt finished but was unsuccessful or network was not marked as loaded.`);
+                      }
+                  } catch (promiseError) {
+                        console.error(`AI: Error occurred while awaiting preload promise:`, promiseError);
+                  }
+              } else {
+                    console.log(`AI: No preload attempt found in registry.`);
+              }
+
               // --- Step 1: Generate Training Data via Self-Play ---
-              const numTrainingGames = 500; // << CONFIGURABLE: Number of games to simulate for data
+              const numTrainingGames = 2000; // << CONFIGURABLE: Number of games to simulate for data
               console.log(`Simulating ${numTrainingGames} self-play game(s)...`);
               for (let i = 0; i < numTrainingGames; i++) {
                   await trainingAI.runSelfPlayGame(); // runSelfPlayGame is async [cite: 62]
