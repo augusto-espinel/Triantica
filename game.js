@@ -1269,7 +1269,7 @@ class MenuScene extends Phaser.Scene {
               }
 
               // --- Step 1: Generate Training Data via Self-Play ---
-              const numTrainingGames = 2000; // << CONFIGURABLE: Number of games to simulate for data
+              const numTrainingGames = 500; // << CONFIGURABLE: Number of games to simulate for data
               console.log(`Simulating ${numTrainingGames} self-play game(s)...`);
               for (let i = 0; i < numTrainingGames; i++) {
                   await trainingAI.runSelfPlayGame(); // runSelfPlayGame is async [cite: 62]

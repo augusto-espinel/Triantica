@@ -22,7 +22,8 @@ class AIPlayer {
         this.playerNumber = playerNumber;
         this.difficulty = difficulty;
         this.network = this._createNetwork(difficulty);
-        this.isNetworkLoaded = false;
+        this.explorationFactor = 0.3; // Example: 10% chance to explore (choose random move)
+        this.isNetworkLoaded = false; // Flag to check if the network is loaded/trained
 
         // Placeholder for training data - ideally loaded/saved
         this.trainingData = [];
@@ -97,79 +98,86 @@ class AIPlayer {
             return this.getRandomValidMove();
         }
 
-        const state = this._getStateRepresentation();
-        const output = this.network.run(state); // Get probabilities/scores for each move
+        // --- Epsilon-Greedy Exploration ---
+        // Decide whether to explore (random move) or exploit (best predicted move)
+        if (Math.random() < this.explorationFactor) {
+            // console.log("AI Exploration: Choosing random valid move.");
+            return this.getRandomValidMove(); // EXPLORE: Choose randomly
+        } else {
+            const state = this._getStateRepresentation();
+            const output = this.network.run(state); // Get probabilities/scores for each move
 
-        // Map output index to move {x, y, rotation}
-        const moves = [];
-        for (let i = 0; i < output.length; i++) {
-            const score = output[i];
-            const rotation = i % 4;
-            const cellIndex = Math.floor(i / 4);
-            const x = cellIndex % this.gridManager.cols;
-            const y = Math.floor(cellIndex / this.gridManager.cols);
-            moves.push({ x, y, rotation, score });
-        }
-
-        // Sort moves by score in descending order
-        moves.sort((a, b) => b.score - a.score);
-
-        // Find the highest-scoring valid move
-        for (const move of moves) {
-            // Temporarily set selectedRotation to check validity
-            const originalRotation = this.gridManager.selectedRotation;
-            this.gridManager.selectedRotation = move.rotation;
-
-            const cell = this.gridManager.grid[move.y][move.x];
-            let isValid = false;
-            if (cell.triangles.length < 2) {
-                 let hasOverlap = false;
-                 if (cell.triangles.length > 0)  {
-                    const newTriangleGroup = this.gridManager.getDiagonalGroup(move.rotation);
-                    hasOverlap = !(this.gridManager.getDiagonalGroup(cell.triangles[0].rotation) === newTriangleGroup) ||
-                    cell.triangles[0].rotation === move.rotation;
-                 }
-                 isValid = this.gridManager.isValidPlacement(move.x, move.y) && !hasOverlap;
+            // Map output index to move {x, y, rotation}
+            const moves = [];
+            for (let i = 0; i < output.length; i++) {
+                const score = output[i];
+                const rotation = i % 4;
+                const cellIndex = Math.floor(i / 4);
+                const x = cellIndex % this.gridManager.cols;
+                const y = Math.floor(cellIndex / this.gridManager.cols);
+                moves.push({ x, y, rotation, score });
             }
 
+            // Sort moves by score in descending order
+            moves.sort((a, b) => b.score - a.score);
 
-            // Restore original rotation
-            this.gridManager.selectedRotation = originalRotation;
+            // Find the highest-scoring valid move
+            for (const move of moves) {
+                // Temporarily set selectedRotation to check validity
+                const originalRotation = this.gridManager.selectedRotation;
+                this.gridManager.selectedRotation = move.rotation;
 
-            if (isValid) {
-                // console.log(`AI Prediction: (${move.x}, ${move.y}), Rot: ${move.rotation}, Score: ${move.score.toFixed(4)}`);
-                return { x: move.x, y: move.y, rotation: move.rotation };
+                const cell = this.gridManager.grid[move.y][move.x];
+                let isValid = false;
+                if (cell.triangles.length < 2) {
+                    let hasOverlap = false;
+                    if (cell.triangles.length > 0)  {
+                        const newTriangleGroup = this.gridManager.getDiagonalGroup(move.rotation);
+                        hasOverlap = !(this.gridManager.getDiagonalGroup(cell.triangles[0].rotation) === newTriangleGroup) ||
+                        cell.triangles[0].rotation === move.rotation;
+                    }
+                    isValid = this.gridManager.isValidPlacement(move.x, move.y) && !hasOverlap;
+                }
+
+
+                // Restore original rotation
+                this.gridManager.selectedRotation = originalRotation;
+
+                if (isValid) {
+                    // console.log(`AI Prediction: (${move.x}, ${move.y}), Rot: ${move.rotation}, Score: ${move.score.toFixed(4)}`);
+                    return { x: move.x, y: move.y, rotation: move.rotation };
+                }
             }
-        }
 
-        // If no valid move found by the network (shouldn't happen in a normal game state unless grid is full)
-        console.warn("AI couldn't find a valid move from network output. Making random valid move.");
-        return this.getRandomValidMove();
+            // If no valid move found by the network (shouldn't happen in a normal game state unless grid is full)
+            console.warn("AI couldn't find a valid move from network output. Making random valid move.");
+            return this.getRandomValidMove(); // Fallback to random valid move
+        }
     }
 
-    getRandomValidMove(tempGridManager) {
+    getRandomValidMove() {
         const possibleMoves = [];
-        for (let y = 0; y < tempGridManager.rows; y++) {
-            for (let x = 0; x < tempGridManager.cols; x++) {
+        for (let y = 0; y < this.gridManager.rows; y++) {
+            for (let x = 0; x < this.gridManager.cols; x++) {
                 for (let rotation = 0; rotation < 4; rotation++) {
                     // Temporarily set selectedRotation to check validity
-                    const originalRotation = tempGridManager.selectedRotation;
-                    tempGridManager.selectedRotation = rotation;
+                    const originalRotation = this.gridManager.selectedRotation;
+                    this.gridManager.selectedRotation = rotation;
 
-                    const cell = tempGridManager.grid[y][x];
+                    const cell = this.gridManager.grid[y][x];
                      let isValid = false;
                      if (cell.triangles.length < 2) {
                           let hasOverlap = false;
                           if (cell.triangles.length > 0)  {
-                             const newTriangleGroup = tempGridManager.getDiagonalGroup(rotation);
-                             hasOverlap = !(tempGridManager.getDiagonalGroup(cell.triangles[0].rotation) === newTriangleGroup) ||
+                             const newTriangleGroup = this.gridManager.getDiagonalGroup(rotation);
+                             hasOverlap = !(this.gridManager.getDiagonalGroup(cell.triangles[0].rotation) === newTriangleGroup) ||
                              cell.triangles[0].rotation === rotation;
                           }
-                          isValid = tempGridManager.isValidPlacement(x, y) && !hasOverlap;
+                          isValid = this.gridManager.isValidPlacement(x, y) && !hasOverlap;
                      }
 
                     // Restore original rotation
-                    tempGridManager.selectedRotation = originalRotation;
+                    this.gridManager.selectedRotation = originalRotation;
 
                     if (isValid) {
                         possibleMoves.push({ x, y, rotation });
@@ -204,7 +212,7 @@ class AIPlayer {
             log: (details) => console.log(`Training - Iteration: ${details.iterations}, Error: ${details.error}`),
             logPeriod: 10,
             learningRate: learningRate,
-            errorThresh: 0.01 // Stop if error is low enough
+            errorThresh: 0.00033 // Stop if error is low enough
         });
         console.log("AI: Training complete.", result);
 
@@ -300,7 +308,7 @@ class AIPlayer {
             } else {
                 // Use random moves if network is not ready
                 // console.log(`Player ${currentPlayerAI.playerNumber} using getRandomValidMove (Network Ready: ${currentPlayerAI.isNetworkLoaded})`); // Optional detailed log
-                move = currentPlayerAI.getRandomValidMove(this.gridManager);
+                move = currentPlayerAI.getRandomValidMove();
             }
             // --- End conditional move choice ---
 
