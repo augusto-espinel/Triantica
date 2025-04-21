@@ -187,6 +187,32 @@ class GridManager {
     return claimed;
   }
 
+    /**
+     * Calculates the size of the contiguous cluster connected to a specific triangle.
+     * @param {number} x - The cell x-coordinate.
+     * @param {number} y - The cell y-coordinate.
+     * @param {number} rotation - The rotation of the target triangle.
+     * @param {number} player - The player number owning the triangle.
+     * @returns {number} The size of the connected cluster, or 0 if the triangle doesn't exist.
+     */
+    getClusterSizeForTriangle(x, y, rotation, player) {
+      // Check if the specified triangle actually exists and belongs to the player in that cell
+      const cell = this.grid[y][x];
+      const targetTriangle = cell.triangles.find(t => t.rotation === rotation && t.player === player);
+
+      if (!targetTriangle) {
+          // Triangle doesn't exist or doesn't belong to the player at that exact spot/rotation after the move
+           // This might happen if the move itself was invalid or coordinates are wrong.
+           // console.warn(`Triangle ${player}/${rotation} not found at ${x},${y} for cluster size check.`);
+          return 0;
+      }
+
+      // Use the existing floodFill logic, starting from the specified triangle
+      const visited = new Set(); // Create a new visited set for this specific calculation
+      const clusterSize = this.floodFill(x, y, rotation, player, visited); // Use existing floodFill
+      return clusterSize;
+  }
+
   // Flood-fill to find connected triangles
   floodFill(x, y, rotation, player, visited) {
     const queue = [{ x, y, rotation }];

@@ -22,6 +22,7 @@ class AIPlayer {
         this.playerNumber = playerNumber;
         this.difficulty = difficulty;
         this.network = this._createNetwork(difficulty);
+        this.explorationFactor = 0.3; // Example: 10% chance to explore (choose random move)
         this.isNetworkLoaded = false;
 
         // Placeholder for training data - ideally loaded/saved
@@ -94,57 +95,65 @@ class AIPlayer {
     predictMove() {
         if (!this.network) {
             console.warn("AI Network not available. Making random valid move.");
-            return this.getRandomValidMove();
+            return this.getRandomValidMove(this.gridManager);
         }
 
-        const state = this._getStateRepresentation();
-        const output = this.network.run(state); // Get probabilities/scores for each move
+        // --- Epsilon-Greedy Exploration ---
+        // Decide whether to explore (random move) or exploit (best predicted move)
+        if (Math.random() < this.explorationFactor) {
+            console.log("AI Exploration: Choosing random valid move.");
+            return this.getRandomValidMove(this.gridManager); // EXPLORE: Choose randomly
+        } else {
 
-        // Map output index to move {x, y, rotation}
-        const moves = [];
-        for (let i = 0; i < output.length; i++) {
-            const score = output[i];
-            const rotation = i % 4;
-            const cellIndex = Math.floor(i / 4);
-            const x = cellIndex % this.gridManager.cols;
-            const y = Math.floor(cellIndex / this.gridManager.cols);
-            moves.push({ x, y, rotation, score });
-        }
+            const state = this._getStateRepresentation();
+            const output = this.network.run(state); // Get probabilities/scores for each move
 
-        // Sort moves by score in descending order
-        moves.sort((a, b) => b.score - a.score);
-
-        // Find the highest-scoring valid move
-        for (const move of moves) {
-            // Temporarily set selectedRotation to check validity
-            const originalRotation = this.gridManager.selectedRotation;
-            this.gridManager.selectedRotation = move.rotation;
-
-            const cell = this.gridManager.grid[move.y][move.x];
-            let isValid = false;
-            if (cell.triangles.length < 2) {
-                 let hasOverlap = false;
-                 if (cell.triangles.length > 0)  {
-                    const newTriangleGroup = this.gridManager.getDiagonalGroup(move.rotation);
-                    hasOverlap = !(this.gridManager.getDiagonalGroup(cell.triangles[0].rotation) === newTriangleGroup) ||
-                    cell.triangles[0].rotation === move.rotation;
-                 }
-                 isValid = this.gridManager.isValidPlacement(move.x, move.y) && !hasOverlap;
+            // Map output index to move {x, y, rotation}
+            const moves = [];
+            for (let i = 0; i < output.length; i++) {
+                const score = output[i];
+                const rotation = i % 4;
+                const cellIndex = Math.floor(i / 4);
+                const x = cellIndex % this.gridManager.cols;
+                const y = Math.floor(cellIndex / this.gridManager.cols);
+                moves.push({ x, y, rotation, score });
             }
 
+            // Sort moves by score in descending order
+            moves.sort((a, b) => b.score - a.score);
 
-            // Restore original rotation
-            this.gridManager.selectedRotation = originalRotation;
+            // Find the highest-scoring valid move
+            for (const move of moves) {
+                // Temporarily set selectedRotation to check validity
+                const originalRotation = this.gridManager.selectedRotation;
+                this.gridManager.selectedRotation = move.rotation;
 
-            if (isValid) {
-                console.log(`AI Prediction: (${move.x}, ${move.y}), Rot: ${move.rotation}, Score: ${move.score.toFixed(4)}`);
-                return { x: move.x, y: move.y, rotation: move.rotation };
+                const cell = this.gridManager.grid[move.y][move.x];
+                let isValid = false;
+                if (cell.triangles.length < 2) {
+                    let hasOverlap = false;
+                    if (cell.triangles.length > 0)  {
+                        const newTriangleGroup = this.gridManager.getDiagonalGroup(move.rotation);
+                        hasOverlap = !(this.gridManager.getDiagonalGroup(cell.triangles[0].rotation) === newTriangleGroup) ||
+                        cell.triangles[0].rotation === move.rotation;
+                    }
+                    isValid = this.gridManager.isValidPlacement(move.x, move.y) && !hasOverlap;
+                }
+
+
+                // Restore original rotation
+                this.gridManager.selectedRotation = originalRotation;
+
+                if (isValid) {
+                    console.log(`AI Prediction: (${move.x}, ${move.y}), Rot: ${move.rotation}, Score: ${move.score.toFixed(4)}`);
+                    return { x: move.x, y: move.y, rotation: move.rotation };
+                }
             }
-        }
 
-        // If no valid move found by the network (shouldn't happen in a normal game state unless grid is full)
-        console.warn("AI couldn't find a valid move from network output. Making random valid move.");
-        return this.getRandomValidMove();
+            // If no valid move found by the network (shouldn't happen in a normal game state unless grid is full)
+            console.warn("AI couldn't find a valid move from network output. Making random valid move.");
+            return this.getRandomValidMove(this.gridManager);
+        }
     }
 
     getRandomValidMove(tempGridManager) {
@@ -204,7 +213,7 @@ class AIPlayer {
             log: (details) => console.log(`Training - Iteration: ${details.iterations}, Error: ${details.error}`),
             logPeriod: 10,
             learningRate: learningRate,
-            errorThresh: 0.01 // Stop if error is low enough
+            errorThresh: 0.00001 // Stop if error is low enough
         });
         console.log("AI: Training complete.", result);
 
@@ -237,19 +246,26 @@ class AIPlayer {
 
         // --- New Reward Mapping to Target Output (e.g., 0 to 1) ---
 
-        // Re-estimate reward range including cluster bonus/penalty
-        const clusterRewardFactor = 0.05; // <<<< Must match the factor used in runSelfPlayGame
-        // Estimate max possible cluster difference (theoretically grid size, practically maybe less)
-        // Max possible cluster size is rows * cols * 2 triangles? Let's estimate based on grid area for simplicity.
-        const maxPossibleClusterDiff = this.gridManager.rows * this.gridManager.cols;
-        const maxClusterBonus = maxPossibleClusterDiff * clusterRewardFactor;
-        const minClusterPenalty = -maxPossibleClusterDiff * clusterRewardFactor; // Symmetric penalty
+        // // Re-estimate reward range including cluster bonus/penalty
+        // const clusterRewardFactor = 0.05; // <<<< Must match the factor used in runSelfPlayGame
+        // // Estimate max possible cluster difference (theoretically grid size, practically maybe less)
+        // // Max possible cluster size is rows * cols * 2 triangles? Let's estimate based on grid area for simplicity.
+        // const maxPossibleClusterDiff = this.gridManager.rows * this.gridManager.cols;
+        // const maxClusterBonus = maxPossibleClusterDiff * clusterRewardFactor;
+        // const minClusterPenalty = -maxPossibleClusterDiff * clusterRewardFactor; // Symmetric penalty
+
+        // Re-estimate reward range including connected cluster bonus
+        const connectedClusterRewardFactor = 0.1; // <<<< Must match the factor used in runSelfPlayGame
+        // Max possible cluster size is roughly rows * cols * 2 (every slot filled)
+        const maxPossibleClusterSize = this.gridManager.rows * this.gridManager.cols * 2;
+        const maxConnectedClusterBonus = maxPossibleClusterSize * connectedClusterRewardFactor;
+
 
         // Estimate max claim bonus (e.g., 4 claims * 0.3 reward/claim = 1.2) - adjust if needed
         const maxClaimBonus = 1.2;
 
-        const minReward = -1.0 + minClusterPenalty; // Loss + max cluster penalty
-        const maxReward = 1.0 + maxClaimBonus + maxClusterBonus; // Win + max claim + max cluster bonus
+        const minReward = -1.0; // + minClusterPenalty; // Loss + max cluster penalty
+        const maxReward = 1.0 + maxClaimBonus + maxConnectedClusterBonus; // + maxClusterBonus; // Win + max claim + max cluster bonus
 
         // Scale the reward linearly to the range [0, 1]
         let targetOutput = 0; // Default for safety
@@ -274,7 +290,7 @@ class AIPlayer {
     async runSelfPlayGame() {
         console.log("Starting self-play game for training...");
         // const tempGridManager = new GridManager(this.gridManager.rows, this.gridManager.cols); // Use a temporary manager
-        const gameHistory = []; // Store {state, move, player} for reward assignment later
+        const gameHistory = []; // Store { state, move, player, claimed, connectedClusterSize } for reward assignment later
 
         // Create opponent AI (could be same network or a different instance/difficulty)
         const opponentAI = new AIPlayer(this.gridManager, this.difficulty, this.playerNumber === 1 ? 2 : 1);
@@ -323,6 +339,16 @@ class AIPlayer {
             // Handle claims and turn switching within the temporary manager
             const claimed = this.gridManager.claimEnclosedTriangles();
 
+            // --- Calculate size of the cluster connected to the placed piece ---
+            // Use the new GridManager method
+            const connectedClusterSize = currentManager.getClusterSizeForTriangle(
+                move.x,
+                move.y,
+                move.rotation, // Use the rotation of the piece that was *intended* to be placed
+                currentPlayerNum
+            );
+            // --- End cluster size calculation ---
+
             // --- Calculate cluster sizes AFTER the move and claims ---
             const currentPlayerClusterSize = currentManager.getLargestContiguous(currentPlayerNum);
             const opponentPlayerClusterSize = currentManager.getLargestContiguous(opponentPlayerNum);
@@ -334,8 +360,9 @@ class AIPlayer {
                 move: move,
                 player: currentPlayerNum, // Player who made the move
                 claimed: claimed,
-                clusterSize: currentPlayerClusterSize,          // << Player's cluster size AFTER move
-                opponentClusterSize: opponentPlayerClusterSize // << Opponent's cluster size AFTER move
+                connectedClusterSize: connectedClusterSize // << Store size of cluster connected to move
+                //clusterSize: currentPlayerClusterSize,          // << Player's cluster size AFTER move
+                //opponentClusterSize: opponentPlayerClusterSize // << Opponent's cluster size AFTER move
             });
 
             this.gridManager.extraTurns += Math.floor((1 + claimed) / 2);
@@ -381,17 +408,25 @@ class AIPlayer {
             if (step.claimed > 0) { claimReward = 0.3 * step.claimed; } // Example value
             // Adjust based on how many triangles were claimed (e.g., 0.3 for each triangle claimed)
 
+            // 3. Intermediate reward for size of connected cluster
+            let connectedClusterReward = 0;
+            if (step.connectedClusterSize > 0) {
+                // Assign reward proportional to the size. TUNE THIS FACTOR!
+                const connectedClusterRewardFactor = 0.1; // <<<< Example factor (e.g., 0.1 reward per triangle in the cluster)
+                connectedClusterReward = step.connectedClusterSize * connectedClusterRewardFactor;
+            }
+
             // 3. Intermediate reward for cluster size advantage
             // Reward based on the difference between the player's largest cluster
             // and the opponent's largest cluster AFTER the move was made.  
-            let clusterReward = 0;
-            const clusterDifference = step.clusterSize - step.opponentClusterSize;
+            // let clusterReward = 0;
+            // const clusterDifference = step.clusterSize - step.opponentClusterSize;
             // Assign a small reward proportional to the size advantage. TUNE THIS FACTOR!
-            const clusterRewardFactor = 0.05; // <<<< Example factor, adjust based on testing
-            clusterReward = clusterDifference * clusterRewardFactor;
+            // const clusterRewardFactor = 0.05; // <<<< Example factor, adjust based on testing
+            // clusterReward = clusterDifference * clusterRewardFactor;
             
             // 4. Combine rewards
-            let totalReward = finalReward + claimReward + clusterReward;
+            let totalReward = finalReward + claimReward + connectedClusterReward;
 
             // Could add intermediate rewards later (e.g., for claiming triangles)
             this.addTrainingData(step.state, step.move, totalReward);
