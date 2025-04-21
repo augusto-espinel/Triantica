@@ -23,7 +23,7 @@ class AIPlayer {
         this.difficulty = difficulty;
         this.network = this._createNetwork(difficulty);
         this.explorationFactor = 0.3; // Example: 10% chance to explore (choose random move)
-        this.isNetworkLoaded = false;
+        this.isNetworkLoaded = false; // Flag to check if the network is loaded/trained
 
         // Placeholder for training data - ideally loaded/saved
         this.trainingData = [];
@@ -145,7 +145,7 @@ class AIPlayer {
                 this.gridManager.selectedRotation = originalRotation;
 
                 if (isValid) {
-                    console.log(`AI Prediction: (${move.x}, ${move.y}), Rot: ${move.rotation}, Score: ${move.score.toFixed(4)}`);
+                    // console.log(`AI Prediction: (${move.x}, ${move.y}), Rot: ${move.rotation}, Score: ${move.score.toFixed(4)}`);
                     return { x: move.x, y: move.y, rotation: move.rotation };
                 }
             }
@@ -156,29 +156,29 @@ class AIPlayer {
         }
     }
 
-    getRandomValidMove(tempGridManager) {
+    getRandomValidMove() {
         const possibleMoves = [];
-        for (let y = 0; y < tempGridManager.rows; y++) {
-            for (let x = 0; x < tempGridManager.cols; x++) {
+        for (let y = 0; y < this.gridManager.rows; y++) {
+            for (let x = 0; x < this.gridManager.cols; x++) {
                 for (let rotation = 0; rotation < 4; rotation++) {
                     // Temporarily set selectedRotation to check validity
-                    const originalRotation = tempGridManager.selectedRotation;
-                    tempGridManager.selectedRotation = rotation;
+                    const originalRotation = this.gridManager.selectedRotation;
+                    this.gridManager.selectedRotation = rotation;
 
-                    const cell = tempGridManager.grid[y][x];
+                    const cell = this.gridManager.grid[y][x];
                      let isValid = false;
                      if (cell.triangles.length < 2) {
                           let hasOverlap = false;
                           if (cell.triangles.length > 0)  {
-                             const newTriangleGroup = tempGridManager.getDiagonalGroup(rotation);
-                             hasOverlap = !(tempGridManager.getDiagonalGroup(cell.triangles[0].rotation) === newTriangleGroup) ||
+                             const newTriangleGroup = this.gridManager.getDiagonalGroup(rotation);
+                             hasOverlap = !(this.gridManager.getDiagonalGroup(cell.triangles[0].rotation) === newTriangleGroup) ||
                              cell.triangles[0].rotation === rotation;
                           }
-                          isValid = tempGridManager.isValidPlacement(x, y) && !hasOverlap;
+                          isValid = this.gridManager.isValidPlacement(x, y) && !hasOverlap;
                      }
 
                     // Restore original rotation
-                    tempGridManager.selectedRotation = originalRotation;
+                    this.gridManager.selectedRotation = originalRotation;
 
                     if (isValid) {
                         possibleMoves.push({ x, y, rotation });
@@ -309,14 +309,14 @@ class AIPlayer {
             const opponentPlayerNum = currentPlayerNum === 1 ? 2 : 1;
             // --- Conditionally choose move based on flag ---
             let move;
-            if (this.isNetworkLoaded) {
+            if (this.isNetworkLoaded && movesCount>0) { // Avoid using network on first move (otherwise it will start at same plce)
                 // Use prediction if network is loaded/trained
                 // console.log(`Player ${currentPlayerAI.playerNumber} using predictMove (Network Ready: ${currentPlayerAI.isNetworkLoaded})`); // Optional detailed log
                 move = currentPlayerAI.predictMove();
             } else {
                 // Use random moves if network is not ready
                 // console.log(`Player ${currentPlayerAI.playerNumber} using getRandomValidMove (Network Ready: ${currentPlayerAI.isNetworkLoaded})`); // Optional detailed log
-                move = currentPlayerAI.getRandomValidMove(this.gridManager);
+                move = currentPlayerAI.getRandomValidMove();
             }
             // --- End conditional move choice ---
 
