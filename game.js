@@ -7,12 +7,28 @@ class GridManager {
     this.selectedRotation = 0; // 0-3 (0°, 90°, 180°, 270°)
     this.extraTurns = 0; // Track remaining extra turns
     this.winRounds = { 1: 0, 2: 0 }; // Track rounds won by each player
+    this.clusterMap = this.createClusterMap();  //Maps triangle position/index to cluster ID
+    this.clusters = {};  //Stores info per cluster ID, e.g., { size: number, player: number }
+    this.nextClusterId = 1;  //Counter for assigning unique cluster IDs
+  }
+
+  // Add helper to create the initial empty map
+  createClusterMap() {
+    // A map where key is "y,x,rotation" and value is clusterId
+    // Or a 3D array: 
+    Array(this.rows).fill().map(() => Array(this.cols).fill().map(() => Array(4).fill(0))); // 0 = no cluster
+    // Using a Map might be easier for sparse grids
+    return new Map(); // Key: "y,x,rotation", Value: clusterId
   }
 
   reset() {
-    this.grid = this.createGrid();
-    this.currentPlayer = 1;
-    this.extraTurns = 0;
+    this.grid = this.createGrid(); // 
+    this.currentPlayer = 1; // 
+    this.extraTurns = 0; // 
+    // Reset cluster data
+    this.clusterMap = this.createClusterMap();
+    this.clusters = {};
+    this.nextClusterId = 1;
   }
 
   isGridFull() {
@@ -87,7 +103,99 @@ class GridManager {
       player: this.currentPlayer,
       rotation: this.selectedRotation
     });
+
+    // --- Update Cluster Information ---
+    this.updateClustersForNewTriangle(x, y, this.selectedRotation, this.currentPlayer);
+
     return true;
+  }
+
+  updateClustersForNewTriangle(x, y, rotation, player) {
+    const triangleKey = `${y},${x},${rotation}`;
+    const adjacentClusterIds = new Set(); // Use a Set to store unique adjacent cluster IDs
+
+    // 1. Find adjacent triangles of the same player
+    const neighbors = this.getAdjacentTriangles(x, y, rotation, player); // 
+
+    // 2. Get the cluster IDs of these neighbors
+    neighbors.forEach(({ x: nx, y: ny, rotation: nr }) => {
+        const neighborKey = `${ny},${nx},${nr}`;
+        if (this.clusterMap.has(neighborKey)) {
+            adjacentClusterIds.add(this.clusterMap.get(neighborKey));
+        }
+    });
+
+    let finalClusterId;
+    let newClusterSize = 1; // Start with the new triangle itself
+
+    if (adjacentClusterIds.size === 0) {
+        // Case 1: New cluster
+        finalClusterId = this.nextClusterId++;
+        this.clusters[finalClusterId] = { size: 1, player: player };
+        newClusterSize = 1;
+        console.log(`New Cluster ${finalClusterId} created.`);
+
+    } else if (adjacentClusterIds.size === 1) {
+        // Case 2: Add to existing cluster
+        finalClusterId = adjacentClusterIds.values().next().value; // Get the single ID
+        this.clusters[finalClusterId].size++;
+        newClusterSize = this.clusters[finalClusterId].size;
+        console.log(`Triangle added to Cluster ${finalClusterId}, new size ${newClusterSize}.`);
+
+    } else {
+        // Case 3: Merge multiple clusters
+        console.log("Merging clusters:", [...adjacentClusterIds]);
+        // Choose the cluster ID to keep (e.g., the first one encountered)
+        finalClusterId = adjacentClusterIds.values().next().value;
+        newClusterSize = 1; // Start with the new triangle
+
+        // Merge sizes and update map for other clusters
+        adjacentClusterIds.forEach(clusterId => {
+            if (this.clusters[clusterId]) { // Check if cluster still exists (might have been merged already in complex cases)
+                 newClusterSize += this.clusters[clusterId].size;
+                 if (clusterId !== finalClusterId) {
+                     // Mark cluster for merging/update map entries
+                     this.updateMapForMergedCluster(clusterId, finalClusterId);
+                     delete this.clusters[clusterId]; // Remove merged cluster info
+                     console.log(`Cluster ${clusterId} merged into ${finalClusterId}.`);
+                 }
+             }
+        });
+
+        // Update the size of the final cluster
+        if (this.clusters[finalClusterId]) { // Ensure the kept cluster wasn't deleted if it was the only one
+             this.clusters[finalClusterId].size = newClusterSize;
+        } else {
+             // This case might happen if finalClusterId was somehow deleted; recreate it
+             console.warn('Recreating cluster ${finalClusterId} during merge.');
+             this.clusters[finalClusterId] = { size: newClusterSize, player: player };
+             // Need to ensure all triangles previously mapped to finalClusterId are still correct (should be)
+        }
+         console.log(`Clusters merged into ${finalClusterId}, new size ${newClusterSize}.`);
+    }
+
+    // 3. Update the map for the newly placed triangle
+    this.clusterMap.set(triangleKey, finalClusterId);
+
+    // Store the size calculated during the update process
+    // We'll attach it to the triangle object temporarily? Or return it?
+    // Let's try attaching it. Note: This adds state to the grid object.
+    const cellTriangle = this.grid[y][x].triangles.find(t => t.rotation === rotation && t.player === player);
+    if(cellTriangle) {
+        cellTriangle.calculatedClusterSize = newClusterSize; // Store size temporarily
+    }
+  } // End updateClustersForNewTriangle
+
+  // NEW HELPER METHOD: Update map entries when merging clusters
+  // NOTE: This is the potentially slow part if not optimized (e.g., using Union-Find)
+  updateMapForMergedCluster(oldClusterId, newClusterId) {
+    // Inefficiently iterates through the whole map.
+    // A better approach would store triangles per cluster or use Union-Find.
+    for (const [key, value] of this.clusterMap.entries()) {
+        if (value === oldClusterId) {
+            this.clusterMap.set(key, newClusterId);
+        }
+    }
   }
   
   getDiagonalGroup(rotation) {
@@ -148,29 +256,38 @@ class GridManager {
     return false;
   }
 
-  // Get the largest contiguous triangle group size for a player
+  /**
+   * Gets the largest contiguous triangle group size for a player
+   * by looking up pre-calculated cluster sizes.
+   * Relies on the this.clusters object being accurately maintained.
+   * @param {number} player - The player number (1 or 2).
+   * @returns {number} The size of the largest cluster belonging to the player.
+   */
   getLargestContiguous(player) {
-    const visited = new Set();
     let maxSize = 0;
 
-    // Iterate over all cells and triangles
-    for (let y = 0; y < this.rows; y++) {
-      for (let x = 0; x < this.cols; x++) {
-        const cell = this.grid[y][x];
-        cell.triangles.forEach(triangle => {
-          if (triangle.player === player && !visited.has(`${x},${y},${triangle.rotation}`)) {
-            const clusterSize = this.floodFill(x, y, triangle.rotation, player, visited);
-            maxSize = Math.max(maxSize, clusterSize);
-          }
-        });
-      }
+    // Iterate through the keys (cluster IDs) of the clusters object
+    for (const clusterId in this.clusters) {
+        // Standard check to ensure we are iterating over own properties
+        if (Object.hasOwnProperty.call(this.clusters, clusterId)) {
+            const clusterInfo = this.clusters[clusterId];
+
+            // Check if this cluster belongs to the requested player
+            if (clusterInfo && clusterInfo.player === player) {
+                // Update maxSize if this cluster is larger
+                maxSize = Math.max(maxSize, clusterInfo.size);
+            }
+        }
     }
+
+    // Return the largest size found for that player
     return maxSize;
   }
 
   // Claim all enclosed triangles for the current player
   claimEnclosedTriangles() {
     let claimed = 0;
+    const newlyClaimed = []; // Keep track of newly claimed triangles {x, y, rotation, player}
     for (let y = 0; y < this.rows; y++) {
       for (let x = 0; x < this.cols; x++) {
         const cell = this.grid[y][x]
@@ -178,39 +295,38 @@ class GridManager {
           // Check for unclaimed slot
           const mapping = [2, 3, 0, 1]; // Mapping of rotations to opposite
           if (this.isTriangleEnclosed(x, y, mapping[cell.triangles[0].rotation])) {
-            cell.triangles.push({ player: this.currentPlayer, rotation: mapping[cell.triangles[0].rotation] });
+            const newTriangle = { player: this.currentPlayer, rotation: mapping[cell.triangles[0].rotation] };
+            cell.triangles.push(newTriangle);
             claimed++;
+            newlyClaimed.push({ x, y, rotation: newTriangle.rotation, player: newTriangle.player });
+            console.log(`Claimed triangle at ${x},${y} rot ${newTriangle.rotation}`);
           }
         }
       }
     }
+    // After identifying all claims, update clusters for each claimed triangle
+    // This prevents issues where claiming one triangle affects the neighbors of another claimed triangle in the same turn.
+    newlyClaimed.forEach(claim => {
+      this.updateClustersForNewTriangle(claim.x, claim.y, claim.rotation, claim.player);
+    });
     return claimed;
   }
 
-    /**
-     * Calculates the size of the contiguous cluster connected to a specific triangle.
-     * @param {number} x - The cell x-coordinate.
-     * @param {number} y - The cell y-coordinate.
-     * @param {number} rotation - The rotation of the target triangle.
-     * @param {number} player - The player number owning the triangle.
-     * @returns {number} The size of the connected cluster, or 0 if the triangle doesn't exist.
-     */
-    getClusterSizeForTriangle(x, y, rotation, player) {
-      // Check if the specified triangle actually exists and belongs to the player in that cell
-      const cell = this.grid[y][x];
-      const targetTriangle = cell.triangles.find(t => t.rotation === rotation && t.player === player);
 
-      if (!targetTriangle) {
-          // Triangle doesn't exist or doesn't belong to the player at that exact spot/rotation after the move
-           // This might happen if the move itself was invalid or coordinates are wrong.
-           // console.warn(`Triangle ${player}/${rotation} not found at ${x},${y} for cluster size check.`);
-          return 0;
-      }
-
-      // Use the existing floodFill logic, starting from the specified triangle
-      const visited = new Set(); // Create a new visited set for this specific calculation
-      const clusterSize = this.floodFill(x, y, rotation, player, visited); // Use existing floodFill
-      return clusterSize;
+  /**
+   * Gets the pre-calculated size of the cluster a specific triangle belongs to.
+   * @param {number} x - The cell x-coordinate.
+   * @param {number} y - The cell y-coordinate.
+   * @param {number} rotation - The rotation of the target triangle.
+   * @returns {number} The size of the connected cluster, or 0 if not found.
+   */
+  getConnectedClusterSize(x, y, rotation) {
+    const key = `${y},${x},${rotation}`;
+    if (this.clusterMap.has(key)) {
+        const clusterId = this.clusterMap.get(key);
+        return this.clusters[clusterId]?.size || 0; // Return size or 0 if cluster info is missing
+    }
+    return 0; // Triangle not part of any cluster
   }
 
   // Flood-fill to find connected triangles

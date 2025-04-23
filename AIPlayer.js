@@ -341,11 +341,11 @@ class AIPlayer {
 
             // --- Calculate size of the cluster connected to the placed piece ---
             // Use the new GridManager method
-            const connectedClusterSize = currentManager.getClusterSizeForTriangle(
+            const connectedClusterSize = currentManager.getConnectedClusterSize(
                 move.x,
                 move.y,
-                move.rotation, // Use the rotation of the piece that was *intended* to be placed
-                currentPlayerNum
+                move.rotation // Rotation of the placed piece
+                // No player needed as input, cluster ID lookup is sufficient
             );
             // --- End cluster size calculation ---
 
@@ -360,7 +360,7 @@ class AIPlayer {
                 move: move,
                 player: currentPlayerNum, // Player who made the move
                 claimed: claimed,
-                connectedClusterSize: connectedClusterSize // << Store size of cluster connected to move
+                connectedClusterSize: connectedClusterSize // Store size from lookup
                 //clusterSize: currentPlayerClusterSize,          // << Player's cluster size AFTER move
                 //opponentClusterSize: opponentPlayerClusterSize // << Opponent's cluster size AFTER move
             });
@@ -411,8 +411,7 @@ class AIPlayer {
             // 3. Intermediate reward for size of connected cluster
             let connectedClusterReward = 0;
             if (step.connectedClusterSize > 0) {
-                // Assign reward proportional to the size. TUNE THIS FACTOR!
-                const connectedClusterRewardFactor = 0.1; // <<<< Example factor (e.g., 0.1 reward per triangle in the cluster)
+                const connectedClusterRewardFactor = 0.1; // Factor remains tunable
                 connectedClusterReward = step.connectedClusterSize * connectedClusterRewardFactor;
             }
 
