@@ -133,18 +133,18 @@ class GridManager {
         finalClusterId = this.nextClusterId++;
         this.clusters[finalClusterId] = { size: 1, player: player };
         newClusterSize = 1;
-        console.log(`New Cluster ${finalClusterId} created.`);
+        // console.log(`New Cluster ${finalClusterId} created.`);
 
     } else if (adjacentClusterIds.size === 1) {
         // Case 2: Add to existing cluster
         finalClusterId = adjacentClusterIds.values().next().value; // Get the single ID
         this.clusters[finalClusterId].size++;
         newClusterSize = this.clusters[finalClusterId].size;
-        console.log(`Triangle added to Cluster ${finalClusterId}, new size ${newClusterSize}.`);
+        // console.log(`Triangle added to Cluster ${finalClusterId}, new size ${newClusterSize}.`);
 
     } else {
         // Case 3: Merge multiple clusters
-        console.log("Merging clusters:", [...adjacentClusterIds]);
+        // console.log("Merging clusters:", [...adjacentClusterIds]);
         // Choose the cluster ID to keep (e.g., the first one encountered)
         finalClusterId = adjacentClusterIds.values().next().value;
         newClusterSize = 1; // Start with the new triangle
@@ -157,7 +157,7 @@ class GridManager {
                      // Mark cluster for merging/update map entries
                      this.updateMapForMergedCluster(clusterId, finalClusterId);
                      delete this.clusters[clusterId]; // Remove merged cluster info
-                     console.log(`Cluster ${clusterId} merged into ${finalClusterId}.`);
+                    //  console.log(`Cluster ${clusterId} merged into ${finalClusterId}.`);
                  }
              }
         });
@@ -167,11 +167,11 @@ class GridManager {
              this.clusters[finalClusterId].size = newClusterSize;
         } else {
              // This case might happen if finalClusterId was somehow deleted; recreate it
-             console.warn('Recreating cluster ${finalClusterId} during merge.');
+            //  console.warn('Recreating cluster ${finalClusterId} during merge.');
              this.clusters[finalClusterId] = { size: newClusterSize, player: player };
              // Need to ensure all triangles previously mapped to finalClusterId are still correct (should be)
         }
-         console.log(`Clusters merged into ${finalClusterId}, new size ${newClusterSize}.`);
+        //  console.log(`Clusters merged into ${finalClusterId}, new size ${newClusterSize}.`);
     }
 
     // 3. Update the map for the newly placed triangle
@@ -299,7 +299,7 @@ class GridManager {
             cell.triangles.push(newTriangle);
             claimed++;
             newlyClaimed.push({ x, y, rotation: newTriangle.rotation, player: newTriangle.player });
-            console.log(`Claimed triangle at ${x},${y} rot ${newTriangle.rotation}`);
+            // console.log(`Claimed triangle at ${x},${y} rot ${newTriangle.rotation}`);
           }
         }
       }
@@ -1008,7 +1008,7 @@ class GameScene extends Phaser.Scene {
   handleTurnSwitch() {
     if (this.gridManager.extraTurns > 0) {
         this.gridManager.extraTurns--; // [cite: 229]
-        console.log(`Player <span class="math-inline">\{this\.gridManager\.currentPlayer\} has an extra turn \(</span>{this.gridManager.extraTurns} remaining).`);
+        // console.log(`Player <span class="math-inline">\{this\.gridManager\.currentPlayer\} has an extra turn \(</span>{this.gridManager.extraTurns} remaining).`);
         // Current player continues, check if it's AI or Human
         if (this.players[this.gridManager.currentPlayer].type === 'ai') {
              this.time.delayedCall(100, this.triggerAIMove, [], this); // AI takes another turn
@@ -1018,7 +1018,7 @@ class GameScene extends Phaser.Scene {
     } else {
         // Switch player
         this.gridManager.currentPlayer = this.gridManager.currentPlayer === 1 ? 2 : 1; // [cite: 230]
-        console.log(`Switching to Player ${this.gridManager.currentPlayer}`);
+        // console.log(`Switching to Player ${this.gridManager.currentPlayer}`);
         this.updateCursor(); // Update cursor color [cite: 204]
 
         // Check the type of the NEW current player
@@ -1050,6 +1050,11 @@ class GameScene extends Phaser.Scene {
 triggerAIMove() {
   const currentPlayerNum = this.gridManager.currentPlayer;
   const aiInstance = this.aiInstances[currentPlayerNum];
+  const state = aiInstance._getStateRepresentation();
+  let move;
+  // 1. Calculate IMMEDIATE rewards for all moves from this state
+  // (Assumes calculateImmediateRewardVector returns rewards scaled approx 0-1)
+  const immediateRewardVector = aiInstance.calculateImmediateRewardVector(state, currentPlayerNum, this.gridManager);
 
   if (!aiInstance || this.players[currentPlayerNum].type !== 'ai') {
       console.error("triggerAIMove called for non-AI player or missing instance.");
@@ -1057,9 +1062,32 @@ triggerAIMove() {
   }
 
   console.log(`AI Player ${currentPlayerNum} is thinking...`);
-    // Use a short delay to simulate thinking and prevent visual glitches
-    this.time.delayedCall(300, () => { // Delay can be adjusted
-      const move = aiInstance.predictMove(); // [cite: 29, 69]
+  // Use a short delay to simulate thinking and prevent visual glitches
+  this.time.delayedCall(300, () => { // Delay can be adjusted
+
+    if ( Math.random() >= aiInstance.immediacyFactor) {
+      console.log(`AI Player ${currentPlayerNum} is making a trained move...`);
+      move = aiInstance.predictMove();
+    } else {
+        // Exploit: Choose move with highest immediate reward
+        console.log(`AI Player ${currentPlayerNum} is making a heuristic move...`);
+        let bestMoveIndex = -1;
+        let maxImmediateReward = -Infinity;
+        for (let i = 0; i < immediateRewardVector.length; i++) {
+            // Check legality implicitly (reward > default low value, e.g., 0.01)
+            if (immediateRewardVector[i] > 0.01 && immediateRewardVector[i] > maxImmediateReward) {
+                maxImmediateReward = immediateRewardVector[i];
+                bestMoveIndex = i;
+            }
+        }
+        if (bestMoveIndex !== -1) {
+            const rotation = bestMoveIndex % 4;
+            const cellIndex = Math.floor(bestMoveIndex / 4);
+            const x = cellIndex % this.gridManager.cols; // Use currentManager dims
+            const y = Math.floor(cellIndex / this.gridManager.cols);
+            move = { x, y, rotation };
+        } else { move = aiInstance.getRandomValidMove(); } // Fallback
+      }
 
       if (move && typeof move.x !== 'undefined' && typeof move.y !== 'undefined' && typeof move.rotation !== 'undefined') {
           console.log(`AI Player <span class="math-inline">\{currentPlayerNum\} chose\: \(</span>{move.x}, ${move.y}), Rot: ${move.rotation}`); // [cite: 42]
@@ -1424,7 +1452,7 @@ class MenuScene extends Phaser.Scene {
               if (trainingAI.trainingData.length > 0) {
                   console.log(`Training network with ${trainingAI.trainingData.length} samples...`);
                   // Train the network with collected data. Adjust iterations as needed.
-                  trainingAI.trainNetwork(1000); // << CONFIGURABLE: Number of training iterations [cite: 54, 55]
+                  trainingAI.trainNetwork(20); // << CONFIGURABLE: Number of training iterations [cite: 54, 55]
                   console.log("Network training complete.");
 
                   // --- Step 3: Save the Trained Network ---

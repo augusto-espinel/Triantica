@@ -22,7 +22,8 @@ class AIPlayer {
         this.playerNumber = playerNumber;
         this.difficulty = difficulty;
         this.network = this._createNetwork(difficulty);
-        this.explorationFactor = 0.3; // Example: 10% chance to explore (choose random move)
+        this.explorationFactor = 0.2; // Example: 10% chance to explore (choose random move)
+        this.immediacyFactor = 0.9; // Example: 10% chance to choose based on neural network or short term cluster maximization
         this.isNetworkLoaded = false; // Flag to check if the network is loaded/trained
 
         // Placeholder for training data - ideally loaded/saved
@@ -101,7 +102,7 @@ class AIPlayer {
         // --- Epsilon-Greedy Exploration ---
         // Decide whether to explore (random move) or exploit (best predicted move)
         if (Math.random() < this.explorationFactor) {
-            console.log("AI Exploration: Choosing random valid move.");
+            // console.log("AI Exploration: Choosing random valid move.");
             return this.getRandomValidMove(this.gridManager); // EXPLORE: Choose randomly
         } else {
 
@@ -213,7 +214,7 @@ class AIPlayer {
             log: (details) => console.log(`Training - Iteration: ${details.iterations}, Error: ${details.error}`),
             logPeriod: 10,
             learningRate: learningRate,
-            errorThresh: 0.00001 // Stop if error is low enough
+            errorThresh: 0.00093 // Stop if error is low enough
         });
         console.log("AI: Training complete.", result);
 
@@ -288,7 +289,7 @@ class AIPlayer {
 
     // Simulate a game for training data generation (AI vs AI)
     async runSelfPlayGame() {
-        console.log("Starting self-play game for training...");
+        console.log("Starting self-play game with immediate shaping + discounted final outcome on path...");
         // const tempGridManager = new GridManager(this.gridManager.rows, this.gridManager.cols); // Use a temporary manager
         const gameHistory = []; // Store { state, move, player, claimed, connectedClusterSize } for reward assignment later
 
@@ -307,12 +308,39 @@ class AIPlayer {
             const currentPlayerNum = currentPlayerAI.playerNumber;
             this.gridManager.currentPlayer = currentPlayerNum; // Set current player in the grid manager
             const opponentPlayerNum = currentPlayerNum === 1 ? 2 : 1;
-            // --- Conditionally choose move based on flag ---
+
+            // 1. Calculate IMMEDIATE rewards for all moves from this state
+            // (Assumes calculateImmediateRewardVector returns rewards scaled approx 0-1)
+            const immediateRewardVector = this.calculateImmediateRewardVector(state, currentPlayerNum, currentManager);
+
+            // 2. Determine ACTUAL move to take to advance simulation state
+            // (Using exploitation/exploration based on immediateRewardVector or random)
             let move;
+            let actualMoveIndex = -1; // Initialize index
             if (this.isNetworkLoaded && movesCount>0) { // Avoid using network on first move (otherwise it will start at same plce)
                 // Use prediction if network is loaded/trained
                 // console.log(`Player ${currentPlayerAI.playerNumber} using predictMove (Network Ready: ${currentPlayerAI.isNetworkLoaded})`); // Optional detailed log
-                move = currentPlayerAI.predictMove();
+                if ( Math.random() >= this.immediacyFactor) {
+                    move = currentPlayerAI.predictMove();
+                } else {
+                    // Exploit: Choose move with highest immediate reward
+                    let bestMoveIndex = -1;
+                    let maxImmediateReward = -Infinity;
+                    for (let i = 0; i < immediateRewardVector.length; i++) {
+                        // Check legality implicitly (reward > default low value, e.g., 0.01)
+                        if (immediateRewardVector[i] > 0.01 && immediateRewardVector[i] > maxImmediateReward) {
+                            maxImmediateReward = immediateRewardVector[i];
+                            bestMoveIndex = i;
+                        }
+                    }
+                    if (bestMoveIndex !== -1) {
+                        const rotation = bestMoveIndex % 4;
+                        const cellIndex = Math.floor(bestMoveIndex / 4);
+                        const x = cellIndex % currentManager.cols; // Use currentManager dims
+                        const y = Math.floor(cellIndex / currentManager.cols);
+                        move = { x, y, rotation };
+                    } else { move = currentPlayerAI.getRandomValidMove(); } // Fallback
+                }
             } else {
                 // Use random moves if network is not ready
                 // console.log(`Player ${currentPlayerAI.playerNumber} using getRandomValidMove (Network Ready: ${currentPlayerAI.isNetworkLoaded})`); // Optional detailed log
@@ -324,6 +352,8 @@ class AIPlayer {
                 console.error("Self-play: AI failed to find a move. Ending game.");
                 break; // Should not happen
             }
+
+            actualMoveIndex = (move.y * currentManager.cols + move.x) * 4 + move.rotation;
 
             // Apply the move to the temporary grid manager
             this.gridManager.selectedRotation = move.rotation;
@@ -341,12 +371,12 @@ class AIPlayer {
 
             // --- Calculate size of the cluster connected to the placed piece ---
             // Use the new GridManager method
-            const connectedClusterSize = currentManager.getConnectedClusterSize(
-                move.x,
-                move.y,
-                move.rotation // Rotation of the placed piece
-                // No player needed as input, cluster ID lookup is sufficient
-            );
+            // const connectedClusterSize = currentManager.getConnectedClusterSize(
+            //     move.x,
+            //     move.y,
+            //     move.rotation // Rotation of the placed piece
+            //     // No player needed as input, cluster ID lookup is sufficient
+            // );
             // --- End cluster size calculation ---
 
             // --- Calculate cluster sizes AFTER the move and claims ---
@@ -360,7 +390,9 @@ class AIPlayer {
                 move: move,
                 player: currentPlayerNum, // Player who made the move
                 claimed: claimed,
-                connectedClusterSize: connectedClusterSize // Store size from lookup
+                immediateRewardVector: immediateRewardVector,
+                actualMoveIndex: actualMoveIndex
+                // connectedClusterSize: connectedClusterSize // Store size from lookup
                 //clusterSize: currentPlayerClusterSize,          // << Player's cluster size AFTER move
                 //opponentClusterSize: opponentPlayerClusterSize // << Opponent's cluster size AFTER move
             });
@@ -395,41 +427,62 @@ class AIPlayer {
         this.gridManager.reset();   // Reset the grid manager for next game
         console.log(`Self-play game finished. Winner: ${winner === 0 ? 'Draw' : `Player ${winner}`}`);
 
-        // Add training data with rewards
-        gameHistory.forEach(step => {
-            // 1. Base reward for winning/losing the game
-            let finalReward  = 0;
-            if (winner !== 0) {
-                finalReward  = step.player === winner ? 1 : -1; // Win = +1, Loss = -1
+        // Base final reward: +1 for win, -1 for loss, 0 for draw
+        const finalOutcomeRewardValue = (winner === this.playerNumber) ? 1.0 : (winner === 0 ? 0.0 : -1.0);
+        // Weighting factor for the final outcome reward (tune this!)
+        const finalRewardWeight = 1.0; // Example: Give full weight to win/loss
+        const totalMovesInGame = gameHistory.length;
+
+        // --- Process Trajectory BACKWARDS to Create Final Training Data ---
+        console.log(`Processing ${totalMovesInGame} steps for final training data...`);
+
+        // Define scaling parameters for the COMBINED reward
+        // Immediate rewards are already scaled 0-1 by calculateImmediateRewardVector
+        const minImmediateReward = 0.01; // Min output from immediate calculation
+        const maxImmediateReward = 0.99; // Max output from immediate calculation
+        const minCombinedReward = minImmediateReward - (1.0 * finalRewardWeight); // Theoretical min (loss + min immediate)
+        const maxCombinedReward = maxImmediateReward + (1.0 * finalRewardWeight); // Theoretical max (win + max immediate)
+        const combinedRewardRange = maxCombinedReward - minCombinedReward;
+
+        // Iterate backwards to potentially apply more complex discounting later if needed,
+        // although simple linear scaling doesn't strictly require backward iteration.
+        for (let t = totalMovesInGame - 1; t >= 0; t--) {
+            const step = gameHistory[t];
+            const state = step.state;
+            const immediateRewardVector = step.immediateRewardVector;
+            const actualMoveIndex = step.actualMoveIndex;
+
+            // Create the final output vector, starting as a copy of immediate rewards
+            const finalOutputVector = [...immediateRewardVector];
+
+            // Calculate the discount factor - linear scaling based on step number
+            // Moves closer to the end (higher t) get a larger portion of the final reward.
+            const discountFactor = (t + 1) / totalMovesInGame;
+            const scaledFinalReward = finalOutcomeRewardValue * discountFactor * finalRewardWeight;
+
+            // Get the immediate reward component for the action actually taken
+            const immediateRewardActualMove = immediateRewardVector[actualMoveIndex];
+
+            // Calculate the combined reward ONLY for the action taken
+            const combinedRewardActualMove = immediateRewardActualMove + scaledFinalReward;
+
+            // Scale the combined reward for the taken action into the target range [0.01, 0.99]
+            let scaledCombinedRewardActualMove = 0.01;
+            if (combinedRewardRange !== 0) {
+                scaledCombinedRewardActualMove = (combinedRewardActualMove - minCombinedReward) / combinedRewardRange;
+            } else if (combinedRewardActualMove >= maxCombinedReward) {
+                scaledCombinedRewardActualMove = 1.0;
             }
+            scaledCombinedRewardActualMove = Math.max(0.01, Math.min(0.99, scaledCombinedRewardActualMove)); // Clamp
 
-            // 2. Intermediate reward for claiming triangles on THIS specific move
-            let claimReward  = 0;
-            if (step.claimed > 0) { claimReward = 0.3 * step.claimed; } // Example value
-            // Adjust based on how many triangles were claimed (e.g., 0.3 for each triangle claimed)
+            // --- Update ONLY the target for the move that was actually taken ---
+            finalOutputVector[actualMoveIndex] = scaledCombinedRewardActualMove;
 
-            // 3. Intermediate reward for size of connected cluster
-            let connectedClusterReward = 0;
-            if (step.connectedClusterSize > 0) {
-                const connectedClusterRewardFactor = 0.1; // Factor remains tunable
-                connectedClusterReward = step.connectedClusterSize * connectedClusterRewardFactor;
-            }
+            // Add the final input/output pair to training data
+            // Note: Data for earlier states is added LAST here due to backward iteration
+            this.trainingData.push({ input: state, output: finalOutputVector });
 
-            // 3. Intermediate reward for cluster size advantage
-            // Reward based on the difference between the player's largest cluster
-            // and the opponent's largest cluster AFTER the move was made.  
-            // let clusterReward = 0;
-            // const clusterDifference = step.clusterSize - step.opponentClusterSize;
-            // Assign a small reward proportional to the size advantage. TUNE THIS FACTOR!
-            // const clusterRewardFactor = 0.05; // <<<< Example factor, adjust based on testing
-            // clusterReward = clusterDifference * clusterRewardFactor;
-            
-            // 4. Combine rewards
-            let totalReward = finalReward + claimReward + connectedClusterReward;
-
-            // Could add intermediate rewards later (e.g., for claiming triangles)
-            this.addTrainingData(step.state, step.move, totalReward);
-        });
+        } // End processing trajectory
 
         console.log(`Added ${gameHistory.length} training samples from self-play.`);
 
@@ -442,6 +495,117 @@ class AIPlayer {
         if (!this.network) return null;
         return this.network.toJSON();
     }
+
+    /**
+     * Calculates a reward vector for all possible moves from a given state.
+     * Reward is based on simulating immediate captures and resulting connected cluster size
+     * using the OPTIMIZED cluster lookup from GridManager.
+     * NOTE: Still computationally expensive due to simulating every legal move.
+     * @param {Array<number>} stateRepresentation - The input state vector.
+     * @param {number} player - The player whose turn it is.
+     * @param {GridManager} currentManager - The *actual* GridManager instance for current state info.
+     * @returns {Array<number>} - The output vector with scaled rewards for each possible move.
+     */
+    calculateImmediateRewardVector(stateRepresentation, player, currentManager) {
+        const rows = currentManager.rows;
+        const cols = currentManager.cols;
+        const outputVector = new Array(rows * cols * 4).fill(0.01); // Default low value (illegal moves)
+
+        // --- Define Reward Factors (tune these!) ---
+        const claimRewardFactor = 0.3;
+        const connectedClusterRewardFactor = 0.1; // Factor for size reward
+
+        // --- Define Scaling Range (based only on these immediate rewards) ---
+        // (Recalculate based on factors - same as previous step)
+        const maxPossibleClaimBonus = 1.5; // Estimate
+        const maxPossibleClusterSize = rows * cols * 2;
+        const maxPossibleClusterBonus = maxPossibleClusterSize * connectedClusterRewardFactor;
+        const minImmediateReward = 0;
+        const maxImmediateReward = maxPossibleClaimBonus + maxPossibleClusterBonus;
+        const rewardRange = maxImmediateReward - minImmediateReward;
+
+        // --- Iterate through ALL possible moves ---
+        for (let y = 0; y < rows; y++) {
+            for (let x = 0; x < cols; x++) {
+                for (let rotation = 0; rotation < 4; rotation++) {
+                    const moveIndex = (y * cols + x) * 4 + rotation;
+
+                    // --- 1. Check Legality (using currentManager's state) ---
+                    const originalRotation = currentManager.selectedRotation;
+                    currentManager.selectedRotation = rotation;
+                    const cell = currentManager.grid[y]?.[x]; // Add safe navigation for grid access
+                    let isLegal = false;
+                    if (cell && cell.triangles.length < 2) {
+                        let hasOverlap = false;
+                        if (cell.triangles.length > 0) {
+                            const newGroup = currentManager.getDiagonalGroup(rotation);
+                            const existingGroup = currentManager.getDiagonalGroup(cell.triangles[0].rotation);
+                            hasOverlap = !(existingGroup === newGroup) || cell.triangles[0].rotation === rotation;
+                        }
+                        isLegal = currentManager.isValidPlacement(x, y) && !hasOverlap;
+                    }
+                    currentManager.selectedRotation = originalRotation; // Restore
+
+                    // --- 2. If Legal, Simulate on a Temporary Manager ---
+                    if (isLegal) {
+                        // Create a temporary manager instance FOR EACH legal move simulation
+                        const tempManager = new GridManager(rows, cols);
+                        try {
+                            // Deep copy the necessary state from the *actual* manager
+                            tempManager.grid = JSON.parse(JSON.stringify(currentManager.grid));
+                            // Deep copy the cluster state (essential for the optimized methods)
+                            tempManager.clusters = JSON.parse(JSON.stringify(currentManager.clusters));
+                            tempManager.clusterMap = new Map(currentManager.clusterMap); // Shallow map copy is likely okay if cluster IDs don't change, but deep is safer if values change
+                            tempManager.nextClusterId = currentManager.nextClusterId;
+
+                        } catch (e) {
+                            console.error("Failed to clone state for simulation", e);
+                            continue; // Skip this move if cloning fails
+                        }
+
+                        tempManager.currentPlayer = player;
+                        tempManager.selectedRotation = rotation;
+
+                        // --- 3. Simulate the move using OPTIMIZED GridManager methods ---
+                        // placeTriangle internally calls updateClustersForNewTriangle on tempManager
+                        const simSuccess = tempManager.placeTriangle(x, y);
+
+                        if (simSuccess) {
+                            // claimEnclosedTriangles also calls updateClustersForNewTriangle on tempManager
+                            const simClaimed = tempManager.claimEnclosedTriangles();
+
+                            // --- 4. Get Cluster Size using the OPTIMIZED LOOKUP ---
+                            // This reads the size calculated and stored by the *simulated*
+                            // place/claim operations within tempManager's cluster data.
+                            const simClusterSize = tempManager.getConnectedClusterSize(x, y, rotation);
+
+                            // --- 5. Calculate and Scale Reward ---
+                            const hypoClaimReward = simClaimed * claimRewardFactor;
+                            const hypoClusterReward = simClusterSize * connectedClusterRewardFactor;
+                            const hypotheticalReward = hypoClaimReward + hypoClusterReward;
+
+                            let scaledReward = 0.01;
+                            if (rewardRange !== 0) {
+                                scaledReward = (hypotheticalReward - minImmediateReward) / rewardRange;
+                            } else if (hypotheticalReward >= maxImmediateReward) {
+                                scaledReward = 1.0;
+                            }
+                            scaledReward = Math.max(0.01, Math.min(0.99, scaledReward)); // Clamp
+
+                            outputVector[moveIndex] = scaledReward;
+
+                        } else {
+                            // If the simulation placement failed (e.g., cloned state issue?)
+                            outputVector[moveIndex] = 0.0;
+                        }
+                        // tempManager instance is discarded here
+                    } // End if(isLegal)
+                } // end rotation
+            } // end x
+        } // end y
+
+        return outputVector;
+    } // End calculateImmediateRewardVector
 
     /**
      * Imports network state, trying a relative file path first, then localStorage.
