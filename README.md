@@ -1,5 +1,3 @@
-Here is a structured breakdown of your project, "Triantica," designed to refresh your memory on its architecture, logic, and machine learning components.
-
 ### **1. Project Overview**
 
 **Triantica** is a grid-based strategy game built with **Phaser 3**.
