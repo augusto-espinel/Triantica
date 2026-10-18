@@ -407,7 +407,11 @@ export class AIPlayer extends PlayerInterface {
       if (step.player !== this.playerNumber) continue; // Only train on own moves
 
       const finalOutputVector = [...step.immediateRewardVector];
-      const discountFactor = (t + 1) / totalMoves;
+      // FIX: Remove linear discounting — all moves get full outcome signal
+      // Previously: const discountFactor = (t + 1) / totalMoves;
+      // This gave early moves ~0.006 weight, below gradient noise floor.
+      // New approach: All moves receive equal outcome contribution.
+      const discountFactor = 1.0;
       const scaledFinalReward = finalRewardValue * discountFactor * finalRewardWeight;
 
       const immediateReward = step.immediateRewardVector[step.actualMoveIndex];

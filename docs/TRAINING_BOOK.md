@@ -627,7 +627,84 @@ Based on the analysis, here's a prioritized plan that addresses root causes:
 
 ---
 
-## Final Conclusions: Architecture + Reward Signal Cannot Learn This Game
+## Reward Signal Analysis: The Real Bottleneck — 2026-10-18
+
+### User Observation
+
+After reviewing the failure analysis, the user noted: "I had normalized to 1, but it wasn't meant to be 1 bit. If it is really 1 bit then there was probably a mistake in my variable declaration."
+
+### Investigation: Tracing the Reward Calculation
+
+#### Immediate Reward (Correctly Implemented)
+
+```javascript
+const claimRewardFactor = 0.3;
+const connectedClusterRewardFactor = 0.1;
+const maxPossibleClaimBonus = 1.5;
+const maxPossibleClusterSize = rows * cols * 2;  // 200
+const maxPossibleClusterBonus = 200 * 0.1;       // 20
+const maxImmediateReward = 1.5 + 20;             // 21.5
+const rewardRange = 21.5;
+
+// For a typical move (1 claim, cluster size 5):
+// hypotheticalReward = 0.3 + 0.5 = 0.8
+// scaledReward = 0.8 / 21.5 ≈ 0.037
+```
+
+**Verdict:** Immediate rewards are **NOT** 1 bit — they're continuous values in [0.01, 0.99] with meaningful granularity. ✅
+
+#### Final Outcome Addition (Problematic)
+
+```javascript
+const discountFactor = (t + 1) / totalMoves;
+const scaledFinalReward = finalRewardValue * discountFactor * finalRewardWeight;
+const combinedReward = immediateReward + scaledFinalReward;
+```
+
+### The Real Issue: Linear Discounting Kills Early-Move Signal
+
+| Move Position | Discount Factor | Final Reward Contribution | Immediate Reward | Combined |
+|---------------|-----------------|--------------------------|------------------|----------|
+| Move 1/166 | 0.006 | ±0.006 | ~0.04 | ~0.04 |
+| Move 50/166 | 0.30 | ±0.30 | ~0.04 | ~0.34 |
+| Move 83/166 | 0.50 | ±0.50 | ~0.04 | ~0.54 |
+| Move 166/166 | 1.00 | ±1.00 | ~0.04 | ~1.04 |
+
+**Problem:** First ~50 moves (where opening strategy matters) receive less than ±0.3 contribution from the game outcome. The immediate reward (~0.04) dominates, which only teaches short-term tactics.
+
+### Why This Matters
+
+1. **Opening moves are critical** — Triantica is a territory control game where early positioning determines late-game options
+2. **Linear discounting is too aggressive** — Standard RL uses exponential discounting γ^t where γ ≈ 0.99, not linear scaling
+3. **Signal-to-noise ratio** — A ±0.006 contribution is below the gradient noise floor for sigmoid activations
+
+### Proposed Fix
+
+**Option A:** Remove discounting entirely — all moves get full ±1.0 outcome signal
+**Option B:** Exponential discounting with γ = 0.99
+**Option C:** Flat reward — all moves get same final outcome regardless of position
+
+**Recommendation:** Start with **Option A** (remove discounting) as the simplest test. If that works, the signal was the problem. If it still fails, we know architecture is the bottleneck.
+
+---
+
+### Experiment 5: Training with Fixed Reward Signal (No Discounting)
+
+**Date:** 2026-10-18
+**Goal:** Test whether removing linear discounting improves learning
+
+**Change:** `discountFactor = (t + 1) / totalMoves` → `discountFactor = 1.0`
+
+**Expected effect:** All moves now receive full ±1.0 outcome contribution instead of ±0.006 for early moves. This amplifies the final-outcome signal by **~170×** for opening moves.
+
+**Hyperparameters:** Same as Experiment 4
+- `learningRate`: 0.01
+- `explorationFactor`: 0.20
+- `iterations`: 500
+- `games/cycle`: 100
+- `eval games`: 200
+
+**Status:** Ready to run
 
 ### Experiments Summary
 
