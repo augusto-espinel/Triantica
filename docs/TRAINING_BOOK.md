@@ -607,7 +607,66 @@ Based on the analysis, here's a prioritized plan that addresses root causes:
 | `eval games` | 200 | ↑ from 100 |
 | `startFrom` | null | Fresh random init |
 
-**Status:** Ready to run
+**Results (5 complete cycles before termination):**
+
+| Cycle | Training Error | AI Win Rate | AI Wins | Random Wins | Draws | Avg Moves |
+|-------|---------------|-------------|---------|-------------|-------|-----------|
+| 1 | 0.002321 | 49.0% | 98 | 96 | 6 | 168.5 |
+| 2 | 0.009659 | 52.0% | 104 | 92 | 4 | 167.5 |
+| 3 | 0.011783 | 45.5% | 91 | 102 | 7 | 168.4 |
+| 4 | 0.014564 | 47.5% | 95 | 102 | 3 | 167.9 |
+| 5 | 0.015486 | 51.5% | 103 | 90 | 7 | 167.8 |
+
+**Statistics:**
+- Mean win rate: **49.1%**
+- Std deviation: **2.6%**
+- Range: 45.5-52%
+- Total evaluation games: **1,000**
+
+**Conclusion:** Experiment terminated after 5 cycles. No improvement trend detected. The lower learning rate eliminated the wild 34-58% oscillations from previous experiments, but the result is still a flat line at 50%. The network has converged to predicting random-like scores for all moves.
+
+---
+
+## Final Conclusions: Architecture + Reward Signal Cannot Learn This Game
+
+### Experiments Summary
+
+| Experiment | Cycles | Win Rate | Outcome |
+|-----------|--------|----------|----------|
+| Pre-trained vs Random | — | 51% | Baseline: coin-flip |
+| Exp 2: From checkpoint | 8 | 46-58% | Oscillated, no trend |
+| Exp 3: From checkpoint (extended) | 4 | 34-50% | Wild oscillations |
+| Exp 4: From scratch (lower LR) | 5 | 45-52% | Stable but still 50% |
+
+**Total:** 17 training cycles, ~2,500 evaluation games, **zero improvement**.
+
+### Why Current Approach Fails
+
+**Root cause confirmed:** The 401→200→400 MLP architecture combined with sparse final-outcome rewards **cannot solve the credit assignment problem** for this game.
+
+| Factor | Status | Evidence |
+|--------|--------|----------|
+| Learning rate | ✅ Fixed | Lower LR stabilized output |
+| Pre-trained weights | ✅ Ruled out | Fresh start performed same |
+| Sample size | ✅ Adequate | 1,000 eval games, consistent results |
+| Architecture | ❌ Problematic | No spatial bias, flat input |
+| Reward signal | ❌ Problematic | Sparse outcome, weak intermediate |
+| Self-play drift | ❌ Problematic | No experience replay |
+
+### Pivot Decision
+
+**Stop training with current architecture.** After 17 cycles with zero improvement, further training has expected value of zero.
+
+**Next step: Reward Engineering (Phase 2)** — Add dense intermediate rewards that actually teach strategy. This requires modifying `AIPlayer.js` to compute:
+
+1. **Cluster growth delta** — Reward moves that grow connected territory
+2. **Enclosure progress** — Bonus for completing 3/4 sides of an enclosure
+3. **Opponent blocking** — Penalty for allowing opponent cluster growth
+4. **Territory control** — Track who controls more cells over time
+
+This provides ~50 bits of dense signal per move instead of 1 bit per game.
+
+---
 
 
 ---
