@@ -1,102 +1,83 @@
-### **1. Project Overview**
+# Triantica
+
+A strategy game of triangular territory control with AI training capabilities.
+
+## Quick Start
+
+```bash
+cd triantica
+npm install
+node tests/validate.js              # Validate architecture (17 tests)
+npm run experiment -- --type vs-random --count 100
+```
+
+See [README_QUICKSTART.md](README_QUICKSTART.md) for full instructions and [CONTEXT.md](CONTEXT.md) for session handoff context.
+
+## Architecture Validation
+
+All 17 automated tests pass ✅
+
+| Component | Tests | Status |
+|-----------|-------|--------|
+| GridManager | 8 | ✅ Pass |
+| RandomPlayer | 2 | ✅ Pass |
+| GameSession | 4 | ✅ Pass |
+| GameLogger | 2 | ✅ Pass |
+| Baseline (20 games) | 1 | ✅ Pass |
+
+Baseline data (100 Random vs Random games): P1=44 wins, P2=50 wins, 6 draws, avg 167.6 moves/game.
+Saved at `experiments/data/baseline-random-100.json`.
+
+## 📚 Documentation
+
+| Document | Purpose |
+|----------|--------|
+| **[CONTEXT.md](CONTEXT.md)** | Session handoff + current state |
+| **[README_QUICKSTART.md](README_QUICKSTART.md)** | How to run experiments |
+| **[ARCHITECTURE.md](ARCHITECTURE.md)** | Technical architecture |
+| **[docs/TRAINING_BOOK.md](docs/TRAINING_BOOK.md)** | Experiment journal |
+| **[docs/AI_ARCHITECTURE.md](docs/AI_ARCHITECTURE.md)** | Neural network reference |
+| **[docs/QUICK_REFERENCE.md](docs/QUICK_REFERENCE.md)** | Game rules cheat sheet |
+
+---
+
+### Game Overview
 
 **Triantica** is a grid-based strategy game built with **Phaser 3**.
 
-* **Goal:** Players place triangles on a $10 \times 10$ grid to form the largest contiguous cluster of their color.
+* **Goal:** Players place triangles on a 10×10 grid to form the largest contiguous cluster of their color.
 * **Mechanic:** Each grid cell can hold up to two triangles. Connecting triangles merges "clusters." Enclosing an empty space claims it and grants an extra turn.
-* **AI:** Includes a neural network (Brain.js) that learns via self-play (Reinforcement Learning).
+* **AI:** Neural network (Brain.js) trained via self-play RL.
 
 ---
 
-### **2. File Structure & Key Responsibilities**
+### File Structure
 
 | File | Primary Responsibility |
 | --- | --- |
-| **`index.html`** | Entry point. Loads dependencies (`phaser.js`, `brain.js`) and game scripts. |
-| **`game.js`** | **The Game Engine.** Contains the Phaser Scenes (`Boot`, `Menu`, `Game`), visual rendering, input handling, and the rules logic (`GridManager`). |
-| **`AIPlayer.js`** | **The Brain.** Contains the Neural Network logic, data representation, move prediction, and self-play training loop. |
+| **`game.js`** | Phaser Scenes + visual rendering + rules logic |
+| **`AIPlayer.js`** | Neural network, move prediction, self-play training |
+| **`src/core/GridManager.js`** | Extracted pure game logic (no Phaser deps) |
+| **`src/core/GameSession.js`** | Game orchestration for experiments |
+| **`src/players/RandomPlayer.js`** | Baseline random opponent |
+| **`src/data/GameLogger.js`** | Unified experiment logging |
+| **`src/server/runExperiment.js`** | CLI experiment runner |
+| **`tests/validate.js`** | 17 automated validation tests |
 
 ---
 
-### **3. Logic Breakdown**
+### AI Architecture
 
-#### **A. The Rules Engine (`GridManager` inside `game.js`)**
+* **Input (401):** Flattened 10×10 grid + current rotation
+* **Hidden (200):** Fully connected
+* **Output (400):** One score per (cell × rotation) move
+* **Training:** Self-play RL with epsilon-greedy exploration
+* **Reward:** Immediate cluster/enclosure gains + discounted final outcome
 
-This class manages the "truth" of the game board, independent of visuals.
-
-* **Data Structure:** The grid is a 2D array where each cell contains a list of triangles.
-* **Cluster System (Scoring):**
-* Uses a **Union-Find** style approach.
-* **`createClusterMap()`**: Tracks which cluster ID every triangle belongs to.
-* **`updateClustersForNewTriangle(x, y, ...)`**: When a piece is placed, it checks neighbors. If they belong to different clusters, it **merges** them into one larger cluster ID.
-
-
-* **Enclosure Mechanic:**
-* **`claimEnclosedTriangles()`**: Scans the board for empty slots surrounded by existing triangles. If found, it auto-fills them for the current player and grants `extraTurns`.
-
-
-
-#### **B. The Visual Layer (`GameScene` inside `game.js`)**
-
-This handles what the player sees and touches.
-
-* **State Machine:** Handles modes like `HvH` (Human vs Human), `HvAI`, and `AvA`.
-* **The "Bridge":** The function **`triggerAIMove()`** is critical.
-1. It asks `AIPlayer` for a move.
-2. It waits (delayed call) to simulate "thinking" time.
-3. It visually places the triangle and updates the `GridManager`.
-
-
-
----
-
-### **4. Machine Learning Elements (`AIPlayer.js`)**
-
-The AI uses a **Feedforward Neural Network** (via `brain.js`) trained using a custom implementation of reinforcement learning.
-
-#### **I. Input & Output (The "Eye" and "Hand")**
-
-* **Input (`_getStateRepresentation`)**: A flat array representing the $10 \times 10$ grid.
-* Values are normalized: `1` (Self), `-1` (Opponent), `0` (Empty).
-* Rotations are normalized from 0-3 to `0.0` - `0.75`.
-
-
-* **Output**: A massive array of size $10 \times 10 \times 4$ (400 outputs).
-* Each index corresponds to a specific move: `(row * cols + col) * 4 + rotation`.
-* The value (0.0 to 1.0) represents the **confidence** that this move yields a reward.
-
-
-
-#### **II. Decision Making (`predictMove`)**
-
-The AI uses an **Epsilon-Greedy** strategy:
-
-1. **Exploitation (90%):** Runs the neural network. It sorts all 400 outputs by score and picks the highest one that is **valid** (legal).
-2. **Exploration (10%):** Ignores the brain and picks a random legal move to discover new strategies.
-
-#### **III. The Training Loop (`runSelfPlayGame`)**
-
-This is the most complex part of the code. It allows the AI to train itself in the browser.
-
-1. **Simulation:** The AI plays a full game against a clone of itself.
-2. **Reward Calculation:**
-* **Immediate Reward:** Did this move increase my cluster size? Did I capture enclosed space? (Calculated by `calculateImmediateRewardVector`).
-* **Final Outcome:** Did I win ($+1$) or lose ($-1$)?
-
-
-3. **Backpropagation:**
-* It takes the final game result and "discounts" it backwards.
-* Moves leading to a win get a small bonus added to their target score.
-* Moves leading to a loss get a penalty.
-
-
-4. **Training:** The collected data (State + Calculated Reward) is fed into `network.train()`.
-
-### **5. Critical Functions Cheat Sheet**
+### Critical Functions
 
 | Function | Location | What it does |
 | --- | --- | --- |
-| **`GridManager.updateClustersForNewTriangle`** | `game.js` | **The Core Mechanic.** Handles merging groups of triangles so scoring works. |
-| **`AIPlayer.calculateImmediateRewardVector`** | `AIPlayer.js` | **The "Planner".** Simulates *every* possible legal move on a temp board to see which one gives immediate points. |
-| **`AIPlayer.trainNetwork`** | `AIPlayer.js` | **The Learner.** Feeds the history of the self-play game into Brain.js to adjust weights. |
-| **`importNetwork`** | `AIPlayer.js` | **Persistence.** Tries to load a trained brain from a local JSON file or `localStorage`. |
+| **`GridManager.updateClustersForNewTriangle`** | `GridManager.js` | Core mechanic: merges clusters on placement |
+| **`AIPlayer.calculateImmediateRewardVector`** | `AIPlayer.js` | Simulates every legal move to find immediate reward |
+| **`AIPlayer.trainNetwork`** | `AIPlayer.js` | Feeds self-play history into Brain.js |

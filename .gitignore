@@ -1,0 +1,6 @@
+node_modules/
+experiments/data/*.json
+experiments/training-*.log
+*.log
+trainedAI_network_v2.json
+.DS_Store

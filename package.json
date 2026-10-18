@@ -1,0 +1,24 @@
+{
+  "name": "triantica",
+  "version": "1.0.0",
+  "description": "Grid-based strategy game with neural network AI",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "serve": "node src/server/server.js",
+    "experiment": "node src/server/runExperiment.js",
+    "train": "node src/server/train.js",
+    "test": "node tests/validate.js",
+    "test:ai": "node tests/test_ai_integration.js"
+  },
+  "dependencies": {
+    "brain.js": "^2.0.0-beta.23",
+    "express": "^4.18.2",
+    "phaser": "^3.60.0"
+  },
+  "devDependencies": {
+    "vite": "^4.4.0"
+  }
+}
