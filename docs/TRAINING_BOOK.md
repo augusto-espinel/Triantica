@@ -296,6 +296,89 @@ During self-play, the AI balances exploitation and exploration:
 
 ---
 
+### Experiment 3: Self-Play Training (20 Cycles)
+
+**Date:** 2026-10-18  
+**Goal:** Train AI via self-play, measure win-rate improvement vs random baseline
+
+**Architecture:** 401 input → 200 hidden → 400 output (medium difficulty)  
+**Hyperparameters:**
+
+| Parameter | Value |
+|-----------|-------|
+| `explorationFactor` | 0.30 |
+| `immediacyFactor` | 0.90 |
+| `learningRate` | 0.10 |
+| `iterations` | 300/cycle |
+| `errorThresh` | 0.00093 |
+| `activation` | sigmoid |
+| Self-play games/cycle | 50 |
+| Eval games/cycle | 50 |
+| Claim reward | +0.3/claim |
+| Cluster reward | +0.1/triangle |
+| Win/loss reward | +1.0/-1.0 |
+
+**Results (4 complete cycles before timeout):**
+
+| Cycle | Training Error | AI Win Rate vs Random | AI Wins | Random Wins | Draws | Avg Moves | Duration |
+|-------|---------------|----------------------|---------|-------------|-------|-----------|----------|
+| Baseline | — | 51% | 51 | 49 | 0 | 165.9 | — |
+| 1 | 0.000930 | 50.0% | 25 | 25 | 0 | 167.9 | 701s |
+| 2 | 0.008396 | 56.0% | 28 | 19 | 3 | 166.7 | 745s |
+| 3 | 0.014364 | 50.0% | 25 | 24 | 1 | 166.6 | 737s |
+| 4 | 0.016922 | 34.0% | 17 | 31 | 2 | 168.2 | 729s |
+
+**Training Error Progression:**
+```
+Cycle 1: 0.0009 → Cycle 2: 0.0084 → Cycle 3: 0.0144 → Cycle 4: 0.0169
+```
+Error is *increasing* across cycles, not decreasing.
+
+#### Analysis
+
+**1. The "Unlearning" Pattern**
+
+The pre-trained network had extremely low training error (0.0009) in cycle 1 because it had memorized its original (poor) self-play data. The weights encoded a near-random policy that the sigmoid activations could fit tightly. As new self-play data introduces genuine strategic signal, the optimizer must **destroy old memorized patterns** before it can build new ones. This is the "creative destruction" phase — training error rises while actual policy quality oscillates.
+
+**2. Why Win Rate Declined After Cycle 2**
+
+Cycle 2's 56% win rate was likely a statistical fluctuation (only 50 games, ±14% at 95% CI). The decline to 34% in cycle 4 is more concerning and suggests the network is actively *getting worse*. Probable causes:
+
+- **Catastrophic forgetting**: Brain.js trains on the entire accumulated dataset each cycle, but new samples may overwhelm the signal from earlier cycles. Without experience replay prioritization, the network chases the latest self-play distribution.
+- **Reward signal noise**: With only 50 games/cycle, the final-outcome reward is extremely noisy. A coin-flip game outcome provides almost no signal about which individual moves were good or bad. The immediate reward (cluster size, claims) is more reliable but only teaches short-term tactics.
+- **Self-play distribution collapse**: After training on its own games, the AI plays differently → generates different training data → overfits to that specific style → loses generalization vs random.
+
+**3. Architecture Limitations**
+
+The 401→200→400 architecture has fundamental issues for this task:
+
+- **No spatial awareness**: The flat input vector loses the 2D grid structure. A triangle at (0,0) and (9,9) are treated the same way by the fully-connected hidden layer. The network must *learn* adjacency from scratch, which is extremely sample-inefficient.
+- **4× over-parameterized output**: 400 outputs (10×10×4) means most outputs are always invalid (cell full). The network wastes capacity predicting scores for impossible moves.
+- **Single hidden layer**: Complex spatial strategies (enclosures, multi-turn sequences) likely require hierarchical representations that a single hidden layer cannot capture.
+
+#### Hypotheses
+
+| # | Hypothesis | Likelihood | Evidence |
+|---|-----------|------------|----------|
+| H1 | More training cycles would eventually improve win rate | Medium | Error still rising = network still changing. Need to see plateau. |
+| H2 | Architecture is fundamentally limited for this game | High | No spatial bias, over-parameterized output, single hidden layer. |
+| H3 | Reward shaping is too noisy with small sample sizes | High | 50 games × 166 moves = 8K samples with noisy final-outcome labels. |
+| H4 | Learning rate is too high for stable convergence | Medium | 0.1 is aggressive; weight oscillation could explain win-rate volatility. |
+| H5 | Pre-trained weights are harmful (better from scratch) | Medium | Low initial error suggests memorization; unlearning is expensive. |
+
+#### Recommended Next Experiments
+
+| Priority | Experiment | Expected Insight |
+|----------|-----------|-----------------|
+| 1 | **Train from scratch** (random init) | Tests H5. Removes unlearning cost. |
+| 2 | **Lower learning rate** (0.01) | Tests H4. More stable convergence. |
+| 3 | **More games/cycle** (200) | Tests H3. Reduces reward noise. |
+| 4 | **Convolutional architecture** | Tests H2. Add spatial bias. (Requires TensorFlow.js) |
+| 5 | **Experience replay buffer** with prioritization | Addresses catastrophic forgetting. |
+| 6 | **Mask invalid outputs** (set score to 0 for occupied cells) | Reduces wasted capacity. |
+
+---
+
 ## Performance Metrics
 
 ### What to Measure
@@ -332,6 +415,20 @@ During self-play, the AI balances exploitation and exploration:
 3. **Linear discounting**: Early moves get small fractions of the final reward. Alternative: exponential discounting (γ^t) or no discounting.
 
 4. **Network size grows with difficulty**: Hard mode has 2 hidden layers, suggesting the problem benefits from deeper representations.
+
+### 2026-10-18: Training Results & Architecture Analysis
+
+5. **Rising training error ≠ worsening policy**: During the "unlearning" phase, training error increases as the optimizer destroys memorized patterns from previous (poor) self-play. This is expected but makes it hard to gauge progress.
+
+6. **Win rate is the only reliable metric**: Training error in RL is deceptive. A low error just means the network fits its training data, not that the data represents good play. Always evaluate against a fixed opponent.
+
+7. **Small evaluation sets are misleading**: 50 games at ~50% win rate has a 95% CI of ±14%. The apparent 56%→34% decline could partly be noise. Use 200+ games for evaluation.
+
+8. **brain.js is CPU-bound in Node.js**: Training 8K samples × 300 iterations takes ~12 min/cycle on M2 Ultra. This is feasible but slow for extensive hyperparameter search. A Web Worker or child_process pool would help.
+
+9. **Pre-trained weights can be harmful**: The existing network had memorized near-random play with very low error. Starting from scratch may converge faster than unlearning bad habits.
+
+10. **Spatial structure matters**: A flat 401-element input vector removes the 2D grid topology that's essential for understanding adjacency, enclosure, and cluster growth. This is the single biggest architectural limitation.
 
 ---
 
