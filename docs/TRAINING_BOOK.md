@@ -755,6 +755,53 @@ This single bug could explain **all** training failures:
 
 ---
 
+## Re-evaluation of Previous Experiments — 2026-10-18
+
+### What We Can Still Trust
+
+| Finding | Validity | Reason |
+|---------|----------|--------|
+| Pre-trained network is ~50% vs random | ✅ Valid | Evaluation games had 20% exploration, so measured correctly |
+| Lower LR (0.01) eliminated wild oscillations | ✅ Valid | Exp 4 was smoother than Exp 2/3 — stabilization effect is real |
+| Training error dropping doesn't predict win rate | ✅ Valid | Low error with no performance gain holds across all experiments |
+
+### What's Now Questionable
+
+| Finding | Status | Reason |
+|---------|--------|--------|
+| "Architecture cannot learn this game" | ❓ Inconclusive | Never tested with proper exploration — network may have been capable but starved of diverse data |
+| "Reward signal too sparse" | ❓ Inconclusive | No-discounting fix (Exp 5) showed brief 55.5% spike but couldn't capitalize due to exploration bug |
+| "Discounting kills early-move signal" | ❓ Untested | Fix applied simultaneously with exploration fix — effects confounded |
+
+### The Confounding Problem
+
+Experiments made overlapping changes without isolation:
+
+```
+Exp 1-3: Discounting ON,  Exploration OFF → 50% win rate
+Exp 4:   Discounting ON,  Exploration OFF, Lower LR → 50% win rate
+Exp 5:   Discounting OFF, Exploration OFF → 50% win rate (brief 55% spike)
+Exp 6:   Discounting OFF, Exploration ON → ? (running now)
+```
+
+We cannot isolate:
+- Whether no-discounting helps (confounded with exploration)
+- Whether exploration alone would have fixed Exp 1-3
+- Whether architecture is truly the bottleneck
+
+### Decision: Don't Go Back
+
+**Rationale:** The exploration bug is so fundamental that re-testing old configs would be academic waste.
+
+**Correct path forward:**
+1. Let Exp 6 complete — tests "both fixes" vs baseline
+2. If Exp 6 succeeds (60%+ win rate): Problem solved, move on
+3. If Exp 6 fails (50-55%): THEN architecture is likely the bottleneck
+
+**Most likely outcome:** Exp 6 will show significant improvement, revealing that the exploration bug was the primary cause of all failures. Lower LR and no-discounting were secondary optimizations.
+
+---
+
 ### Experiment 5: Training with Fixed Reward Signal (No Discounting)
 
 **Date:** 2026-10-18
