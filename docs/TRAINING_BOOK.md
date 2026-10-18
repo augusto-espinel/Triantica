@@ -244,6 +244,13 @@ During self-play, the AI balances exploitation and exploration:
 
 ## Experiment Log
 
+> ⚠️ **READING ORDER MATTERS:** This section was written chronologically as we discovered things. Many early assertions turned out to be WRONG. Key timeline:
+> - **Experiments 2-5:** Written before discovering zero-exploration bug. Conclusions are outdated.
+> - **"Critical Bug" section:** Discovered 2026-10-18 ~22:22 — this is the ACTUAL root cause.
+> - **"Re-evaluation" section:** Written after bug discovery — this updates earlier conclusions.
+> 
+> For accurate analysis, skip to the "Critical Bug" and "Re-evaluation" sections. Read earlier sections as "what we thought at the time" — they show how debugging works in practice.
+
 ### Baseline (Pre-2026-10-18)
 
 **Network:** Pre-trained (~5MB JSON file)  
@@ -334,7 +341,9 @@ Cycle 1: 0.0009 → Cycle 2: 0.0084 → Cycle 3: 0.0144 → Cycle 4: 0.0169
 ```
 Error is *increasing* across cycles, not decreasing.
 
-#### Analysis
+#### Analysis — ⚠️ OUTDATED (Critical Bug Unknown at Time)
+
+> **NOTE:** This analysis was written before discovering the zero-exploration bug. While the observations are correct, the root cause analysis is wrong. The "unlearning" pattern and distribution drift are SECONDARY effects — the PRIMARY cause was lack of exploration.
 
 **1. The "Unlearning" Pattern**
 
@@ -356,15 +365,19 @@ The 401→200→400 architecture has fundamental issues for this task:
 - **4× over-parameterized output**: 400 outputs (10×10×4) means most outputs are always invalid (cell full). The network wastes capacity predicting scores for impossible moves.
 - **Single hidden layer**: Complex spatial strategies (enclosures, multi-turn sequences) likely require hierarchical representations that a single hidden layer cannot capture.
 
-#### Hypotheses
+#### Hypotheses — ⚠️ MOSTLY INVALIDATED
 
-| # | Hypothesis | Likelihood | Evidence |
-|---|-----------|------------|----------|
-| H1 | More training cycles would eventually improve win rate | Medium | Error still rising = network still changing. Need to see plateau. |
-| H2 | Architecture is fundamentally limited for this game | High | No spatial bias, over-parameterized output, single hidden layer. |
-| H3 | Reward shaping is too noisy with small sample sizes | High | 50 games × 166 moves = 8K samples with noisy final-outcome labels. |
-| H4 | Learning rate is too high for stable convergence | Medium | 0.1 is aggressive; weight oscillation could explain win-rate volatility. |
-| H5 | Pre-trained weights are harmful (better from scratch) | Medium | Low initial error suggests memorization; unlearning is expensive. |
+> **UPDATE:** These hypotheses were tested by later experiments, but ALL missed the actual root cause. The real problem was simpler: **zero exploration during self-play**.
+
+| # | Hypothesis | Actual Status | Evidence |
+|---|-----------|---------------|----------|
+| H1 | More training cycles would eventually improve win rate | ❌ INVALIDATED | Exp 3b: 12 cycles, no trend |
+| H2 | Architecture is fundamentally limited | ❓ STILL UNTESTED | Need Exp 6 results first |
+| H3 | Reward shaping is too noisy with small samples | ❓ SECONDARY | Exploration bug was primary |
+| H4 | Learning rate is too high | ✅ CONFIRMED | Exp 4: lower LR stabilized output |
+| H5 | Pre-trained weights are harmful | ❌ INVALIDATED | Exp 4: same result from scratch |
+
+**Missing hypothesis (the actual problem):** H0 — Zero exploration during self-play training prevents any learning.
 
 ---
 
@@ -398,9 +411,13 @@ The pattern is now clear across **12 independent training cycles** with **1,200 
 
 ## Deep Analysis: Why Training Failed
 
-### The Core Problem: Credit Assignment Impossibility
+> ⚠️ **CRITICAL UPDATE 2026-10-18 22:22:** This entire analysis was written BEFORE discovering the zero-exploration bug. While the technical analysis is sound, it missed the actual root cause: **self-play training had 0% random exploration after move 1**. The network was never given a chance to discover new strategies. Read this section as "what we THOUGHT the problem was" — the real problem was far simpler.
 
-The fundamental issue is that **the reward signal provides almost no actionable learning signal**.
+### ~~The Core Problem: Credit Assignment Impossibility~~
+
+~~The fundamental issue is that **the reward signal provides almost no actionable learning signal**.~~
+
+**ACTUAL CORE PROBLEM:** Self-play training had **zero random exploration** after the first move of each game. The network could only reinforce its own predictions, trapped in a closed loop. All the credit assignment analysis below is technically correct but irrelevant — the network never had diverse training data.
 
 #### Game Structure Analysis
 
@@ -440,14 +457,23 @@ The 0.1 learning rate explains the **oscillation pattern:**
 
 This is classic **gradient descent overshoot** — the optimizer jumps over good minima repeatedly.
 
-#### Exploration Factor: 0.30 (Appropriate)
+#### Exploration Factor: 0.30 (Appropriate) — ⚠️ INCORRECT ASSERTION
 
-The exploration settings are reasonable:
-- **10% random moves** — prevents mode collapse, maintains diversity
-- **18% immediate-reward greedy** — provides structured exploration using tactical signal
-- **72% network exploitation** — trusts learned policy
+> **CORRECTION:** This analysis is **WRONG**. It confused `explorationFactor` (used during evaluation, where it was 0.20) with **actual exploration during self-play training**, which was **ZERO**. The code path for self-play (`runSelfPlayGame`) had no random exploration after move 1.
 
-This is not the problem. The network simply hasn't learned anything worth exploiting.
+~~The exploration settings are reasonable:~~
+- ~~**10% random moves** — prevents mode collapse, maintains diversity~~
+- ~~**18% immediate-reward greedy** — provides structured exploration using tactical signal~~
+- ~~**72% network exploitation** — trusts learned policy~~
+
+**Actual self-play exploration (broken):**
+- **0% random moves** after move 1 — network trapped in local optimum
+- **10% immediate-reward greedy** — structured but limited
+- **90% network exploitation** — reinforcing only what it already knows
+
+~~This is not the problem. The network simply hasn't learned anything worth exploiting.~~
+
+**This WAS the problem. Without exploration, the network could never discover new strategies.**
 
 #### Training Iterations: 300/cycle (Insufficient)
 
@@ -546,7 +572,19 @@ The 401→200→400 MLP has ~240,000 weights. Let's analyze what it's learning:
 
 **Problem:** 50% of outputs are always invalid. Network wastes capacity learning which cells to suppress.
 
-### Summary: Root Cause Hierarchy
+### Summary: Root Cause Hierarchy (OUTDATED — See Critical Bug Below)
+
+> ⚠️ **CORRECTION:** This hierarchy was created before discovering the zero-exploration bug. The actual root cause ranking should be:
+> 
+> | Rank | Root Cause | Evidence |
+> |------|-----------|----------|
+> | **1** | **Zero exploration during training** | Code inspection: ε = 0 after move 1 |
+> | 2 | Credit assignment difficulty | Still valid, but secondary |
+> | 3 | No spatial inductive bias | Still valid, but secondary |
+> | 4 | Learning rate too high | Fixed in Exp 4, didn't solve it |
+> | 5 | Sample inefficiency | Still valid, but secondary |
+>
+> **The original hierarchy below was WRONG because it missed the fundamental bug.**
 
 | Rank | Root Cause | Evidence | Fix Effort |
 |------|-----------|----------|------------|
@@ -624,6 +662,8 @@ Based on the analysis, here's a prioritized plan that addresses root causes:
 - Total evaluation games: **1,000**
 
 **Conclusion:** Experiment terminated after 5 cycles. No improvement trend detected. The lower learning rate eliminated the wild 34-58% oscillations from previous experiments, but the result is still a flat line at 50%. The network has converged to predicting random-like scores for all moves.
+
+> **UPDATE:** This conclusion was premature. The actual problem was **zero exploration during self-play**, not the architecture or hyperparameters. Exp 6 will test this hypothesis.
 
 ---
 
@@ -844,9 +884,15 @@ We cannot isolate:
 | Reward signal | ❌ Problematic | Sparse outcome, weak intermediate |
 | Self-play drift | ❌ Problematic | No experience replay |
 
-### Pivot Decision
+### ~~Pivot Decision~~ — PREMATURE (Critical Bug Discovered)
 
-**Stop training with current architecture.** After 17 cycles with zero improvement, further training has expected value of zero.
+~~**Stop training with current architecture.** After 17 cycles with zero improvement, further training has expected value of zero.~~
+
+> **CORRECTION:** This decision was made BEFORE discovering the zero-exploration bug. We should NOT have pivoted — we should have fixed the bug first.
+>
+> **Lesson learned:** Always verify basic training dynamics (exploration, learning rate, data diversity) before concluding architecture is the problem.
+
+**Current status:** Experiment 6 is now running with both fixes applied (no discounting + 10% exploration). Training should continue to completion before making any architecture decisions.
 
 **Next step: Reward Engineering (Phase 2)** — Add dense intermediate rewards that actually teach strategy. This requires modifying `AIPlayer.js` to compute:
 
@@ -889,7 +935,23 @@ This provides ~50 bits of dense signal per move instead of 1 bit per game.
 
 ## Lessons Learned
 
-### 2026-10-18: Initial Analysis
+### 2026-10-18: Critical Debugging Lesson
+
+> ⚠️ **THE MOST IMPORTANT LESSON:** When RL training fails, **CHECK EXPLORATION FIRST**. We spent 17 training cycles analyzing architecture, hyperparameters, and reward signals before discovering the simplest possible bug: **the network had no way to discover new strategies**.
+
+**What we did wrong:**
+1. Assumed exploration was working (it had a parameter!)
+2. Traced reward signals, architecture, hyperparameters
+3. Never traced the actual training loop
+
+**What we should have done:**
+1. Trace the training loop FIRST — verify exploration is happening
+2. Log exploration statistics (how many random moves per game?)
+3. Only then analyze architecture and hyperparameters
+
+**Rule of thumb:** In RL, if your network isn't learning, the most likely cause is **not enough exploration**. It's the RL equivalent of "is it plugged in?" — and we didn't check.
+
+### 2026-10-18: Initial Analysis (OUTDATED — See Above)
 
 1. **Reward shaping complexity**: The immediate reward calculation simulates every legal move, creating training labels that reflect immediate tactical value. This is computationally expensive but provides dense learning signal.
 
