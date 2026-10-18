@@ -341,10 +341,16 @@ export class AIPlayer extends PlayerInterface {
       // Choose move
       let move;
       if (this.isNetworkLoaded && movesCount > 0) {
-        if (Math.random() >= this.immediacyFactor) {
+        // Exploration during training: 10% random, 10% greedy, 80% network
+        const rand = Math.random();
+        if (rand < 0.10) {
+          // Random exploration — discover new moves
+          move = this._getRandomValidMove(gridManager);
+        } else if (rand < 0.20) {
+          // Greedy immediate reward — structured exploration
           move = this._predictMoveFromRewards(immediateRewardVector, gridManager);
         } else {
-          // Use network prediction (exploit)
+          // Network prediction — exploitation
           move = this._getBestNetworkMove(gridManager);
         }
       } else {

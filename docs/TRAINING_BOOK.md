@@ -688,6 +688,73 @@ const combinedReward = immediateReward + scaledFinalReward;
 
 ---
 
+### Critical Bug: Zero Random Exploration During Self-Play — 2026-10-18
+
+**Discovery:** While reviewing the heuristic rules, we discovered that **self-play training has NO random exploration** after the first move of each game.
+
+#### Code Analysis (BEFORE FIX)
+
+```javascript
+if (this.isNetworkLoaded && movesCount > 0) {
+  if (Math.random() >= this.immediacyFactor) {
+    move = this._predictMoveFromRewards(...);  // 10% greedy heuristic
+  } else {
+    move = this._getBestNetworkMove(...);      // 90% network
+  }
+} else {
+  move = this._getRandomValidMove(...);  // Only for first move!
+}
+```
+
+**With `immediacyFactor = 0.9`:**
+- 90% network moves
+- 10% greedy heuristic
+- **0% random moves** (after move 1)
+
+#### Why This Breaks RL
+
+1. **No discovery:** The network can only reinforce what it already knows
+2. **Local optimum trap:** It converges to "predict scores that match my greedy heuristic"
+3. **Self-reinforcing mediocrity:** If the network starts bad, it trains on bad games and stays bad
+
+Compare to successful RL:
+| System | Random Exploration |
+|--------|-------------------|
+| AlphaGo Zero | Dirichlet noise on MCTS policy |
+| Standard Q-learning | ε-greedy with ε ≈ 0.1-0.3 |
+| Our training (before fix) | **ε = 0** |
+
+#### Fix Applied
+
+```javascript
+// NEW: Add 10% random exploration
+const rand = Math.random();
+if (rand < 0.10) {
+  move = this._getRandomValidMove(gridManager);  // Random discovery
+} else if (rand < 0.20) {
+  move = this._predictMoveFromRewards(...);      // Greedy heuristic
+} else {
+  move = this._getBestNetworkMove(...);          // Network exploitation
+}
+```
+
+**New distribution:**
+- 10% random (discovery)
+- 10% greedy heuristic (structured exploration)
+- 80% network (exploitation)
+
+#### Why This Matters
+
+This single bug could explain **all** training failures:
+- Exp 2: No exploration → stuck in local optimum
+- Exp 3: No exploration → wild oscillations (sensitivity to initial weights)
+- Exp 4: No exploration → stable flatline at 50%
+- Exp 5: No exploration → same 50% plateau
+
+**This is the most important fix so far.**
+
+---
+
 ### Experiment 5: Training with Fixed Reward Signal (No Discounting)
 
 **Date:** 2026-10-18
