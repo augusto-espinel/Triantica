@@ -366,16 +366,249 @@ The 401→200→400 architecture has fundamental issues for this task:
 | H4 | Learning rate is too high for stable convergence | Medium | 0.1 is aggressive; weight oscillation could explain win-rate volatility. |
 | H5 | Pre-trained weights are harmful (better from scratch) | Medium | Low initial error suggests memorization; unlearning is expensive. |
 
-#### Recommended Next Experiments
+---
 
-| Priority | Experiment | Expected Insight |
-|----------|-----------|-----------------|
-| 1 | **Train from scratch** (random init) | Tests H5. Removes unlearning cost. |
-| 2 | **Lower learning rate** (0.01) | Tests H4. More stable convergence. |
-| 3 | **More games/cycle** (200) | Tests H3. Reduces reward noise. |
-| 4 | **Convolutional architecture** | Tests H2. Add spatial bias. (Requires TensorFlow.js) |
-| 5 | **Experience replay buffer** with prioritization | Addresses catastrophic forgetting. |
-| 6 | **Mask invalid outputs** (set score to 0 for occupied cells) | Reduces wasted capacity. |
+### Experiment 3b: Extended Training from Checkpoint (8 Complete Cycles)
+
+**Date:** 2026-10-18  
+**Goal:** Continue training from cycle-2 checkpoint to see if pattern stabilizes
+
+**Results:**
+
+| Cycle | Training Error | AI Win Rate | AI Wins | Random Wins | Draws | Avg Moves |
+|-------|---------------|-------------|---------|-------------|-------|-----------|
+| 1 | 0.001749 | 52.0% | 52 | 45 | 3 | 167.8 |
+| 2 | 0.008288 | 47.0% | 47 | 53 | 0 | 168.1 |
+| 3 | 0.015468 | 51.0% | 51 | 48 | 1 | 167.8 |
+| 4 | 0.018356 | 49.0% | 49 | 49 | 2 | 166.7 |
+| 5 | 0.022359 | **58.0%** | 58 | 40 | 2 | 167.1 |
+| 6 | 0.024062 | 46.0% | 46 | 48 | 6 | 166.8 |
+| 7 | 0.023938 | 49.0% | 49 | 50 | 1 | 165.7 |
+| 8 | 0.024181 | 49.0% | 49 | 49 | 2 | 167.2 |
+
+**Combined with Experiment 3 (12 cycles total):**
+
+The pattern is now clear across **12 independent training cycles** with **1,200 evaluation games**:
+
+- **Mean win rate: ~50%** (range 34%-58%)
+- **No upward trend line** — flat at coin-flip level
+- **Training error plateaued at ~0.024** — network stopped learning
+
+---
+
+## Deep Analysis: Why Training Failed
+
+### The Core Problem: Credit Assignment Impossibility
+
+The fundamental issue is that **the reward signal provides almost no actionable learning signal**.
+
+#### Game Structure Analysis
+
+| Property | Value | Implication |
+|----------|-------|------------|
+| Grid size | 10×10×4 = 200 triangles | Massive action space (200 valid positions initially) |
+| Game length | ~166 moves | 166-step credit assignment problem |
+| Outcome | Binary win/loss (+1/-1) | Single bit of information for 166 decisions |
+| Moves per game | ~166 | Each move responsible for ~0.6% of outcome signal |
+| Claims per game | ~20-40 (estimated) | Sparse intermediate rewards |
+
+**The math is brutal:** A binary game outcome (+1/-1) distributed linearly across 166 moves means each move's "responsibility" is worth **±0.006** on average. The immediate reward (+0.3 per claim, +0.1 per triangle) provides denser signal but only teaches **short-term tactics** (grab territory now), not **long-term strategy** (build toward enclosure).
+
+#### Information Theoretic Perspective
+
+If we treat the game as an information channel:
+- **Outcome entropy:** 1 bit (win/loss is ~50/50 at equal skill)
+- **Decision points:** 166 moves × log₂(valid_moves) ≈ 166 × 7 ≈ 1,162 bits
+- **Information ratio:** 1 bit outcome / 1,162 bits decisions = **0.0009**
+
+The network receives **0.09% of the information needed** to optimize each decision. The immediate reward helps, but it's fundamentally myopic — it optimizes for local cluster growth, not winning.
+
+### Hyperparameter Analysis
+
+#### Learning Rate: 0.1 (Too Aggressive)
+
+| Rate | Effect | Evidence |
+|------|--------|----------|
+| 0.1 (current) | Large weight updates, overshooting minima | Win rate oscillates wildly cycle-to-cycle |
+| 0.01 | Slower, more stable convergence | Standard for fine-tuning |
+| 0.001 | Very conservative, may be too slow | Good for late-stage training |
+
+The 0.1 learning rate explains the **oscillation pattern:**
+- Cycle 5: 58% (lucky weight configuration)
+- Cycle 6: 46% (overcorrected away from that configuration)
+- Cycle 7-8: 49% (oscillating around mean)
+
+This is classic **gradient descent overshoot** — the optimizer jumps over good minima repeatedly.
+
+#### Exploration Factor: 0.30 (Appropriate)
+
+The exploration settings are reasonable:
+- **10% random moves** — prevents mode collapse, maintains diversity
+- **18% immediate-reward greedy** — provides structured exploration using tactical signal
+- **72% network exploitation** — trusts learned policy
+
+This is not the problem. The network simply hasn't learned anything worth exploiting.
+
+#### Training Iterations: 300/cycle (Insufficient)
+
+| Iterations | Samples seen | Outcome |
+|-----------|--------------|----------|
+| 300 | ~8,300 | Error drops from 0.03 → 0.024, then plateaus |
+| 1000+ | ~27,000+ | Would reach lower error, but is it useful? |
+
+More iterations would lower training error, but **training error ≠ policy quality**. The network is fitting its self-play data well enough; the problem is that the self-play data doesn't encode winning strategy.
+
+#### Games per Cycle: 50 (Too Few)
+
+| Games | Samples | Outcome Noise |
+|-------|---------|---------------|
+| 50 | ~8,300 | High variance (±14% win rate CI) |
+| 200 | ~33,200 | Moderate variance (±7%) |
+| 500 | ~83,000 | Low variance (±4.5%) |
+
+50 games provides only **±14 percentage points** confidence in win rate. The observed 34%-58% range is entirely explainable by noise. We need 200+ games per cycle for reliable signal.
+
+### Reward Signal Composition Analysis
+
+The reward structure has three components:
+
+#### 1. Immediate Reward (Claimed from simulation)
+- **+0.3 per enclosure claim** — rewards territorial control
+- **+0.1 per triangle in cluster** — rewards connectivity
+- **Weight: immmediacyFactor = 0.90** (90% weight)
+
+**Problem:** This reward optimizes for **local greedy tactics**, not winning. The network learns "place triangles near existing cluster" but not "build toward enclosure" or "block opponent enclosure".
+
+**Evidence:** The immediate reward calculation simulates every legal move (~200 at start, ~50 mid-game) to find highest-value move. This is computationally expensive and only provides ~5-10 useful training signals per game (the moments when claims happen).
+
+#### 2. Final Outcome Reward
+- **+1.0 for win, -1.0 for loss, 0.0 for draw**
+- **Linearly discounted: move_t gets (t/total_moves) × outcome**
+
+**Problem:** With 166 moves, early moves get weight ~0.006. This is **below the noise floor** of neural network gradient updates.
+
+**Evidence:** The discounting means move 1 gets 0.006 × outcome, move 80 gets 0.5 × outcome, move 166 gets 1.0 × outcome. Only the last ~30 moves get meaningful signal (>0.2). The network learns endgame tactics but not opening/midgame strategy.
+
+#### 3. Invalid Move Penalty
+- **Score = 0 for invalid moves** (implicit in softmax)
+
+**Effect:** The network learns not to predict high scores for full cells. This works well — we don't see the AI attempting invalid moves.
+
+**Problem:** This is a **waste of 50% of network capacity**. Half the output neurons (200 of 400) are always invalid. The network must learn which cells are full by reading the input, then suppress those outputs — using capacity that could learn strategy.
+
+### Self-Play Distribution Drift
+
+Each training cycle, the AI trains on games it played against itself. This creates a **distribution drift problem:**
+
+1. Cycle 0: AI plays with random weights, generates garbage data
+2. Cycle 1: AI trains on garbage, plays slightly less randomly
+3. Cycle 2: AI trains on less-garbage, but distribution shifts
+4. ...
+5. Cycle N: AI overfits to its own play style, loses generalization
+
+**Evidence:** The "cycle 5 spike to 58%" followed by decline. The network briefly found a weight configuration that worked against random, then self-play training pushed it toward a different style that doesn't generalize.
+
+This is the **"alphaGo zero" problem without the solution:** AlphaGo Zero used:
+- 1,600+ simulations per move (we use 1)
+- Thousands of games per iteration (we use 50)
+- Residual CNN architecture (we use MLP)
+- 4,000,000 games total (we use ~1,000)
+
+We're trying to do RL with **0.025% of the sample efficiency**.
+
+### Architecture Bottleneck
+
+The 401→200→400 MLP has ~240,000 weights. Let's analyze what it's learning:
+
+#### Input Encoding (401 features)
+- 400 cell states (empty, player1, player2, in-progress)
+- 1 current player indicator
+
+**What the network must infer:**
+- Which cells are adjacent (grid topology)
+- Which triangles share corners (corner topology)
+- Who owns which clusters
+- Which clusters are adjacent
+- Enclosure threats
+- Claim opportunities
+
+**Problem:** The network must **learn spatial reasoning from scratch**. A convolutional network would have this built-in. The MLP must waste its first layer just figuring out that `(0,0)` and `(0,1)` are adjacent.
+
+#### Hidden Layer (200 neurons)
+- ReLU activations
+- Must learn all spatial patterns, cluster recognition, strategy
+
+**Problem:** Single layer cannot build hierarchical representations. Complex strategy ("if I claim here, opponent must respond there, opening up this") requires multi-step reasoning.
+
+#### Output Layer (400 scores)
+- Sigmoid activations (0-1 range)
+- One score per cell/rotation
+
+**Problem:** 50% of outputs are always invalid. Network wastes capacity learning which cells to suppress.
+
+### Summary: Root Cause Hierarchy
+
+| Rank | Root Cause | Evidence | Fix Effort |
+|------|-----------|----------|------------|
+| 1 | **Credit assignment impossible** | 1 bit outcome / 1162 bits decisions | Add dense shaping rewards |
+| 2 | **No spatial inductive bias** | MLP must learn topology from scratch | Switch to CNN (high effort) |
+| 3 | **Learning rate too high** | Win rate oscillates 34-58% | Lower to 0.01 |
+| 4 | **Sample inefficiency** | 1,000 games vs AlphaGo's 4M | Increase 10× (more time) |
+| 5 | **Wasted capacity on invalid moves** | 200/400 outputs always invalid | Mask outputs |
+| 6 | **Distribution drift** | Self-play without experience replay | Add replay buffer |
+| 7 | **Noisy evaluation** | 50 games ±14% CI | Use 200+ games |
+
+---
+
+## Revised Experiment Plan
+
+Based on the analysis, here's a prioritized plan that addresses root causes:
+
+### Phase 1: Quick Wins (No Architecture Change)
+
+| Exp | Change | Tests | Expected Outcome |
+|-----|--------|-------|------------------|
+| E1 | **Lower learning rate to 0.01** | H4 (LR too high) | More stable convergence |
+| E2 | **Train from scratch** | H5 (bad init) | Faster convergence |
+| E3 | **200 games/cycle, 200 eval games** | H3 (noise) | Reliable win rate signal |
+| E4 | **Higher iterations (1000)** | Training completeness | Lower error plateau |
+
+**Implementation:** Single combined experiment with all 4 changes.
+
+### Phase 2: Reward Engineering
+
+| Exp | Change | Expected Outcome |
+|-----|--------|------------------|
+| R1 | **No outcome discounting** (all moves get full outcome) | Amplifies sparse signal |
+| R2 | **Opponent cluster penalty** (-0.05 per opponent triangle) | Learns to block |
+| R3 | **Enclosure threat bonus** (+0.5 for completing 3/4 sides) | Learns enclosure strategy |
+
+### Phase 3: Architecture Changes
+
+| Exp | Change | Effort | Expected Outcome |
+|-----|--------|--------|------------------|
+| A1 | **Output masking** (zero invalid cells) | Low | Frees 50% capacity |
+| A2 | **2 hidden layers** (200→100→400) | Medium | Hierarchical features |
+| A3 | **CNN architecture** (TensorFlow.js) | High | Spatial inductive bias |
+
+---
+
+### Experiment 4: Train from Scratch with Better Hyperparameters
+
+**Goal:** Test H4 + H5 simultaneously (lower LR + fresh start)
+
+**Hyperparameters:**
+| Parameter | Value | Change |
+|-----------|-------|--------|
+| `learningRate` | 0.01 | ↓ from 0.1 |
+| `explorationFactor` | 0.20 | ↓ from 0.30 |
+| `iterations` | 500 | ↑ from 300 |
+| `games/cycle` | 100 | ↑ from 50 |
+| `eval games` | 200 | ↑ from 100 |
+| `startFrom` | null | Fresh random init |
+
+**Status:** Ready to run
+
 
 ---
 
