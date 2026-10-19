@@ -862,14 +862,18 @@ We cannot isolate:
 
 ### Experiments Summary
 
-| Experiment | Cycles | Win Rate | Outcome |
-|-----------|--------|----------|----------|
-| Pre-trained vs Random | — | 51% | Baseline: coin-flip |
-| Exp 2: From checkpoint | 8 | 46-58% | Oscillated, no trend |
-| Exp 3: From checkpoint (extended) | 4 | 34-50% | Wild oscillations |
-| Exp 4: From scratch (lower LR) | 5 | 45-52% | Stable but still 50% |
+| Experiment | Cycles | Self-Play Wins | vs Random | Outcome |
+|-----------|--------|----------------|-----------|----------|
+| Pre-trained vs Random | — | — | 51% | Baseline: coin-flip |
+| Exp 2: From checkpoint | 8 | — | 46-58% | Oscillated, no trend |
+| Exp 3: From checkpoint (extended) | 4 | — | 34-50% | Wild oscillations |
+| Exp 4: From scratch (lower LR) | 5 | — | 45-52% | Stable but still 50% |
+| Exp 5: Fixed reward signal | 4 | — | 48-55% | Brief spike |
+| **Exp 6: Exploration fix** | 10 | P1: 100% | 48.5-55.5% | **BUG: asymmetric self-play** |
 
-**Total:** 17 training cycles, ~2,500 evaluation games, **zero improvement**.
+**Total:** 30+ training cycles, 3,500+ evaluation games.
+
+**Critical Discovery (2026-10-19):** Exp 1-6 all had the self-play asymmetry bug where Player 2 followed Player 1's policy. The "no improvement" conclusion was premature.
 
 ### Why Current Approach Fails
 
@@ -905,6 +909,50 @@ This provides ~50 bits of dense signal per move instead of 1 bit per game.
 
 ---
 
+## Standard Experiment Format
+
+> **All experiments use this JSON structure:**
+
+```json
+{
+  "cycles": [{
+    "cycle": 1,
+    "selfPlay": {
+      "games": 100,
+      "wins": {"1": 4, "2": 6, "draws": 0},
+      "avgMoves": 165.2,
+      "samplesGenerated": 1653,
+      "durationMs": 2422
+    },
+    "training": {
+      "iterations": 500,
+      "learningRate": 0.01,
+      "samplesUsed": 842,
+      "initialError": 0.077,
+      "finalError": 0.0017,
+      "durationMs": 13238
+    },
+    "evaluation": {
+      "games": 200,
+      "opponent": "random",
+      "aiWins": 106,
+      "opponentWins": 89,
+      "draws": 5,
+      "aiWinRate": 0.53,
+      "avgMoves": 166.9,
+      "durationMs": 9793
+    }
+  }]
+}
+```
+
+**Key metrics to track:**
+- Self-play win distribution (should be ~50-50 in fair game)
+- Training error delta (initial → final, shows learning rate)
+- vs Random win rate (primary performance metric)
+
+---
+
 
 ---
 
@@ -934,6 +982,150 @@ This provides ~50 bits of dense signal per move instead of 1 bit per game.
 ---
 
 ## Lessons Learned
+
+### 2026-10-19: Self-Play Asymmetry Bug (CRITICAL)
+
+> ⚠️ **BUG DISCOVERY:** The network wasn't just playing against itself — **Player 2 was actively trying to lose**. The `currentIsSelf` variable was computed but never used, so BOTH players followed the same network predictions.
+
+**The problem:**
+```javascript
+const currentIsSelf = currentPlayerNum === this.playerNumber;  // Computed but NEVER USED
+
+// Both players use the network!
+if (this.isNetworkLoaded && movesCount > 0) {
+  move = this._getBestNetworkMove(gridManager);  // Player 2 follows this too!
+}
+```
+
+Since the network predicts "what move benefits Player 1", Player 2 was literally being told which moves would help Player 1 win — and following that advice!
+
+**Evidence:**
+- Self-play: Player 1 wins 100% of games (statistically impossible in a fair game)
+- vs Random: Only 50-55% win rate (because it learned to beat a cooperative opponent)
+
+**The fix:** Gate network usage with `currentIsSelf`:
+```javascript
+if (!currentIsSelf) {
+  move = this._getRandomValidMove(gridManager);  // Opponent plays random
+} else if (this.isNetworkLoaded && movesCount > 0) {
+  move = this._getBestNetworkMove(gridManager);  // Self uses network
+}
+```
+
+**Rule:** In self-play RL, ALWAYS verify both players are playing correctly. Check win rate symmetry.
+
+### 2026-10-19: Proper Self-Play Architecture
+
+The fix involves two changes to support proper self-play:
+
+**1. State representation must be currentPlayer-relative:**
+
+When Player 2 moves, they shouldn't see themselves as "opponent" and Player 1 as "self". The network would then predict moves that help Player 1!
+
+```javascript
+// Before (broken): Always relative to training player
+return p === this.playerNumber ? 1 : -1;
+
+// After (for 'network' mode): Relative to current player
+return p === currentPlayer ? 1 : -1;
+```
+
+**2. Immediate rewards must be computed from the mover's perspective:**
+
+The reward vector tells the network "how good is each move for ME". For self-play, "ME" should be whoever is currently moving.
+
+**Training modes:**
+
+| Mode | Self | Opponent | Training Data |
+|------|------|----------|---------------|
+| `random` | Network | Random | Self moves only |
+| `network` | Network | Network (shared policy) | Both players' moves |
+
+**Which is better?**
+
+- `random` is simpler and guarantees honest opposition
+- `network` is theoretically optimal (AlphaGo approach) but requires correct implementation
+
+Recommendation: Start with `random` for curriculum, switch to `network` once network beats random consistently.
+
+---
+
+## Experiment Results
+
+> **Standard Format for All Experiments:** Each experiment logs:
+> - Self-play win distribution (P1/P2/Draws)
+> - Training error progression (start → end of cycle)
+> - Evaluation opponent type and win rate
+
+### Experiment 6: Training with Exploration (BROKEN SELF-PLAY)
+
+**Date:** 2026-10-18 to 2026-10-19  
+**Status:** Completed but revealed critical bug  
+**Mode:** `random` (but bug affected both players)
+
+**Configuration:**
+```
+--cycles 10 --games 100 --eval-games 200
+--iterations 500 --learning-rate 0.01
+--exploration 0.20
+```
+
+**Results:**
+
+| Cycle | Self-Play (P1/P2/D) | vs Random | Train Error Start | Train Error End |
+|-------|---------------------|-----------|-------------------|-----------------|
+| 1 | 100/0/0 | 48.5% | 0.00267 | 0.00267 |
+| 2 | 100/0/0 | 55.5% | 0.00917 | 0.00917 |
+| 3 | 100/0/0 | 48.5% | 0.0120 | 0.0120 |
+| 4 | 100/0/0 | 52.0% | 0.0136 | 0.0136 |
+| 5 | 100/0/0 | 55.5% | 0.0163 | 0.0163 |
+| 6 | 100/0/0 | 51.5% | 0.0161 | 0.0161 |
+| 7 | 100/0/0 | 55.5% | 0.0199 | 0.0199 |
+| 8 | 100/0/0 | 52.0% | 0.0187 | 0.0187 |
+| 9 | 100/0/0 | 55.0% | 0.0174 | 0.0174 |
+| 10 | 100/0/0 | 51.0% | 0.0184 | 0.0184 |
+
+**Key Finding:** Player 1 wins 100% of self-play games — statistically impossible in a fair game.
+
+**Bug Confirmed:** Both players used the same network (predicting "good moves for Player 1"), so Player 2 was actively trying to lose.
+
+---
+
+### 2026-10-19: Proper Self-Play Architecture
+
+The fix involves two changes to support proper self-play:
+
+**1. State representation must be currentPlayer-relative:**
+
+When Player 2 moves, they shouldn't see themselves as "opponent" and Player 1 as "self". The network would then predict moves that help Player 1!
+
+```javascript
+// Before (broken): Always relative to training player
+return p === this.playerNumber ? 1 : -1;
+
+// After (for 'network' mode): Relative to current player
+return p === currentPlayer ? 1 : -1;
+```
+
+**2. Immediate rewards must be computed from the mover's perspective:**
+
+The reward vector tells the network "how good is each move for ME". For self-play, "ME" should be whoever is currently moving.
+
+**Training modes:**
+
+| Mode | Self | Opponent | Training Data |
+|------|------|----------|---------------|
+| `random` | Network | Random | Self moves only |
+| `network` | Network | Network (shared policy) | Both players' moves |
+
+**Which is better?**
+
+- `random` is simpler and guarantees honest opposition
+- `network` is theoretically optimal (AlphaGo approach) but requires correct implementation
+
+Recommendation: Start with `random` for curriculum, switch to `network` once network beats random consistently.
+
+---
 
 ### 2026-10-18: Critical Debugging Lesson
 
@@ -975,9 +1167,138 @@ This provides ~50 bits of dense signal per move instead of 1 bit per game.
 
 10. **Spatial structure matters**: A flat 401-element input vector removes the 2D grid topology that's essential for understanding adjacency, enclosure, and cluster growth. This is the single biggest architectural limitation.
 
+11. **Random self-play produces constant reward signal (CRITICAL)**: In `random` mode, P1 wins ~100% of games vs random P2. This means the reward signal is always +1 for P1 — the network cannot distinguish good moves from bad moves because every move is followed by a win. This is equivalent to trying to learn chess by only playing opponents who resign on move 1. **Random mode is fundamentally broken for RL training.**
+
+12. **Self-play win rate is a misleading metric in random mode**: A 100% self-play win rate in `random` mode does NOT mean the AI is playing well. It means the opponent is trivially weak. Always validate against a separate evaluation opponent.
+
+13. **Catastrophic forgetting without experience replay**: Training on new self-play data each cycle without mixing in old data causes the network to completely forget previous learning. Initial error resets to ~0.09 each cycle regardless of training progress. An experience replay buffer is essential.
+
+14. **Training time scales linearly with sample count in brain.js**: No GPU acceleration, no batching, no parallelism. Each sample is processed sequentially. 24K samples takes 3× as long as 8K samples.
+
+15. **Network mode doubles training data**: In `random` mode, only P1's moves become training data (~8.7K). In `network` mode, both players use the network, so both players' moves have meaningful signals (~16.5K). This alone doubles the data.
+
+16. **Replay buffer further increases sample count**: A 50% replay ratio adds 8K old samples on top of 16K new ones, bringing total to ~24.6K. Combined with network mode, this is 2.8× the data of random mode.
+
+17. **Over-training risk**: 500 iterations × 24K samples = each sample seen 500 times. AlphaGo-style training typically does 1-3 passes over data, not 500. Consider reducing to 50-100 iterations. The network will fit training data faster but may not generalize — balance convergence speed vs overfitting.
+
+18. **Cycle time comparison (M2 Ultra)**:
+    - Random mode, no replay: ~43 min/cycle (8.7K × 500 iter)
+    - Network mode, 50% replay: ~128 min/cycle (24.6K × 500 iter)
+    - Network mode, 25% replay, 50 iter: ~30 min/cycle (estimated)
+    - Network mode, 25% replay, 100 iter: ~50 min/cycle (estimated)
+
+---
+
+## Experiment 7 Results (2026-10-19)
+
+**Config:** 10 cycles, 100 games/cycle, 200 eval games, `--self-play-mode random`, lr=0.01, exploration=0.2
+**Duration:** 7 hours 4 minutes
+
+### The Numbers
+
+| Cycle | Eval Win Rate | Train Error (init→final) |
+|-------|--------------|--------------------------|
+| 1 | 50.5% | 0.079 → 0.002 |
+| 2 | **56.0%** (peak) | 0.093 → 0.007 |
+| 3 | 50.5% | 0.092 → 0.010 |
+| 4 | 50.5% | 0.096 → 0.011 |
+| 5 | 53.0% | 0.094 → 0.013 |
+| 6 | 48.5% | 0.097 → 0.015 |
+| 7 | 48.5% | 0.096 → 0.016 |
+| 8 | 50.0% | 0.094 → 0.017 |
+| 9 | 53.0% | 0.094 → 0.019 |
+| 10 | 52.5% | 0.098 → 0.020 |
+
+### Diagnosis
+
+**Three fatal problems identified:**
+
+1. **Constant reward signal**: In `random` mode, P1 wins 100% of self-play games. Every move gets labeled as "good" (reward ≈ +1). The network has zero gradient to distinguish good from bad moves.
+
+2. **Catastrophic forgetting**: Initial error resets to ~0.09 every cycle. The network trains down to low error within a cycle, but the next cycle's data overwrites everything. No experience replay buffer.
+
+3. **Network plays randomly**: Verified by running the final v7 network with 0% exploration vs random — 51% win rate (statistical noise). The network learned nothing in 7 hours.
+
+### Verification
+
+- Random vs Random (500 games): P1=47.8%, P2=49.0% — **no first-mover advantage** in Triantica
+- v7 network (0% exploration) vs Random (200 games): 51% — **coin flip**
+- Self-play `random` mode: P1 wins 100% — but this is meaningless (opponent is trivially weak)
+- Self-play `network` mode: P1=40%, P2=60% — **balanced**, meaningful signal
+
+### Conclusion
+
+**`random` self-play mode is fundamentally broken for RL.** The opponent is too weak to produce informative win/loss signals. Must use `network` mode where both players compete.
+
+---
+
+## Potential Improvements
+
+### Opening Diversity (Phase 3)
+
+**Problem:** With 20% exploration, ~80% of games start from similar positions. Network may overfit to specific openings and be weak elsewhere.
+
+**Proposed fix:** Higher random rate for early moves:
+
+```javascript
+const openingMoves = 5;  // First N moves
+const openingExploration = 0.50; // 50% random for openings
+const normalExploration = 0.20;
+
+const explorationRate = movesCount < openingMoves 
+  ? openingExploration 
+  : normalExploration;
+```
+
+**Decision:** Implement for Experiment 8 alongside network mode.
+
+### Experience Replay Buffer (Phase 2 — NOW)
+
+**Problem:** Catastrophic forgetting — new training data overwrites old learning each cycle.
+
+**Proposed fix:** Maintain a replay buffer of past training samples:
+
+```javascript
+class ReplayBuffer {
+  constructor(maxSize = 50000) { this.buffer = []; this.maxSize = maxSize; }
+  add(samples) {
+    this.buffer.push(...samples);
+    if (this.buffer.length > this.maxSize) {
+      this.buffer = this.buffer.slice(-this.maxSize);
+    }
+  }
+  sample(n) {
+    // Mix 50% old + 50% new
+    const fromBuffer = Math.min(Math.floor(n/2), this.buffer.length);
+    const oldSamples = shuffle(this.buffer).slice(0, fromBuffer);
+    return oldSamples; // caller mixes with new samples
+  }
+}
+```
+
+**Decision:** Implement for Experiment 8.
+
 ---
 
 ## Future Experiments
+
+### Experiment 8 — In Progress (2026-10-19)
+
+**Config:** 10 cycles, 100 games/cycle, 200 eval games, `--self-play-mode network`, lr=0.01, exploration=0.3, replay-ratio=0.5, replay-size=50000
+**Log:** `experiments/logs/exp8.log`
+**ETA:** ~09:00 CET 2026-10-20
+
+**Key changes from Exp 7:**
+1. Network mode (competitive self-play with meaningful reward signal)
+2. Experience replay buffer (prevent catastrophic forgetting)
+3. Per-cycle log file for real-time monitoring
+
+**Cycle 1 result:** Self-play P1=32 P2=68 (competitive!), Eval 48.5%, ~128 min/cycle
+
+**Pending decision after Exp 8 results:**
+- Reduce iterations (500→50-100) to speed up future experiments
+- Reduce replay ratio (0.5→0.25) for faster cycles
+- Opening diversity (50% random for first 5 moves)
 
 ### Priority 1: Establish Baseline ✅
 

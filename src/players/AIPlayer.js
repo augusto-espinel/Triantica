@@ -63,6 +63,7 @@ export class AIPlayer extends PlayerInterface {
     this.difficulty = config.difficulty || 'medium';
     this.explorationFactor = config.explorationFactor ?? 0.2;
     this.immediacyFactor = config.immediacyFactor ?? 0.9;
+    this.selfPlayMode = config.selfPlayMode || 'random'; // 'random' | 'network'
     this.isNetworkLoaded = false;
     this.trainingData = [];
     this._networkJSON = config.networkJSON || null;
@@ -193,6 +194,7 @@ export class AIPlayer extends PlayerInterface {
   /**
    * Build state representation from GridManager
    * Same format as original AIPlayer._getStateRepresentation
+   * Note: For self-play mode='network', use _getStateRelativeToCurrentPlayer instead.
    */
   _getStateRepresentation(gridManager) {
     const state = [];
@@ -221,13 +223,50 @@ export class AIPlayer extends PlayerInterface {
     return state;
   }
 
+  /**
+   * Build state representation relative to current player.
+   * Used for 'network' self-play mode where both players share the same policy.
+   * Current player's triangles → +1, opponent's → -1.
+   */
+  _getStateRelativeToCurrentPlayer(gridManager) {
+    const state = [];
+    const currentPlayer = gridManager.currentPlayer;
+    for (let y = 0; y < gridManager.rows; y++) {
+      for (let x = 0; x < gridManager.cols; x++) {
+        const cell = gridManager.grid[y][x];
+        const t1 = cell.triangles[0];
+        const t2 = cell.triangles[1];
+
+        const normalizePlayer = (p) => {
+          if (!p) return 0;
+          return p === currentPlayer ? 1 : -1;
+        };
+
+        const normalizeRotation = (r) => {
+          return r === undefined || r === -1 ? -1 : r / 4.0;
+        };
+
+        state.push(normalizePlayer(t1?.player));
+        state.push(normalizeRotation(t1?.rotation ?? -1));
+        state.push(normalizePlayer(t2?.player));
+        state.push(normalizeRotation(t2?.rotation ?? -1));
+      }
+    }
+    // Current player is always self in this representation
+    state.push(1);
+    return state;
+  }
+
   // === Training Methods ===
 
   /**
    * Calculate immediate reward vector for all possible moves
    * Uses GridManager.clone() for safe simulation
+   * @param {GridManager} gridManager - The game state
+   * @param {number} [forPlayer] - Player to compute rewards for (defaults to this.playerNumber)
    */
-  calculateImmediateRewardVector(gridManager) {
+  calculateImmediateRewardVector(gridManager, forPlayer = null) {
+    const player = forPlayer ?? this.playerNumber;
     const { rows, cols } = gridManager;
     const outputVector = new Array(rows * cols * 4).fill(0.01);
 
@@ -248,12 +287,12 @@ export class AIPlayer extends PlayerInterface {
 
           // Simulate on a clone
           const tempManager = gridManager.clone();
-          tempManager.currentPlayer = this.playerNumber;
+          tempManager.currentPlayer = player;
           
-          const simSuccess = tempManager.placeTriangle(x, y, rotation, this.playerNumber);
+          const simSuccess = tempManager.placeTriangle(x, y, rotation, player);
 
           if (simSuccess) {
-            const simClaimed = tempManager.claimEnclosedTriangles(this.playerNumber);
+            const simClaimed = tempManager.claimEnclosedTriangles(player);
             const simClusterSize = tempManager.getConnectedClusterSize(x, y, rotation);
 
             const hypoClaimReward = simClaimed * claimRewardFactor;
@@ -300,9 +339,23 @@ export class AIPlayer extends PlayerInterface {
 
   /**
    * Train the network on accumulated training data
+   * @returns {{error: number, iterations: number, initialError: number} | null}
    */
   trainNetwork(iterations = 500, learningRate = 0.1) {
     if (!this.network || this.trainingData.length === 0) return null;
+
+    // Compute initial error (forward pass only, no training)
+    let initialError = 0;
+    for (const sample of this.trainingData) {
+      const output = this.network.run(sample.input);
+      let sampleError = 0;
+      for (let i = 0; i < output.length; i++) {
+        const delta = output[i] - sample.output[i];
+        sampleError += delta * delta;
+      }
+      initialError += sampleError / output.length;
+    }
+    initialError /= this.trainingData.length;
 
     const result = this.network.train(this.trainingData, {
       iterations,
@@ -316,7 +369,11 @@ export class AIPlayer extends PlayerInterface {
       this.isNetworkLoaded = true;
     }
 
-    return result;
+    // Return both initial and final error
+    return {
+      ...result,
+      initialError,
+    };
   }
 
   /**
@@ -332,16 +389,27 @@ export class AIPlayer extends PlayerInterface {
 
     while (!gridManager.isGridFull() && movesCount < maxMoves) {
       const currentIsSelf = currentPlayerNum === this.playerNumber;
-      const state = this._getStateRepresentation(gridManager);
+      // For 'network' self-play, state is always relative to current player
+      // Set current player BEFORE computing state (so state representation sees correct player)
       gridManager.currentPlayer = currentPlayerNum;
+      
+      const state = this.selfPlayMode === 'network'
+        ? this._getStateRelativeToCurrentPlayer(gridManager)
+        : this._getStateRepresentation(gridManager);
 
-      // Calculate immediate rewards
-      const immediateRewardVector = this.calculateImmediateRewardVector(gridManager);
+      // Calculate immediate rewards from current player's perspective for 'network' mode
+      const immediateRewardVector = this.selfPlayMode === 'network'
+        ? this.calculateImmediateRewardVector(gridManager, currentPlayerNum)
+        : this.calculateImmediateRewardVector(gridManager);
 
-      // Choose move
+      // Choose move based on self-play mode
       let move;
-      if (this.isNetworkLoaded && movesCount > 0) {
-        // Exploration during training: 10% random, 10% greedy, 80% network
+      if (!currentIsSelf && this.selfPlayMode === 'random') {
+        // Mode: random opponent — opponent plays randomly (no network influence)
+        move = this._getRandomValidMove(gridManager);
+      } else if (this.isNetworkLoaded && movesCount > 0) {
+        // Both self and network-mode opponent use the same policy
+        // Network is conditioned on currentPlayer via input, so it predicts good moves for whoever is moving
         const rand = Math.random();
         if (rand < 0.10) {
           // Random exploration — discover new moves
@@ -397,8 +465,6 @@ export class AIPlayer extends PlayerInterface {
     }
 
     // Process trajectory backwards for training data
-    const finalRewardValue = winner === this.playerNumber ? 1.0
-      : (winner === 0 ? 0.0 : -1.0);
     const finalRewardWeight = 1.0;
     const totalMoves = gameHistory.length;
 
@@ -408,17 +474,28 @@ export class AIPlayer extends PlayerInterface {
     const maxCombinedReward = maxImmediateReward + (1.0 * finalRewardWeight);
     const combinedRewardRange = maxCombinedReward - minCombinedReward;
 
+    // For 'network' mode, train on both players' moves with proper reward perspective
     for (let t = totalMoves - 1; t >= 0; t--) {
       const step = gameHistory[t];
-      if (step.player !== this.playerNumber) continue; // Only train on own moves
+      
+      // Skip opponent moves only in 'random' mode
+      if (this.selfPlayMode === 'random' && step.player !== this.playerNumber) continue;
+
+      // Determine reward from this move's player's perspective
+      let rewardForPlayer;
+      if (this.selfPlayMode === 'network') {
+        // In network mode, reward is from the moving player's perspective
+        rewardForPlayer = winner === step.player ? 1.0
+          : (winner === 0 ? 0.0 : -1.0);
+      } else {
+        // In random mode, reward is always from self's perspective
+        rewardForPlayer = winner === this.playerNumber ? 1.0
+          : (winner === 0 ? 0.0 : -1.0);
+      }
 
       const finalOutputVector = [...step.immediateRewardVector];
-      // FIX: Remove linear discounting — all moves get full outcome signal
-      // Previously: const discountFactor = (t + 1) / totalMoves;
-      // This gave early moves ~0.006 weight, below gradient noise floor.
-      // New approach: All moves receive equal outcome contribution.
       const discountFactor = 1.0;
-      const scaledFinalReward = finalRewardValue * discountFactor * finalRewardWeight;
+      const scaledFinalReward = rewardForPlayer * discountFactor * finalRewardWeight;
 
       const immediateReward = step.immediateRewardVector[step.actualMoveIndex];
       const combinedReward = immediateReward + scaledFinalReward;
@@ -531,6 +608,13 @@ export class AIPlayer extends PlayerInterface {
 
   getTrainingData() {
     return this.trainingData;
+  }
+
+  /**
+   * Replace training data (used by experience replay buffer).
+   */
+  setTrainingData(data) {
+    this.trainingData = data;
   }
 
   reset() {

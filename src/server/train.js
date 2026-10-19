@@ -15,9 +15,11 @@
  *   --iterations N     Training iterations per cycle (default: 200)
  *   --learning-rate F  Learning rate (default: 0.1)
  *   --exploration F    Exploration factor (default: 0.3)
+ *   --self-play-mode M  Self-play mode: 'random' or 'network' (default: random)
  *   --start-from FILE  Load pre-trained network (default: trainedAI_network.json)
  *   --output FILE      Save trained network (default: trainedAI_network_v2.json)
  *   --save-every N     Save checkpoint every N cycles (default: 5)
+ *   --log FILE         Log progress to file (default: experiments/logs/training-TIMESTAMP.log)
  */
 
 import { GridManager } from '../core/GridManager.js';
@@ -25,6 +27,7 @@ import { GameSession } from '../core/GameSession.js';
 import { RandomPlayer } from '../players/RandomPlayer.js';
 import { AIPlayer } from '../players/AIPlayer.js';
 import { GameLogger } from '../data/GameLogger.js';
+import { ReplayBuffer } from '../data/ReplayBuffer.js';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -42,9 +45,13 @@ function parseArgs() {
     iterations: 200,
     learningRate: 0.1,
     exploration: 0.3,
+    selfPlayMode: 'random',
     startFrom: 'trainedAI_network.json',
     output: 'trainedAI_network_v2.json',
     saveEvery: 5,
+    log: null,
+    replayRatio: 0.5, // fraction of training data from replay buffer
+    replaySize: 50000, // max replay buffer size
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -52,10 +59,12 @@ function parseArgs() {
     if (arg.startsWith('--')) {
       const key = arg.slice(2).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
       const val = args[++i];
-      if (key === 'learningRate' || key === 'exploration') {
+      if (key === 'learningRate' || key === 'exploration' || key === 'replayRatio') {
         opts[key] = parseFloat(val);
-      } else if (key === 'startFrom' || key === 'output') {
+      } else if (key === 'startFrom' || key === 'output' || key === 'selfPlayMode' || key === 'log') {
         opts[key] = val;
+      } else if (key === 'replaySize') {
+        opts[key] = parseInt(val, 10);
       } else {
         opts[key] = parseInt(val, 10);
       }
@@ -76,9 +85,28 @@ async function main() {
   console.log(`  Train iters:    ${opts.iterations}`);
   console.log(`  Learning rate:  ${opts.learningRate}`);
   console.log(`  Exploration:    ${opts.exploration}`);
+  console.log(`  Self-play mode: ${opts.selfPlayMode}`);
+  console.log(`  Replay ratio:   ${opts.replayRatio}`);
+  console.log(`  Replay buffer:   ${opts.replaySize}`);
   console.log(`  Start from:     ${opts.startFrom}`);
   console.log(`  Output:         ${opts.output}`);
   console.log('='.repeat(50) + '\n');
+
+  // Set up log file
+  const logsDir = join(projectRoot, 'experiments', 'logs');
+  mkdirSync(logsDir, { recursive: true });
+  const logPath = opts.log || join(logsDir, `training-${Date.now()}.log`);
+  
+  const logStream = {
+    write: (msg) => {
+      writeFileSync(logPath, msg, { flag: 'a' });
+      console.log(msg.trim());
+    }
+  };
+  
+  logStream.write(`\n🏋️  Triantica AI Training Pipeline\n`);
+  logStream.write(`Started: ${new Date().toISOString()}\n`);
+  logStream.write(`Log: ${logPath}\n\n`);
 
   // Load or create AI player
   let networkJSON = null;
@@ -96,6 +124,7 @@ async function main() {
   const aiPlayer = new AIPlayer(1, {
     difficulty: 'medium',
     explorationFactor: opts.exploration,
+    selfPlayMode: opts.selfPlayMode,
     networkJSON,
   });
 
@@ -105,21 +134,36 @@ async function main() {
   // Training log
   const trainingLog = {
     startedAt: new Date().toISOString(),
-    options: opts,
+    options: {
+      cycles: opts.cycles,
+      games: opts.games,
+      evalGames: opts.evalGames,
+      iterations: opts.iterations,
+      learningRate: opts.learningRate,
+      exploration: opts.exploration,
+      selfPlayMode: opts.selfPlayMode,
+      startFrom: opts.startFrom,
+      output: opts.output,
+      saveEvery: opts.saveEvery,
+    },
     cycles: [],
   };
 
   const dataDir = join(projectRoot, 'experiments', 'data');
   mkdirSync(dataDir, { recursive: true });
 
+  // Experience replay buffer
+  const replayBuffer = new ReplayBuffer(opts.replaySize);
+  logStream.write(`  🗃️  Replay buffer: maxSize=${opts.replaySize}, replayRatio=${opts.replayRatio}`);
+
   // Run training cycles
   for (let cycle = 1; cycle <= opts.cycles; cycle++) {
     const cycleStart = Date.now();
-    console.log(`\n🔄 Cycle ${cycle}/${opts.cycles}`);
-    console.log('-'.repeat(40));
+    logStream.write(`\n🔄 Cycle ${cycle}/${opts.cycles}`);
+    logStream.write('-'.repeat(40));
 
     // Phase 1: Self-play games to generate training data
-    console.log(`  🎮 Running ${opts.games} self-play games...`);
+    logStream.write(`  🎮 Running ${opts.games} self-play games...`);
     const selfPlayStart = Date.now();
     
     aiPlayer.reset();
@@ -139,30 +183,47 @@ async function main() {
       samplesGenerated += result.trainingSamplesAdded;
 
       if ((g + 1) % 10 === 0) {
-        process.stdout.write(`    ${g + 1}/${opts.games} games done\r`);
+        logStream.write(`    ${g + 1}/${opts.games} games done`);
       }
     }
 
     const selfPlayDuration = Date.now() - selfPlayStart;
-    console.log(`  ✅ Self-play complete: ${opts.games} games, ${samplesGenerated} samples, ${selfPlayDuration}ms`);
+    logStream.write(`  ✅ Self-play complete: ${opts.games} games, ${samplesGenerated} samples, ${selfPlayDuration}ms`);
 
-    // Phase 2: Train network
-    console.log(`  📚 Training network (${opts.iterations} iterations, lr=${opts.learningRate})...`);
+    // Phase 2: Train network with experience replay
+    const newTrainingData = aiPlayer.getTrainingData();
+    
+    // Add new samples to replay buffer
+    replayBuffer.add(newTrainingData);
+    
+    // Mix new data with replay buffer samples
+    let trainingData;
+    const replaySamples = replayBuffer.sample(Math.floor(newTrainingData.length * opts.replayRatio));
+    trainingData = [...replaySamples, ...newTrainingData];
+    // Shuffle to mix old and new
+    for (let i = trainingData.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [trainingData[i], trainingData[j]] = [trainingData[j], trainingData[i]];
+    }
+    
+    logStream.write(`  📚 Training network (${opts.iterations} iterations, lr=${opts.learningRate}, ${trainingData.length} samples [${replaySamples.length} replay + ${newTrainingData.length} new])...`);
     const trainStart = Date.now();
     
-    const trainingData = aiPlayer.getTrainingData();
+    // Set the mixed training data and train
+    aiPlayer.setTrainingData(trainingData);
     const trainResult = aiPlayer.trainNetwork(opts.iterations, opts.learningRate);
     
     const trainDuration = Date.now() - trainStart;
     
     if (trainResult) {
-      console.log(`  ✅ Training complete: error=${trainResult.error?.toFixed(6) ?? 'N/A'}, ${trainDuration}ms`);
+      const errorDelta = trainResult.initialError - trainResult.error;
+      logStream.write(`  ✅ Training complete: error=${trainResult.error?.toFixed(6) ?? 'N/A'} (was ${trainResult.initialError?.toFixed(6) ?? 'N/A'}, Δ=${errorDelta?.toFixed(6) ?? 'N/A'}), ${trainDuration}ms`);
     } else {
-      console.log(`  ⚠️  No training data available`);
+      logStream.write(`  ⚠️  No training data available`);
     }
 
     // Phase 3: Evaluate vs Random
-    console.log(`  📊 Evaluating vs Random (${opts.evalGames} games)...`);
+    logStream.write(`  📊 Evaluating vs Random (${opts.evalGames} games)...`);
     const evalStart = Date.now();
     
     const evalAI = new AIPlayer(1, {
@@ -179,8 +240,8 @@ async function main() {
     const evalDuration = Date.now() - evalStart;
     const aiWinRate = evalResults.wins[1] / opts.evalGames;
     
-    console.log(`  📈 AI Win Rate: ${(aiWinRate * 100).toFixed(1)}% (${evalResults.wins[1]}W / ${evalResults.wins[2]}L / ${evalResults.wins.draws}D)`);
-    console.log(`     Avg moves: ${evalResults.avgMoves.toFixed(1)}, Duration: ${evalDuration}ms`);
+    logStream.write(`  📈 AI Win Rate: ${(aiWinRate * 100).toFixed(1)}% (${evalResults.wins[1]}W / ${evalResults.wins[2]}L / ${evalResults.wins.draws}D)`);
+    logStream.write(`     Avg moves: ${evalResults.avgMoves.toFixed(1)}, Duration: ${evalDuration}ms`);
 
     // Record cycle
     const cycleData = {
@@ -196,13 +257,18 @@ async function main() {
         iterations: opts.iterations,
         learningRate: opts.learningRate,
         samplesUsed: trainingData.length,
-        error: trainResult?.error ?? null,
+        replaySamplesUsed: replaySamples.length,
+        newSamplesUsed: newTrainingData.length,
+        replayBufferSize: replayBuffer.size,
+        initialError: trainResult?.initialError ?? null,
+        finalError: trainResult?.error ?? null,
         durationMs: trainDuration,
       },
       evaluation: {
         games: opts.evalGames,
+        opponent: 'random',
         aiWins: evalResults.wins[1],
-        randomWins: evalResults.wins[2],
+        opponentWins: evalResults.wins[2],
         draws: evalResults.wins.draws,
         aiWinRate,
         avgMoves: evalResults.avgMoves,
@@ -213,19 +279,23 @@ async function main() {
 
     trainingLog.cycles.push(cycleData);
 
+    // Per-cycle summary line for easy log monitoring
+    const cycleDuration = ((Date.now() - cycleStart) / 1000).toFixed(0);
+    logStream.write(`\n  📋 Cycle ${cycle} Summary | Self-play: P1=${selfPlayWins[1]} P2=${selfPlayWins[2]} D=${selfPlayWins.draws} | Train: ${trainResult?.initialError?.toFixed(6) ?? 'N/A'} → ${trainResult?.error?.toFixed(6) ?? 'N/A'} (${replaySamples.length} replay + ${newTrainingData.length} new) | Eval: ${(aiWinRate * 100).toFixed(1)}% | Buf: ${replayBuffer.size} | ${cycleDuration}s\n`);
+
     // Save checkpoint
     if (cycle % opts.saveEvery === 0 || cycle === opts.cycles) {
       const checkpointPath = join(dataDir, `checkpoint-cycle-${cycle}.json`);
       const networkData = aiPlayer.exportNetwork();
       if (networkData) {
         writeFileSync(checkpointPath, JSON.stringify(networkData, null, 2));
-        console.log(`  💾 Checkpoint saved: ${checkpointPath}`);
+        logStream.write(`  💾 Checkpoint saved: ${checkpointPath}`);
       }
     }
 
     // Early stopping if AI is doing well
     if (aiWinRate >= 0.80) {
-      console.log(`\n🎯 AI reached ${(aiWinRate * 100).toFixed(1)}% win rate — training target met!`);
+      logStream.write(`\n🎯 AI reached ${(aiWinRate * 100).toFixed(1)}% win rate — training target met!`);
       break;
     }
   }
@@ -235,32 +305,32 @@ async function main() {
   if (finalNetwork) {
     const outputPath = join(projectRoot, opts.output);
     writeFileSync(outputPath, JSON.stringify(finalNetwork));
-    console.log(`\n💾 Final network saved to ${opts.output}`);
+    logStream.write(`\n💾 Final network saved to ${opts.output}`);
   }
 
-  // Save training log
+  // Save training log JSON
   trainingLog.completedAt = new Date().toISOString();
-  const logPath = join(dataDir, `training-${Date.now()}.json`);
-  writeFileSync(logPath, JSON.stringify(trainingLog, null, 2));
-  console.log(`📋 Training log saved to ${logPath}`);
+  const metricsLogPath = join(dataDir, `training-${Date.now()}.json`);
+  writeFileSync(metricsLogPath, JSON.stringify(trainingLog, null, 2));
+  logStream.write(`📋 Training metrics saved to ${metricsLogPath}`);
 
   // Summary
-  console.log('\n' + '='.repeat(50));
-  console.log('📊 Training Summary');
-  console.log('='.repeat(50));
+  logStream.write('\n' + '='.repeat(50));
+  logStream.write('📊 Training Summary');
+  logStream.write('='.repeat(50));
   
   if (trainingLog.cycles.length > 1) {
     const first = trainingLog.cycles[0].evaluation.aiWinRate;
     const last = trainingLog.cycles[trainingLog.cycles.length - 1].evaluation.aiWinRate;
-    console.log(`  Starting win rate: ${(first * 100).toFixed(1)}%`);
-    console.log(`  Final win rate:    ${(last * 100).toFixed(1)}%`);
-    console.log(`  Improvement:      ${((last - first) * 100).toFixed(1)}%`);
+    logStream.write(`  Starting win rate: ${(first * 100).toFixed(1)}%`);
+    logStream.write(`  Final win rate:    ${(last * 100).toFixed(1)}%`);
+    logStream.write(`  Improvement:      ${((last - first) * 100).toFixed(1)}%`);
   }
 
   const totalDuration = trainingLog.cycles.reduce((sum, c) => sum + c.totalDurationMs, 0);
-  console.log(`  Total time:        ${(totalDuration / 1000).toFixed(1)}s`);
-  console.log(`  Cycles completed:  ${trainingLog.cycles.length}`);
-  console.log('='.repeat(50) + '\n');
+  logStream.write(`  Total time:        ${(totalDuration / 1000).toFixed(1)}s`);
+  logStream.write(`  Cycles completed:  ${trainingLog.cycles.length}`);
+  logStream.write('='.repeat(50) + '\n');
 }
 
 main().catch(e => {
