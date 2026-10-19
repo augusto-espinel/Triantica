@@ -1181,7 +1181,9 @@ Recommendation: Start with `random` for curriculum, switch to `network` once net
 
 17. **Over-training risk**: 500 iterations × 24K samples = each sample seen 500 times. AlphaGo-style training typically does 1-3 passes over data, not 500. Consider reducing to 50-100 iterations. The network will fit training data faster but may not generalize — balance convergence speed vs overfitting.
 
-18. **Cycle time comparison (M2 Ultra)**:
+19. **Training/inference state mismatch (CRITICAL)**: In `network` mode, training data uses `_getStateRelativeToCurrentPlayer` (current player = +1) but `_getBestNetworkMove` and `getMove` use `_getStateRepresentation` (P1 always = +1). This means P2's training data is encoded differently than P2's inference, causing the network to see a "mirrored" board at inference time. The fix: use the same state function for both training and inference.
+
+20. **Conflicting gradients from mismatched state**: When the network is trained on P1-relative AND P2-relative states but only infers with P1-relative, the P2 training data creates gradients that fight the P1 training data, preventing learning entirely. This explains why Exp 7 and Exp 8 showed zero improvement.
     - Random mode, no replay: ~43 min/cycle (8.7K × 500 iter)
     - Network mode, 50% replay: ~128 min/cycle (24.6K × 500 iter)
     - Network mode, 25% replay, 50 iter: ~30 min/cycle (estimated)

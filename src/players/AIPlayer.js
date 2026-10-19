@@ -156,7 +156,10 @@ export class AIPlayer extends PlayerInterface {
     }
 
     // Exploit: use network prediction
-    const state = this._getStateRepresentation(gridManager);
+    // Use state representation consistent with training data
+    const state = this.selfPlayMode === 'network'
+      ? this._getStateRelativeToCurrentPlayer(gridManager)
+      : this._getStateRepresentation(gridManager);
     const output = this.network.run(state);
 
     // Map output to moves, sorted by score
@@ -538,7 +541,10 @@ export class AIPlayer extends PlayerInterface {
    * Get best move from network prediction
    */
   _getBestNetworkMove(gridManager) {
-    const state = this._getStateRepresentation(gridManager);
+    // Use state representation consistent with training data
+    const state = this.selfPlayMode === 'network'
+      ? this._getStateRelativeToCurrentPlayer(gridManager)
+      : this._getStateRepresentation(gridManager);
     const output = this.network.run(state);
 
     const moves = [];
