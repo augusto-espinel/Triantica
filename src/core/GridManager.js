@@ -439,9 +439,11 @@ export class GridManager {
     cloned.selectedRotation = this.selectedRotation;
     cloned.extraTurns = this.extraTurns;
     
-    // Copy cluster data
+    // Copy cluster data (DEEP copy to prevent mutation of original)
     cloned.clusterMap = new Map(this.clusterMap);
-    cloned.clusters = { ...this.clusters };
+    cloned.clusters = Object.fromEntries(
+      Object.entries(this.clusters).map(([k, v]) => [k, { ...v }])
+    );
     cloned.nextClusterId = this.nextClusterId;
     
     return cloned;

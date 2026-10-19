@@ -18,6 +18,127 @@
  *   --self-play-mode M  Self-play mode: 'random' or 'network' (default: random)
  *   --start-from FILE  Load pre-trained network (default: trainedAI_network.json)
  *   --output FILE      Save trained network (default: trainedAI_network_v2.json)
+ */
+
+/**
+ * Compute Shannon entropy of a distribution
+ * @param {number[]} counts - Array of counts for each category
+ * @returns {number} Entropy in bits
+ */
+function computeEntropy(counts) {
+  const total = counts.reduce((a, b) => a + b, 0);
+  if (total === 0) return 0;
+  let entropy = 0;
+  for (const c of counts) {
+    if (c > 0) {
+      const p = c / total;
+      entropy -= p * Math.log2(p);
+    }
+  }
+  return entropy;
+}
+
+/**
+ * Compute median of an array
+ * @param {number[]} arr - Array of numbers
+ * @returns {number} Median value
+ */
+function computeMedian(arr) {
+  if (arr.length === 0) return 0;
+  const sorted = [...arr].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/**
+ * Compute variance of an array
+ * @param {number[]} arr - Array of numbers
+ * @returns {number} Variance
+ */
+function computeVariance(arr) {
+  if (arr.length === 0) return 0;
+  const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
+  return arr.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / arr.length;
+}
+
+/**
+ * Compute min of an array
+ * @param {number[]} arr - Array of numbers
+ * @returns {number} Minimum value
+ */
+function computeMin(arr) {
+  if (arr.length === 0) return 0;
+  return Math.min(...arr);
+}
+
+/**
+ * Compute max of an array
+ * @param {number[]} arr - Array of numbers
+ * @returns {number} Maximum value
+ */
+function computeMax(arr) {
+  if (arr.length === 0) return 0;
+  return Math.max(...arr);
+}
+
+/**
+ * Compute opening move diversity (entropy of first-move distribution)
+ * @param {string[]} firstMoves - Array of "x,y,rN" strings
+ * @returns {number} Opening diversity (0 = same move every game)
+ */
+function computeOpeningDiversity(firstMoves) {
+  if (firstMoves.length === 0) return 0;
+  const counts = {};
+  for (const move of firstMoves) {
+    counts[move] = (counts[move] || 0) + 1;
+  }
+  return computeEntropy(Object.values(counts));
+}
+
+/**
+ * Compute final board diversity (mean cell entropy across all positions)
+ * @param {Object[]} finalBoards - Array of boardState arrays
+ * @returns {number} Board diversity (0 = identical boards)
+ */
+function computeBoardDiversity(finalBoards) {
+  if (finalBoards.length === 0) return 0;
+  const numCells = finalBoards[0].length;
+  let totalEntropy = 0;
+  
+  for (let i = 0; i < numCells; i++) {
+    // Count ownership states for this cell across all games
+    // State: "t1_p,t2_p" (e.g., "1,2" means t1 owned by P1, t2 owned by P2)
+    const stateCounts = {};
+    for (const board of finalBoards) {
+      const state = `${board[i].t1},${board[i].t2}`;
+      stateCounts[state] = (stateCounts[state] || 0) + 1;
+    }
+    totalEntropy += computeEntropy(Object.values(stateCounts));
+  }
+  
+  return totalEntropy / numCells;
+}
+
+/**
+ * Automated training pipeline for Triantica AI
+ * 
+ * Runs self-play games → trains network → evaluates vs random → repeats
+ * Designed for M2 Ultra: uses single-threaded brain.js training 
+ * (brain.js GPU not available in Node, but M2 is fast enough for CPU)
+ * 
+ * Usage:
+ *   node src/server/train.js [options]
+ *   
+ * Options:
+ *   --cycles N         Number of train+eval cycles (default: 10)
+ *   --games N          Self-play games per cycle (default: 50)
+ *   --eval-games N     Evaluation games vs random (default: 50)
+ *   --iterations N     Training iterations per cycle (default: 200)
+ *   --learning-rate F  Learning rate (default: 0.1)
+ *   --exploration F    Exploration factor (default: 0.3)
+ *   --self-play-mode M  Self-play mode: 'random' or 'network' (default: random)
+ *   --start-from FILE  Load pre-trained network (default: trainedAI_network.json)
+ *   --output FILE      Save trained network (default: trainedAI_network_v2.json)
  *   --save-every N     Save checkpoint every N cycles (default: 5)
  *   --log FILE         Log progress to file (default: experiments/logs/training-TIMESTAMP.log)
  */
@@ -171,8 +292,10 @@ async function main() {
     
     let selfPlayWins = { 1: 0, 2: 0, draws: 0 };
     let selfPlayMoves = 0;
-    let selfPlayScores = { 1: 0, 2: 0 };
+    let selfPlayScores = { 1: [], 2: [] }; // Array of all scores for median/variance
     let samplesGenerated = 0;
+    let firstMoves = [];
+    let finalBoards = []; // Array of { cell: { player, rotation } }
 
     for (let g = 0; g < opts.games; g++) {
       gridManager.reset();
@@ -181,9 +304,29 @@ async function main() {
       if (result.winner === 0) selfPlayWins.draws++;
       else selfPlayWins[result.winner]++;
       selfPlayMoves += result.moves;
-      selfPlayScores[1] += result.p1Score || 0;
-      selfPlayScores[2] += result.p2Score || 0;
+      selfPlayScores[1].push(result.p1Score || 0);
+      selfPlayScores[2].push(result.p2Score || 0);
       samplesGenerated += result.trainingSamplesAdded;
+      
+      // Track first move for diversity
+      if (result.firstMove) {
+        firstMoves.push(`${result.firstMove.x},${result.firstMove.y},r${result.firstMove.rotation}`);
+      }
+      
+      // Track final board state for diversity
+      const boardState = [];
+      for (let y = 0; y < gridManager.rows; y++) {
+        for (let x = 0; x < gridManager.cols; x++) {
+          const cell = gridManager.grid[y][x];
+          const t1 = cell.triangles[0];
+          const t2 = cell.triangles[1];
+          boardState.push({
+            t1: t1?.player || 0,
+            t2: t2?.player || 0
+          });
+        }
+      }
+      finalBoards.push(boardState);
 
       if ((g + 1) % 10 === 0) {
         logStream.write(`    ${g + 1}/${opts.games} games done`);
@@ -191,6 +334,19 @@ async function main() {
     }
 
     const selfPlayDuration = Date.now() - selfPlayStart;
+    const openingDiversity = computeOpeningDiversity(firstMoves);
+    const boardDiversity = computeBoardDiversity(finalBoards);
+    
+    // Compute score metrics for self-play
+    const p1Median = computeMedian(selfPlayScores[1]);
+    const p2Median = computeMedian(selfPlayScores[2]);
+    const p1Variance = computeVariance(selfPlayScores[1]);
+    const p2Variance = computeVariance(selfPlayScores[2]);
+    const p1Min = computeMin(selfPlayScores[1]);
+    const p2Min = computeMin(selfPlayScores[2]);
+    const p1Max = computeMax(selfPlayScores[1]);
+    const p2Max = computeMax(selfPlayScores[2]);
+    
     logStream.write(`  ✅ Self-play complete: ${opts.games} games, ${samplesGenerated} samples, ${selfPlayDuration}ms`);
 
     // Phase 2: Train network with experience replay
@@ -251,8 +407,15 @@ async function main() {
     const evalDuration = Date.now() - evalStart;
     const aiWinRate = evalResults.wins[1] / opts.evalGames;
     
+    // Compute eval score metrics
+    const evalP1Median = computeMedian(evalResults.scores?.[1] || [0]);
+    const evalP2Median = computeMedian(evalResults.scores?.[2] || [0]);
+    const evalP1Variance = computeVariance(evalResults.scores?.[1] || [0]);
+    const evalP2Variance = computeVariance(evalResults.scores?.[2] || [0]);
+    const evalGap = evalP1Median - evalP2Median;
+    
     logStream.write(`  📈 AI Win Rate: ${(aiWinRate * 100).toFixed(1)}% (${evalResults.wins[1]}W / ${evalResults.wins[2]}L / ${evalResults.wins.draws}D)`);
-    logStream.write(`     Avg scores: AI=${(evalResults.avgScores?.[1] ?? 0).toFixed(1)} Random=${(evalResults.avgScores?.[2] ?? 0).toFixed(1)}`);
+    logStream.write(`     Scores: AI med=${evalP1Median.toFixed(0)} (σ²=${evalP1Variance.toFixed(0)}), Random med=${evalP2Median.toFixed(0)} (σ²=${evalP2Variance.toFixed(0)}), gap=+${evalGap.toFixed(0)}`);
     logStream.write(`     Avg moves: ${evalResults.avgMoves.toFixed(1)}, Duration: ${evalDuration}ms`);
 
     // Record cycle
@@ -262,7 +425,12 @@ async function main() {
         games: opts.games,
         wins: selfPlayWins,
         avgMoves: selfPlayMoves / opts.games,
-        avgScores: { 1: selfPlayScores[1] / opts.games, 2: selfPlayScores[2] / opts.games },
+        scores: {
+          p1: { median: p1Median, variance: p1Variance, min: p1Min, max: p1Max },
+          p2: { median: p2Median, variance: p2Variance, min: p2Min, max: p2Max },
+        },
+        openingDiversity,
+        boardDiversity,
         samplesGenerated,
         durationMs: selfPlayDuration,
       },
@@ -285,6 +453,11 @@ async function main() {
         aiWins: evalResults.wins[1],
         opponentWins: evalResults.wins[2],
         draws: evalResults.wins.draws,
+        scores: {
+          ai: { median: evalP1Median, variance: evalP1Variance },
+          opponent: { median: evalP2Median, variance: evalP2Variance },
+          gap: evalGap,
+        },
         avgScores: evalResults.avgScores,
         aiWinRate,
         avgMoves: evalResults.avgMoves,
@@ -297,8 +470,9 @@ async function main() {
 
     // Per-cycle summary line for easy log monitoring
     const cycleDuration = ((Date.now() - cycleStart) / 1000).toFixed(0);
-    const avgSelfScores = { 1: (selfPlayScores[1] / opts.games).toFixed(1), 2: (selfPlayScores[2] / opts.games).toFixed(1) };
-    logStream.write(`\n  📋 Cycle ${cycle} Summary | Self-play: P1=${selfPlayWins[1]} P2=${selfPlayWins[2]} D=${selfPlayWins.draws} (scores: ${avgSelfScores[1]}-${avgSelfScores[2]}) | Train: ${trainResult?.initialError?.toFixed(6) ?? 'N/A'} → ${trainResult?.error?.toFixed(6) ?? 'N/A'} (${replaySamples.length} replay + ${newTrainingData.length} new) | Eval: ${(aiWinRate * 100).toFixed(1)}% (scores: ${(evalResults.avgScores?.[1] ?? 0).toFixed(1)}-${(evalResults.avgScores?.[2] ?? 0).toFixed(1)}) | Buf: ${replayBuffer.size} | ${cycleDuration}s\n`);
+    const p1ScoreStr = `med=${p1Median.toFixed(0)} (σ²=${p1Variance.toFixed(0)}, ${p1Min}-${p1Max})`;
+    const p2ScoreStr = `med=${p2Median.toFixed(0)} (σ²=${p2Variance.toFixed(0)}, ${p2Min}-${p2Max})`;
+    logStream.write(`\n  📋 Cycle ${cycle} Summary | Self-play: P1=${selfPlayWins[1]} P2=${selfPlayWins[2]} D=${selfPlayWins.draws} | P1 ${p1ScoreStr} | P2 ${p2ScoreStr} | Train: ${trainResult?.initialError?.toFixed(6) ?? 'N/A'} → ${trainResult?.error?.toFixed(6) ?? 'N/A'} (${replaySamples.length} replay + ${newTrainingData.length} new) | Eval: ${(aiWinRate * 100).toFixed(1)}% (AI med=${evalP1Median.toFixed(0)}, Rand med=${evalP2Median.toFixed(0)}, gap=+${evalGap.toFixed(0)}) | Diversity: Open=${openingDiversity.toFixed(2)} Board=${boardDiversity.toFixed(2)} | Buf: ${replayBuffer.size} | ${cycleDuration}s\n`);
 
     // Save checkpoint
     if (cycle % opts.saveEvery === 0 || cycle === opts.cycles) {

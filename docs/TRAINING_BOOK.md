@@ -1387,4 +1387,118 @@ net.fromJSON(json);
 
 ---
 
-**Next Session:** Add metrics instrumentation and establish baseline performance numbers.
+## Session 2026-10-19 Evening: The Shallow Copy Bug
+
+### Discovery
+After fixing the state mismatch bug, experiments still showed no learning. Deep investigation revealed cluster sizes exploding to 10^42 for 200 triangles.
+
+### Root Cause
+`GridManager.clone()` used shallow copy for `this.clusters`:
+```javascript
+// BUG:
+cloned.clusters = { ...this.clusters };
+```
+
+When `calculateImmediateRewardVector()` simulated moves on cloned grids, it modified the **original** grid's clusters via shared references.
+
+### Impact
+- Every simulation (400+ per move) corrupted original clusters
+- Scores became astronomical (10^20 vs 10^25)
+- Reward signal was pure noise
+- Training could not possibly learn anything
+
+### Fix
+```javascript
+// DEEP COPY:
+cloned.clusters = Object.fromEntries(
+  Object.entries(this.clusters).map(([k, v]) => [k, { ...v }])
+);
+```
+
+### Verification
+```
+Before fix: P1=10^44, P2=10^42, Total=200 (corrupted)
+After fix:  P1=35, P2=90, Total=200 ✓
+```
+
+### Lesson
+**Simulation isolation is critical.** Always deep-copy nested objects. A shallow copy is a subtle bug that corrupts state silently.
+
+---
+
+**Next Session:** Run Experiment 9 with all fixes applied.
+
+---
+
+## Session 2026-10-20 00:15: Experiment 9 Preparation
+
+### Fixes Implemented
+
+| Fix | Status | Description |
+|-----|--------|-------------|
+| Deep copy in `clone()` | ✅ | Prevents cluster corruption during simulation |
+| Opening diversity injection | ✅ | 50% random moves for first 5 moves |
+| Score metrics tracking | ✅ | Median, variance, min, max for scores |
+| Score gap tracking | ✅ | AI vs Random score difference in eval |
+
+### New Metrics Added
+
+| Metric | Purpose |
+|--------|---------|
+| **Self-play score median** | Robust central tendency (not skewed by outliers) |
+| **Self-play score variance** | Diversity of game outcomes |
+| **Self-play score min/max** | Sanity check: scores in valid range |
+| **Eval AI score median** | AI scoring performance |
+| **Eval Random score median** | Opponent scoring performance |
+| **Eval score gap** | AI domination metric (should grow over training) |
+
+### Opening Diversity Injection
+
+```javascript
+const isOpeningPhase = movesCount < 5;
+const openingRandomFactor = isOpeningPhase ? 0.50 : 0;
+
+if (rand < openingRandomFactor) {
+  // Opening diversity: random move
+  move = this._getRandomValidMove(gridManager);
+}
+```
+
+### Cycle Summary Format (Enhanced)
+
+```
+📋 Cycle 3 Summary | Self-play: P1=52 P2=48 D=0 | 
+P1 med=66 (σ²=121, 49-83) | P2 med=97 (σ²=118, 72-102) | 
+Train: 0.002290 → 0.000975 (234 replay + 783 new) | 
+Eval: 60.0% (AI med=28, Rand med=30, gap=+2) | 
+Diversity: Open=2.32 Board=1.25 | Buf: 783 | 15s
+```
+
+### Experiment 9 Config
+
+```bash
+node src/server/train.js \
+  --cycles 20 \
+  --games 100 \
+  --eval-games 200 \
+  --iterations 100 \
+  --learning-rate 0.01 \
+  --exploration 0.3 \
+  --self-play-mode network \
+  --start-from trainedAI_network.json \
+  --output trainedAI_network_v9.json \
+  --save-every 5 \
+  --replay-ratio 0.3 \
+  --replay-size 50000 \
+  --log experiments/logs/exp9.log
+```
+
+### Success Criteria
+
+| Metric | Target |
+|--------|--------|
+| Eval win rate | >55% |
+| AI-Random score gap | Growing over training |
+| Opening diversity | >1.5 bits |
+| Initial error | Decreasing cycle-over-cycle |
+| Score variance | >0 (diverse games) |

@@ -412,6 +412,7 @@ export class AIPlayer extends PlayerInterface {
     const opponentPlayer = this.playerNumber === 1 ? 2 : 1;
     let currentPlayerNum = 1;
     let movesCount = 0;
+    let firstMove = null;
     const maxMoves = gridManager.rows * gridManager.cols * 2 * 1.5;
 
     while (!gridManager.isGridFull() && movesCount < maxMoves) {
@@ -431,6 +432,11 @@ export class AIPlayer extends PlayerInterface {
 
       // Choose move based on self-play mode
       let move;
+      
+      // Opening diversity injection: 50% random for first 5 moves
+      const isOpeningPhase = movesCount < 5;
+      const openingRandomFactor = isOpeningPhase ? 0.50 : 0;
+      
       if (!currentIsSelf && this.selfPlayMode === 'random') {
         // Mode: random opponent — opponent plays randomly (no network influence)
         move = this._getRandomValidMove(gridManager);
@@ -438,10 +444,14 @@ export class AIPlayer extends PlayerInterface {
         // Both self and network-mode opponent use the same policy
         // Network is conditioned on currentPlayer via input, so it predicts good moves for whoever is moving
         const rand = Math.random();
-        if (rand < 0.10) {
+        
+        if (rand < openingRandomFactor) {
+          // Opening diversity: random move to explore different openings
+          move = this._getRandomValidMove(gridManager);
+        } else if (rand < 0.10 + openingRandomFactor) {
           // Random exploration — discover new moves
           move = this._getRandomValidMove(gridManager);
-        } else if (rand < 0.20) {
+        } else if (rand < 0.20 + openingRandomFactor) {
           // Greedy immediate reward — structured exploration
           move = this._predictMoveFromRewards(immediateRewardVector, gridManager);
         } else {
@@ -459,6 +469,11 @@ export class AIPlayer extends PlayerInterface {
       // Execute move
       const success = gridManager.placeTriangle(move.x, move.y, move.rotation, currentPlayerNum);
       if (!success) break;
+      
+      // Track first move for diversity metric
+      if (movesCount === 0) {
+        firstMove = { x: move.x, y: move.y, rotation: move.rotation };
+      }
 
       const claimed = gridManager.claimEnclosedTriangles(currentPlayerNum);
 
@@ -537,8 +552,7 @@ export class AIPlayer extends PlayerInterface {
       this.trainingData.push({ input: step.state, output: finalOutputVector });
     }
 
-    gridManager.reset();
-    return { winner, p1Score, p2Score, moves: movesCount, trainingSamplesAdded: totalMoves };
+    return { winner, p1Score, p2Score, moves: movesCount, firstMove, trainingSamplesAdded: totalMoves };
   }
 
   /**

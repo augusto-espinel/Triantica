@@ -167,6 +167,7 @@ export class GameSession {
       totalMoves: 0,
       totalDuration: 0,
       totalScores: { 1: 0, 2: 0 },
+      scores: { 1: [], 2: [] }, // Individual scores for statistics
     };
 
     for (let i = 0; i < count; i++) {
@@ -180,6 +181,8 @@ export class GameSession {
       results.totalDuration += gameResult.duration;
       results.totalScores[1] += gameResult.finalScores?.[1] || 0;
       results.totalScores[2] += gameResult.finalScores?.[2] || 0;
+      results.scores[1].push(gameResult.finalScores?.[1] || 0);
+      results.scores[2].push(gameResult.finalScores?.[2] || 0);
 
       // Swap players every game for fairness
       const temp = this.players[1];
