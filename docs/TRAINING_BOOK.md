@@ -1430,6 +1430,39 @@ After fix:  P1=35, P2=90, Total=200 ✓
 
 ---
 
+## Session 2026-10-20 00:35: Bug #3 — Eval State Mismatch
+
+### Bug Found
+`AIPlayer.getMove()` used different state representations based on `selfPlayMode`:
+```javascript
+const state = this.selfPlayMode === 'network'
+  ? this._getStateRelativeToCurrentPlayer(gridManager)  // relative (correct)
+  : this._getStateRepresentation(gridManager);           // absolute (wrong!)
+```
+
+Eval player didn't set `selfPlayMode`, so it defaulted to 'random' and used **absolute state**.
+Network was trained on **relative state** — receiving absolute state meant garbage input.
+
+### Fix
+Always use relative state for network inference:
+```javascript
+const state = this._getStateRelativeToCurrentPlayer(gridManager);
+```
+
+### Impact
+- Before: 45.5% win rate vs random (below baseline)
+- After: 50.0% win rate vs random (at baseline)
+
+### Remaining Puzzle
+Self-play scores (73/72) are double eval scores (37/37). Possible causes:
+1. Strategic play creates larger clusters
+2. Random play fragments clusters
+3. Different exploration rates (self-play: 30%, eval: 5%)
+
+---
+
+---
+
 ## Session 2026-10-20 00:15: Experiment 9 Preparation
 
 ### Fixes Implemented
