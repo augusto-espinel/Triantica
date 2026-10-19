@@ -217,7 +217,15 @@ async function main() {
     
     if (trainResult) {
       const errorDelta = trainResult.initialError - trainResult.error;
-      logStream.write(`  ✅ Training complete: error=${trainResult.error?.toFixed(6) ?? 'N/A'} (was ${trainResult.initialError?.toFixed(6) ?? 'N/A'}, Δ=${errorDelta?.toFixed(6) ?? 'N/A'}), ${trainDuration}ms`);
+      const convRate = trainResult.errorReductionHalf;
+      const convNote = convRate !== null ? ` | ${(convRate * 100).toFixed(0)}% error drop by half iters` : '';
+      logStream.write(`  ✅ Training complete: error=${trainResult.error?.toFixed(6) ?? 'N/A'} (was ${trainResult.initialError?.toFixed(6) ?? 'N/A'}, Δ=${errorDelta?.toFixed(6) ?? 'N/A'})${convNote}, ${trainDuration}ms`);
+      
+      // Log error convergence curve
+      if (trainResult.errorSnapshots && trainResult.errorSnapshots.length > 1) {
+        const curve = trainResult.errorSnapshots.map(s => `${s.iteration}:${s.error.toFixed(4)}`).join(' → ');
+        logStream.write(`  📉 Error curve: ${curve}`);
+      }
     } else {
       logStream.write(`  ⚠️  No training data available`);
     }
@@ -262,6 +270,8 @@ async function main() {
         replayBufferSize: replayBuffer.size,
         initialError: trainResult?.initialError ?? null,
         finalError: trainResult?.error ?? null,
+        errorSnapshots: trainResult?.errorSnapshots ?? [],
+        errorReductionHalf: trainResult?.errorReductionHalf ?? null,
         durationMs: trainDuration,
       },
       evaluation: {

@@ -360,22 +360,46 @@ export class AIPlayer extends PlayerInterface {
     }
     initialError /= this.trainingData.length;
 
+    // Track error at intervals to measure convergence rate
+    const errorSnapshots = [{ iteration: 0, error: initialError }];
+
     const result = this.network.train(this.trainingData, {
       iterations,
-      log: true,
-      logPeriod: 50,
+      log: false,
       learningRate,
       errorThresh: 0.00093,
+      callbackPeriod: Math.max(1, Math.floor(iterations / 10)),
+      callback: (status) => {
+        errorSnapshots.push({ iteration: status.iterations, error: status.error });
+      },
     });
+
+    // Add final error if not already captured
+    if (result && errorSnapshots[errorSnapshots.length - 1].iteration !== result.iterations) {
+      errorSnapshots.push({ iteration: result.iterations, error: result.error });
+    }
 
     if (result && result.error < 1) {
       this.isNetworkLoaded = true;
     }
 
-    // Return both initial and final error
+    // Calculate error reduction rate: what fraction of total error drop happens in first 50% of iterations?
+    let errorReductionHalf = null;
+    if (errorSnapshots.length >= 3) {
+      const halfIter = Math.floor(iterations / 2);
+      const atHalf = errorSnapshots.find(s => s.iteration >= halfIter) || errorSnapshots[errorSnapshots.length - 1];
+      const totalDrop = initialError - (result?.error ?? initialError);
+      if (totalDrop > 0) {
+        const halfDrop = initialError - atHalf.error;
+        errorReductionHalf = halfDrop / totalDrop;
+      }
+    }
+
     return {
       ...result,
       initialError,
+      errorSnapshots,
+      errorReductionHalf,
     };
   }
 
