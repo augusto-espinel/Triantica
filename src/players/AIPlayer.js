@@ -484,9 +484,10 @@ export class AIPlayer extends PlayerInterface {
 
     // Determine winner
     let winner = 0;
+    let p1Score = 0, p2Score = 0;
     if (gridManager.isGridFull()) {
-      const p1Score = gridManager.getLargestContiguous(1);
-      const p2Score = gridManager.getLargestContiguous(2);
+      p1Score = gridManager.getLargestContiguous(1);
+      p2Score = gridManager.getLargestContiguous(2);
       if (p1Score > p2Score) winner = 1;
       else if (p2Score > p1Score) winner = 2;
     }
@@ -537,7 +538,7 @@ export class AIPlayer extends PlayerInterface {
     }
 
     gridManager.reset();
-    return { winner, moves: movesCount, trainingSamplesAdded: totalMoves };
+    return { winner, p1Score, p2Score, moves: movesCount, trainingSamplesAdded: totalMoves };
   }
 
   /**

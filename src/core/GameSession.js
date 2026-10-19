@@ -127,15 +127,15 @@ export class GameSession {
     }
 
     // Determine winner
-    const winner = this.gridManager.getWinner();
+    const gameResult = this.gridManager.getWinner();
     const duration = Date.now() - startTime;
 
     // Create result
     const result = {
-      winner,
+      winner: gameResult.winner,
       finalScores: {
-        1: this.gridManager.getLargestContiguous(1),
-        2: this.gridManager.getLargestContiguous(2),
+        1: gameResult.p1Score,
+        2: gameResult.p2Score,
       },
       moves: moveCount,
       duration,
@@ -144,8 +144,8 @@ export class GameSession {
     };
 
     // Notify players
-    this.players[1].recordResult(winner);
-    this.players[2].recordResult(winner);
+    this.players[1].recordResult(gameResult.winner);
+    this.players[2].recordResult(gameResult.winner);
 
     // Callback
     if (this.config.onGameEnd) {
@@ -166,6 +166,7 @@ export class GameSession {
       wins: { 1: 0, 2: 0, draws: 0 },
       totalMoves: 0,
       totalDuration: 0,
+      totalScores: { 1: 0, 2: 0 },
     };
 
     for (let i = 0; i < count; i++) {
@@ -177,6 +178,8 @@ export class GameSession {
 
       results.totalMoves += gameResult.moves;
       results.totalDuration += gameResult.duration;
+      results.totalScores[1] += gameResult.finalScores?.[1] || 0;
+      results.totalScores[2] += gameResult.finalScores?.[2] || 0;
 
       // Swap players every game for fairness
       const temp = this.players[1];
@@ -186,6 +189,10 @@ export class GameSession {
 
     results.avgMoves = results.totalMoves / count;
     results.avgDuration = results.totalDuration / count;
+    results.avgScores = {
+      1: results.totalScores[1] / count,
+      2: results.totalScores[2] / count,
+    };
     results.winRates = {
       1: results.wins[1] / count,
       2: results.wins[2] / count,

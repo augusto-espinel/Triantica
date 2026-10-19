@@ -171,6 +171,7 @@ async function main() {
     
     let selfPlayWins = { 1: 0, 2: 0, draws: 0 };
     let selfPlayMoves = 0;
+    let selfPlayScores = { 1: 0, 2: 0 };
     let samplesGenerated = 0;
 
     for (let g = 0; g < opts.games; g++) {
@@ -180,6 +181,8 @@ async function main() {
       if (result.winner === 0) selfPlayWins.draws++;
       else selfPlayWins[result.winner]++;
       selfPlayMoves += result.moves;
+      selfPlayScores[1] += result.p1Score || 0;
+      selfPlayScores[2] += result.p2Score || 0;
       samplesGenerated += result.trainingSamplesAdded;
 
       if ((g + 1) % 10 === 0) {
@@ -249,6 +252,7 @@ async function main() {
     const aiWinRate = evalResults.wins[1] / opts.evalGames;
     
     logStream.write(`  📈 AI Win Rate: ${(aiWinRate * 100).toFixed(1)}% (${evalResults.wins[1]}W / ${evalResults.wins[2]}L / ${evalResults.wins.draws}D)`);
+    logStream.write(`     Avg scores: AI=${(evalResults.avgScores?.[1] ?? 0).toFixed(1)} Random=${(evalResults.avgScores?.[2] ?? 0).toFixed(1)}`);
     logStream.write(`     Avg moves: ${evalResults.avgMoves.toFixed(1)}, Duration: ${evalDuration}ms`);
 
     // Record cycle
@@ -258,6 +262,7 @@ async function main() {
         games: opts.games,
         wins: selfPlayWins,
         avgMoves: selfPlayMoves / opts.games,
+        avgScores: { 1: selfPlayScores[1] / opts.games, 2: selfPlayScores[2] / opts.games },
         samplesGenerated,
         durationMs: selfPlayDuration,
       },
@@ -280,6 +285,7 @@ async function main() {
         aiWins: evalResults.wins[1],
         opponentWins: evalResults.wins[2],
         draws: evalResults.wins.draws,
+        avgScores: evalResults.avgScores,
         aiWinRate,
         avgMoves: evalResults.avgMoves,
         durationMs: evalDuration,
@@ -291,7 +297,8 @@ async function main() {
 
     // Per-cycle summary line for easy log monitoring
     const cycleDuration = ((Date.now() - cycleStart) / 1000).toFixed(0);
-    logStream.write(`\n  📋 Cycle ${cycle} Summary | Self-play: P1=${selfPlayWins[1]} P2=${selfPlayWins[2]} D=${selfPlayWins.draws} | Train: ${trainResult?.initialError?.toFixed(6) ?? 'N/A'} → ${trainResult?.error?.toFixed(6) ?? 'N/A'} (${replaySamples.length} replay + ${newTrainingData.length} new) | Eval: ${(aiWinRate * 100).toFixed(1)}% | Buf: ${replayBuffer.size} | ${cycleDuration}s\n`);
+    const avgSelfScores = { 1: (selfPlayScores[1] / opts.games).toFixed(1), 2: (selfPlayScores[2] / opts.games).toFixed(1) };
+    logStream.write(`\n  📋 Cycle ${cycle} Summary | Self-play: P1=${selfPlayWins[1]} P2=${selfPlayWins[2]} D=${selfPlayWins.draws} (scores: ${avgSelfScores[1]}-${avgSelfScores[2]}) | Train: ${trainResult?.initialError?.toFixed(6) ?? 'N/A'} → ${trainResult?.error?.toFixed(6) ?? 'N/A'} (${replaySamples.length} replay + ${newTrainingData.length} new) | Eval: ${(aiWinRate * 100).toFixed(1)}% (scores: ${(evalResults.avgScores?.[1] ?? 0).toFixed(1)}-${(evalResults.avgScores?.[2] ?? 0).toFixed(1)}) | Buf: ${replayBuffer.size} | ${cycleDuration}s\n`);
 
     // Save checkpoint
     if (cycle % opts.saveEvery === 0 || cycle === opts.cycles) {

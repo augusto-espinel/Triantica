@@ -382,9 +382,9 @@ export class GridManager {
     const p1Score = this.getLargestContiguous(1);
     const p2Score = this.getLargestContiguous(2);
     
-    if (p1Score > p2Score) return 1;
-    if (p2Score > p1Score) return 2;
-    return 0; // Draw
+    if (p1Score > p2Score) return { winner: 1, p1Score, p2Score };
+    if (p2Score > p1Score) return { winner: 2, p1Score, p2Score };
+    return { winner: 0, p1Score, p2Score }; // Draw
   }
 
   // === Utility ===
