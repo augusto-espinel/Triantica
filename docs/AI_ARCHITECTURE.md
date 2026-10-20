@@ -170,6 +170,16 @@ calculateImmediateRewardVector(state, player) {
 }
 ```
 
+### Reward Components Summary (Exp 11+)
+
+| Component | Type | Factor | Purpose |
+|-----------|------|--------|----------|
+| **Claim bonus** | Immediate | 0.3/triangle | Encourage enclosure creation |
+| **Cluster growth** | Immediate | 0.1/triangle | Encourage cluster building |
+| **Largest lead** | Immediate | 0.2/lead delta | Direct win condition optimization |
+| **Win/loss** | Final outcome | ±1.0 (λ=1) | Credit ALL moves equally |
+| **Cluster contribution** | Final outcome | 0.1/triangle (TD λ=0.9) | Credit moves IN winning cluster |
+
 ### Reward Scaling
 
 ```javascript
@@ -187,32 +197,84 @@ scaledReward = Math.max(0.01, Math.min(0.99, scaledReward));
 
 > ⚠️ **Critical:** Never use theoretical maximums for normalization. The lead bonus theoretical max is 40 (200×0.2) but realistic max is ~4. Using theoretical values compresses 95% of the output range into unused territory, causing fake convergence.
 
-### Final Outcome Integration
+### Final Outcome Integration (TD(λ) Cluster-Contribution)
 
-After a self-play game completes, the training data is adjusted:
+After a self-play game completes, training data incorporates **three reward signals**:
+
+| Reward Signal | Propagation | Who Receives It |
+|--------------|-------------|----------------|
+| **Immediate** | Per-move only | The move itself |
+| **Win/loss** | λ=1 — equal to ALL moves | Every move in the game |
+| **Cluster contribution** | TD(λ=0.9) — decays backwards | Only moves that placed triangles IN the final largest cluster |
+
+#### Why TD(λ) for Cluster Contribution?
+
+The win condition is **largest contiguous cluster**. Previously, the network learned to grow *any* cluster, not specifically the one that wins.
+
+With TD(λ), only moves whose triangles are IN the final winning cluster get the cluster bonus. Credit decays going backwards, so **endgame moves get more credit than opening moves**.
+
+#### Implementation
 
 ```javascript
-// Backward iteration through game history
+const gamma = 0.99;    // Discount factor
+const lambda = 0.9;    // Eligibility trace decay
+const clusterRewardFactor = 0.1;  // Per-triangle reward
+
+// After game ends, identify triangles in each player's largest cluster
+const p1LargestCluster = gridManager.getLargestContiguousCluster(1);
+const p2LargestCluster = gridManager.getLargestContiguousCluster(2);
+
+// Build lookup sets
+const p1ClusterSet = new Set(p1LargestCluster.map(t => `${t.x},${t.y},${t.rotation}`));
+const p2ClusterSet = new Set(p2LargestCluster.map(t => `${t.x},${t.y},${t.rotation}`));
+
+const p1ClusterBonus = p1LargestCluster.length * clusterRewardFactor;
+const p2ClusterBonus = p2LargestCluster.length * clusterRewardFactor;
+
+// Process trajectory backwards
+let stepsFromEnd = 0;
+
 for (let t = totalMoves - 1; t >= 0; t--) {
     const step = gameHistory[t];
+    stepsFromEnd = totalMoves - 1 - t;
     
-    // Linear discount based on position
-    const discountFactor = (t + 1) / totalMoves;
-    const scaledFinalReward = finalOutcome * discountFactor;
+    const immediateReward = step.rawImmediateReward;  // Raw (de-normalized)
+    const winReward = winner === step.player ? 1.0 : -1.0;  // λ=1 for all moves
     
-    // Combine with immediate rewards
-    const outputVector = [...step.immediateRewardVector];
-    const combinedReward = outputVector[step.actualMoveIndex] + scaledFinalReward;
+    // Cluster contribution — only if this move's triangle is in the final largest cluster
+    let clusterReward = 0;
+    const moveKey = `${step.move.x},${step.move.y},${step.move.rotation}`;
     
-    // Re-scale to [0.01, 0.99]
-    outputVector[step.actualMoveIndex] = scaleCombinedReward(combinedReward);
+    if (step.player === 1 && p1ClusterSet.has(moveKey)) {
+        const eligibility = Math.pow(gamma * lambda, stepsFromEnd);
+        clusterReward = p1ClusterBonus * eligibility;
+    } else if (step.player === 2 && p2ClusterSet.has(moveKey)) {
+        const eligibility = Math.pow(gamma * lambda, stepsFromEnd);
+        clusterReward = p2ClusterBonus * eligibility;
+    }
     
-    trainingData.push({
-        input: step.state,
-        output: outputVector
-    });
+    // Combined: immediate + win/loss (λ=1) + cluster (TD λ=0.9)
+    const combinedReward = immediateReward + winReward + clusterReward;
+    
+    // Normalize to [0.01, 0.99]
+    const scaled = normalize(combinedReward);
+    outputVector[step.actualMoveIndex] = scaled;
 }
 ```
+
+#### Credit Assignment Example
+
+Winner's cluster has 45 triangles, game has 150 moves:
+
+| Move | Position | Steps From End | Cluster Credit |
+|------|----------|----------------|----------------|
+| Last (IN cluster) | 149 | 0 | 4.50 × 1.000 = **4.50** |
+| Late (IN cluster) | 140 | 9 | 4.50 × 0.387 = **1.74** |
+| Mid (IN cluster) | 100 | 49 | 4.50 × 0.003 = **0.01** |
+| Early (IN cluster) | 10 | 139 | 4.50 × 0.000 ≈ **0.00** |
+| Any (NOT in cluster) | — | — | **0.00** |
+
+All moves receive **win reward (+1.0)** equally. Only cluster moves get the additional bonus, with later contributions weighted higher.
 
 ---
 

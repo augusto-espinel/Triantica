@@ -568,6 +568,8 @@ export class AIPlayer extends PlayerInterface {
         player: currentPlayerNum,
         claimed,
         immediateRewardVector,
+        // Store raw immediate reward for TD(λ) combination with win/cluster rewards
+        rawImmediateReward: immediateRewardVector[actualMoveIndex] * 15.5, // De-normalize
         actualMoveIndex,
       });
 
@@ -592,19 +594,59 @@ export class AIPlayer extends PlayerInterface {
       else if (p2Score > p1Score) winner = 2;
     }
 
+    // === TD(λ) Cluster-Contribution Reward ===
+    // After game ends, identify triangles in each player's largest cluster
+    // Only moves that placed triangles IN the final largest cluster get
+    // the cluster contribution bonus, with TD(λ) decay going backwards.
+    // Win/loss reward still propagates equally (λ=1) to all moves.
+
+    const gamma = 0.99;    // Discount factor
+    const lambda = 0.9;    // Eligibility trace decay for cluster reward
+    const clusterRewardFactor = 0.1;  // Per-triangle reward in the largest cluster
+
+    // Get the actual triangles in each player's largest cluster
+    const p1LargestCluster = gridManager.getLargestContiguousCluster(1);
+    const p2LargestCluster = gridManager.getLargestContiguousCluster(2);
+
+    // Build lookup sets for fast membership testing
+    const p1ClusterSet = new Set(p1LargestCluster.map(t => `${t.x},${t.y},${t.rotation}`));
+    const p2ClusterSet = new Set(p2LargestCluster.map(t => `${t.x},${t.y},${t.rotation}`));
+
+    // Total cluster bonus per player (proportional to cluster size)
+    const p1ClusterBonus = p1LargestCluster.length * clusterRewardFactor;
+    const p2ClusterBonus = p2LargestCluster.length * clusterRewardFactor;
+
     // Process trajectory backwards for training data
     const finalRewardWeight = 1.0;
     const totalMoves = gameHistory.length;
 
-    const minImmediateReward = 0.01;
-    const maxImmediateReward = 0.99;
-    const minCombinedReward = minImmediateReward - (1.0 * finalRewardWeight);
-    const maxCombinedReward = maxImmediateReward + (1.0 * finalRewardWeight);
+    // Updated normalization bounds including cluster contribution bonus
+    // Using consistent raw scale: immediate (0-15.5) + win/loss (±1.0) + cluster (0-10.0)
+    const minImmediateReward = 0;
+    const maxImmediateReward = 15.5;  // Realistic max
+    const minCombinedReward = minImmediateReward - (1.0 * finalRewardWeight) - 0;  // Lost, no immediate, no cluster
+    const maxCombinedReward = maxImmediateReward + (1.0 * finalRewardWeight) + 10.0;  // Won, max immediate, max cluster
     const combinedRewardRange = maxCombinedReward - minCombinedReward;
 
-    // For 'network' mode, train on both players' moves with proper reward perspective
+    // TD(λ) cluster contribution reward
+    // Process trajectory backwards from game end. Each contributing move
+    // gets credit based on its distance from the end of the game,
+    // with exponential decay: credit = clusterBonus × (γλ)^stepsFromEnd
+    //
+    // Example (P1, going backwards):
+    //   Move 149 (P1, IN cluster): 1 step from end → bonus × (0.891)^1 = bonus × 0.891
+    //   Move 148 (P2 move):        2 steps from end → no P1 cluster reward
+    //   Move 140 (P1, IN cluster): 10 steps from end → bonus × (0.891)^10 = bonus × 0.30
+    //   Move 100 (P1, IN cluster): 50 steps from end → bonus × (0.891)^50 = bonus × 0.004
+    //
+    // Result: moves closer to game end get much more credit for the cluster.
+    // Opening moves that started the cluster still get *some* credit,
+    // but endgame moves that sealed it get the lion's share.
+    let stepsFromEnd = 0;
+
     for (let t = totalMoves - 1; t >= 0; t--) {
       const step = gameHistory[t];
+      stepsFromEnd = totalMoves - 1 - t;
       
       // Skip opponent moves only in 'random' mode
       if (this.selfPlayMode === 'random' && step.player !== this.playerNumber) continue;
@@ -612,21 +654,38 @@ export class AIPlayer extends PlayerInterface {
       // Determine reward from this move's player's perspective
       let rewardForPlayer;
       if (this.selfPlayMode === 'network') {
-        // In network mode, reward is from the moving player's perspective
         rewardForPlayer = winner === step.player ? 1.0
           : (winner === 0 ? 0.0 : -1.0);
       } else {
-        // In random mode, reward is always from self's perspective
         rewardForPlayer = winner === this.playerNumber ? 1.0
           : (winner === 0 ? 0.0 : -1.0);
       }
 
       const finalOutputVector = [...step.immediateRewardVector];
-      const discountFactor = 1.0;
-      const scaledFinalReward = rewardForPlayer * discountFactor * finalRewardWeight;
+      const immediateReward = step.rawImmediateReward;  // Use raw (de-normalized) value
 
-      const immediateReward = step.immediateRewardVector[step.actualMoveIndex];
-      const combinedReward = immediateReward + scaledFinalReward;
+      // 1. Win/loss reward: λ=1, equal credit for all moves
+      const winReward = rewardForPlayer * finalRewardWeight;
+
+      // 2. Cluster contribution reward: TD(λ=0.9)
+      //    Only moves whose triangles are IN the final largest cluster get this.
+      //    Credit decays based on distance from game end.
+      let clusterReward = 0;
+      const moveKey = `${step.move.x},${step.move.y},${step.move.rotation}`;
+
+      const isP1Contributor = step.player === 1 && p1ClusterSet.has(moveKey);
+      const isP2Contributor = step.player === 2 && p2ClusterSet.has(moveKey);
+
+      if (isP1Contributor || isP2Contributor) {
+        // This move contributed to the winning cluster
+        // Credit decays exponentially with distance from game end
+        const eligibility = Math.pow(gamma * lambda, stepsFromEnd);
+        const clusterBonus = isP1Contributor ? p1ClusterBonus : p2ClusterBonus;
+        clusterReward = clusterBonus * eligibility;
+      }
+
+      // Combined: immediate + win/loss (λ=1) + cluster contribution (TD λ=0.9)
+      const combinedReward = immediateReward + winReward + clusterReward;
 
       let scaledCombined = combinedRewardRange !== 0
         ? (combinedReward - minCombinedReward) / combinedRewardRange

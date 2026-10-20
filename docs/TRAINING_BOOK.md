@@ -1645,17 +1645,115 @@ Changed normalization to use **observed reward bounds** instead of theoretical m
 
 **Restarted with proper normalization.** Training now takes ~19 min/cycle with 91+ iterations of real gradient descent.
 
-| Cycle | Win Rate | AI Med | Rand Med | Gap | Train Error (×10⁻³) |
-|-------|----------|--------|----------|-----|---------------------|
-| 1 | 51.5% | 42 | 39 | +3 | 4.36→0.93 |
-| 2 | **53.5%** | 45 | 40 | +6 | 4.24→1.01 |
-| 3 | 52.5% | 40 | 38 | +2 | 4.49→1.10 |
-| 4 | 52.0% | 40 | 39 | +2 | 4.46→1.12 |
-| 5 | 52.0% | 41 | 39 | +2 | 4.69→1.16 |
-| 6 | 49.0% | 42 | 38 | +4 | 4.66→1.16 |
-| ... | *running* | — | — | — | — |
+| Cycle | Win Rate | AI Med | Rand Med | Gap | Train Error (×10⁻³) | Diversity | P1/P2 Self-Play |
+|-------|----------|--------|----------|-----|---------------------|-----------|----------------|
+| 1 | 51.5% | 42 | 39 | +3 | 4.36→0.93 | 6.50 | P1+13 |
+| 2 | **53.5%** | 45 | 40 | +6 | 4.24→1.01 | 6.48 | P1+2 |
+| 3 | 52.5% | 40 | 38 | +2 | 4.49→1.10 | 6.42 | P2+14 |
+| 4 | 52.0% | 40 | 39 | +2 | 4.46→1.12 | 6.31 | P2+6 |
+| 5 | 52.0% | 41 | 39 | +2 | 4.69→1.16 | 6.46 | P2+1 |
+| 6 | 49.0% | 42 | 38 | +4 | 4.66→1.16 | 6.44 | P1+15 |
+| 7 | 48.0% | 36 | 34 | +2 | 4.62→1.15 | 6.29 | P2+3 |
+| 8 | 51.5% | 35 | 39 | -4 | 4.50→1.13 | 6.35 | P1+9 |
+| 9 | 52.0% | 39 | 34 | +5 | 4.65→1.18 | 6.40 | P1+2 |
+| 10 | 50.0% | 36 | 35 | +1 | 4.56→1.15 | 6.46 | P1+15 |
 
-**Mean: 51.8%** — systematically above 50% baseline, but plateau may be forming.
+**Statistics:**
+- Mean win rate: **51.2%** (σ=1.6%)
+- First 5 cycles avg: **52.3%**
+- Last 5 cycles avg: **50.1%**
+- **Trend: -2.2%** (regression)
+- Self-play balance: P1=507, P2=475, D=18 (P1 advantage ✓)
+- Training convergence: Healthy, ~1.1×10⁻³ final error
+- Diversity: Stable 6.29-6.50 range
+
+#### Critical Finding: Performance Regression
+
+**Largest-cluster-lead reward did NOT improve win rate.** Instead, performance degraded from 52.3% (cycles 1-5) to 50.1% (cycles 6-10).
+
+**Possible causes:**
+1. **Reward conflict:** Growing any cluster (+0.1/triangle) vs. growing the largest (+0.2/lead) may create contradictory gradients
+2. **Sparse signal:** Lead delta is noisy — it can swing ±20 in a single move, making gradient unstable
+3. **Overfitting:** Network may be learning to predict immediate rewards but not strategic value
+
+**Conclusion:** Direct optimization of win condition via immediate reward is insufficient. The signal is too sparse and noisy.
+
+---
+
+### Experiment 10.5: TD(λ) Cluster-Contribution Reward (Architecture Change)
+
+**Date:** 2026-10-20 (Afternoon)
+**Goal:** Solve the credit assignment problem with TD(λ) eligibility traces
+
+**Key Insight:** The problem isn't WHAT we reward (largest cluster), but HOW we propagate it.
+
+**Previous approach:** All moves get equal win/loss credit (λ=1). No temporal structure.
+
+**New approach:** Three-component reward system:
+
+| Reward Signal | Propagation | Who Receives |
+|--------------|-------------|--------------|
+| Immediate (claims, cluster, lead) | Per-move only | The move itself |
+| Win/loss | λ=1 — equal to ALL moves | Every move |
+| **Cluster contribution** | **TD(λ=0.9) — decays backwards** | **Only moves IN the final largest cluster** |
+
+**How TD(λ) works:**
+
+```
+Game: 150 moves, P1 wins with 45-triangle largest cluster
+clusterBonus = 45 × 0.1 = 4.5
+
+Going backwards (t=149 → t=0):
+
+Move 149 (IN cluster, last):  credit = 4.5 × (0.891)^0  = 4.50  ← Full credit
+Move 147 (IN cluster):       credit = 4.5 × (0.891)^2  = 3.57
+Move 140 (IN cluster):       credit = 4.5 × (0.891)^10 = 1.39
+Move 100 (IN cluster):       credit = 4.5 × (0.891)^50 = 0.05  ← Negligible
+Move  50 (NOT in cluster):   credit = 0.00                    ← No bonus
+```
+
+**Implementation:**
+
+```javascript
+const gamma = 0.99;    // Discount factor
+const lambda = 0.9;    // Eligibility trace decay
+const clusterRewardFactor = 0.1;  // Per-triangle reward
+
+// After game ends, identify triangles in each player's largest cluster
+const p1Cluster = gridManager.getLargestContiguousCluster(1);
+const p2Cluster = gridManager.getLargestContiguousCluster(2);
+
+// Build lookup sets
+const p1ClusterSet = new Set(p1Cluster.map(t => `${t.x},${t.y},${t.rotation}`));
+
+// Process trajectory backwards
+for (let t = totalMoves - 1; t >= 0; t--) {
+  const step = gameHistory[t];
+  const stepsFromEnd = totalMoves - 1 - t;
+  
+  // Only moves whose triangles are IN the final largest cluster get bonus
+  if (p1ClusterSet.has(moveKey)) {
+    const eligibility = Math.pow(gamma * lambda, stepsFromEnd);
+    clusterReward = p1ClusterBonus * eligibility;
+  }
+  
+  combinedReward = immediateReward + winReward + clusterReward;
+}
+```
+
+**Why this is smart:**
+
+1. **Only rewards the winning cluster** — moves that built fragmented clusters get NOTHING
+2. **Endgame moves get more credit** — moves that sealed the win are weighted higher
+3. **Foundation moves still rewarded** — early moves that started the cluster get SOME credit
+4. **Win signal preserved** — all moves get equal win/loss credit, so network learns "this was winning position"
+
+**Files Modified:**
+- `src/core/GridManager.js` — Added `getLargestContiguousCluster(player)`
+- `src/players/AIPlayer.js` — TD(λ) trajectory processing
+- `docs/AI_ARCHITECTURE.md` — Documented new reward structure
+
+**Status:** Implemented, ready for Exp 11 testing.
 
 **Key Lesson:** When changing reward components, ALWAYS re-verify normalization scales match actual reward magnitudes. Theoretical maximums are almost never reached.
 
@@ -1682,7 +1780,8 @@ Changed normalization to use **observed reward bounds** instead of theoretical m
 | 7 | random | 10 | 66% | 55% | Balanced self-play works |
 | 8 | network | 10 | 55% | 53% | Network-mode works |
 | **9** | **network** | **20** | **50-53%** | **50%** | **Score ↑ but win rate flat** |
-| **10** | **network** | **20** | **49-54%** | **50%** | **Lead reward + broken→fixed normalization** |
+| **10** | **network** | **10** | **48-54%** | **51%** | **Lead reward FAILED: -2.2% trend** |
+| **11** | **network** | **20** | **?** | **?** | **TD(λ) cluster-contribution** |
 
 ---
 

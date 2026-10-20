@@ -224,6 +224,40 @@ export class GridManager {
     return maxSize;
   }
 
+  /**
+   * Get the triangles belonging to the largest contiguous cluster for a player.
+   * Returns an array of {x, y, rotation} for each triangle in that cluster.
+   * Used for TD(λ) cluster-contribution reward.
+   */
+  getLargestContiguousCluster(player) {
+    let maxSize = 0;
+    let largestClusterId = null;
+    for (const clusterId in this.clusters) {
+      if (Object.hasOwnProperty.call(this.clusters, clusterId)) {
+        const clusterInfo = this.clusters[clusterId];
+        if (clusterInfo && clusterInfo.player === player && clusterInfo.size > maxSize) {
+          maxSize = clusterInfo.size;
+          largestClusterId = clusterId;
+        }
+      }
+    }
+    if (largestClusterId === null) return [];
+
+    // Collect all triangles in this cluster from the clusterMap
+    const triangles = [];
+    for (const [key, cid] of this.clusterMap.entries()) {
+      if (cid == largestClusterId) {  // == because clusterIds can be numeric strings
+        const parts = key.split(',');
+        triangles.push({
+          y: parseInt(parts[0], 10),
+          x: parseInt(parts[1], 10),
+          rotation: parseInt(parts[2], 10),
+        });
+      }
+    }
+    return triangles;
+  }
+
   // === Adjacency ===
 
   getAdjacentTriangles(x, y, rotation, player) {
