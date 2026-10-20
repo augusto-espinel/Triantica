@@ -149,6 +149,7 @@ import { RandomPlayer } from '../players/RandomPlayer.js';
 import { AIPlayer } from '../players/AIPlayer.js';
 import { GameLogger } from '../data/GameLogger.js';
 import { ReplayBuffer } from '../data/ReplayBuffer.js';
+import { HeuristicPlayer } from '../players/HeuristicPlayer.js';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -174,6 +175,13 @@ function parseArgs() {
     replayRatio: 0.5, // fraction of training data from replay buffer
     replaySize: 50000, // max replay buffer size
     explorationMode: 'perMove', // 'perMove' | 'perGame'
+    opponentMix: 'network', // 'random' | 'network' | 'heuristic' | 'mixed'
+    heuristicRatio: 0.4, // fraction of games vs heuristic (when opponentMix='mixed')
+    randomRatio: 0.2, // fraction of games vs random (when opponentMix='mixed')
+    enableClusterReward: false, // enable TD(λ) cluster-contribution reward
+    clusterRewardFactor: 0.1, // per-triangle cluster bonus
+    clusterLambda: 0.9, // eligibility trace decay
+    clusterGamma: 0.99, // discount factor
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -181,10 +189,12 @@ function parseArgs() {
     if (arg.startsWith('--')) {
       const key = arg.slice(2).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
       const val = args[++i];
-      if (key === 'learningRate' || key === 'exploration' || key === 'replayRatio') {
+      if (key === 'learningRate' || key === 'exploration' || key === 'replayRatio' || key === 'heuristicRatio' || key === 'randomRatio' || key === 'clusterRewardFactor' || key === 'clusterLambda' || key === 'clusterGamma') {
         opts[key] = parseFloat(val);
-      } else if (key === 'startFrom' || key === 'output' || key === 'selfPlayMode' || key === 'log' || key === 'explorationMode') {
+      } else if (key === 'startFrom' || key === 'output' || key === 'selfPlayMode' || key === 'log' || key === 'explorationMode' || key === 'opponentMix') {
         opts[key] = val;
+      } else if (key === 'enableClusterReward') {
+        opts[key] = val === 'true';
       } else if (key === 'replaySize') {
         opts[key] = parseInt(val, 10);
       } else {
@@ -193,6 +203,157 @@ function parseArgs() {
     }
   }
   return opts;
+}
+
+/**
+ * Run a game: AI (P1) vs an opponent player (P2)
+ * Both players' moves are collected as training data for the AI.
+ * @param {AIPlayer} aiPlayer - The learning AI (always P1)
+ * @param {object} opponent - Opponent player with getMove(gridManager) method (P2)
+ * @param {GridManager} gridManager - The game state
+ * @returns {{ winner, p1Score, p2Score, moves, firstMove, trainingSamplesAdded }}
+ */
+async function _runGameVsOpponent(aiPlayer, opponent, gridManager) {
+  const player = 1; // AI is always P1
+  const oppPlayer = 2;
+  gridManager.currentPlayer = 1;
+  gridManager.reset();
+  
+  const gameHistory = [];
+  let movesCount = 0;
+  let firstMove = null;
+  
+  while (!gridManager.isGridFull()) {
+    const currentPlayer = gridManager.currentPlayer;
+    
+    let move;
+    if (currentPlayer === player) {
+      // AI's turn
+      const state = aiPlayer.selfPlayMode === 'network'
+        ? aiPlayer._getStateRelativeToCurrentPlayer(gridManager)
+        : aiPlayer._getStateRepresentation(gridManager);
+      const immediateRewardVector = aiPlayer.calculateImmediateRewardVector(gridManager, player);
+      const rawImmediateReward = immediateRewardVector.reduce((sum, v) => sum + v, 0) / immediateRewardVector.length;
+      
+      move = aiPlayer.getMove(gridManager);
+      if (!move) break;
+      
+      const actualMoveIndex = (move.y * gridManager.cols + move.x) * 4 + move.rotation;
+      
+      gameHistory.push({
+        player,
+        move,
+        state,
+        immediateRewardVector,
+        rawImmediateReward,
+        actualMoveIndex,
+      });
+      
+      if (!firstMove) firstMove = move;
+    } else {
+      // Opponent's turn (no training data collected for opponent)
+      move = opponent.getMove(gridManager);
+      if (!move) break;
+    }
+    
+    const success = gridManager.placeTriangle(move.x, move.y, move.rotation, currentPlayer);
+    if (success) gridManager.claimEnclosedTriangles(currentPlayer);
+    movesCount++;
+  }
+  
+  // Determine winner
+  let winner = 0;
+  let p1Score = 0;
+  let p2Score = 0;
+  if (gridManager.isGridFull()) {
+    p1Score = gridManager.getLargestContiguous(1);
+    p2Score = gridManager.getLargestContiguous(2);
+    if (p1Score > p2Score) winner = 1;
+    else if (p2Score > p1Score) winner = 2;
+  }
+  
+  // Generate training data from AI's moves only
+  // (opponent moves are not used for training the AI)
+  const finalRewardWeight = 1.0;
+  const totalMoves = gameHistory.length;
+  
+  // TD(λ) cluster reward setup (same as AIPlayer.runSelfPlayGame)
+  const p1LargestCluster = gridManager.getLargestContiguousCluster(1);
+  const p1ClusterSet = aiPlayer.enableClusterReward
+    ? new Set(p1LargestCluster.map(t => `${t.x},${t.y},${t.rotation}`))
+    : null;
+  const p1ClusterBonus = p1LargestCluster.length * aiPlayer.clusterRewardFactor;
+  
+  // Normalization
+  const maxImmediateReward = 15.5;
+  const minCombinedReward = 0 - (1.0 * finalRewardWeight) - (aiPlayer.enableClusterReward ? 0 : 0);
+  const maxCombinedReward = maxImmediateReward + (1.0 * finalRewardWeight) + (aiPlayer.enableClusterReward ? 10.0 : 0);
+  const combinedRewardRange = maxCombinedReward - minCombinedReward;
+  
+  let trainingSamplesAdded = 0;
+  
+  for (let t = totalMoves - 1; t >= 0; t--) {
+    const step = gameHistory[t];
+    const stepsFromEnd = totalMoves - 1 - t;
+    
+    const rewardForPlayer = winner === step.player ? 1.0 : (winner === 0 ? 0.0 : -1.0);
+    const finalOutputVector = [...step.immediateRewardVector];
+    const immediateReward = step.rawImmediateReward;
+    
+    // Win/loss reward
+    const winReward = rewardForPlayer * finalRewardWeight;
+    
+    // Cluster contribution reward (if enabled)
+    let clusterReward = 0;
+    if (aiPlayer.enableClusterReward && step.player === 1 && p1ClusterSet) {
+      const moveKey = `${step.move.x},${step.move.y},${step.move.rotation}`;
+      if (p1ClusterSet.has(moveKey)) {
+        const eligibility = Math.pow(aiPlayer.clusterGamma * aiPlayer.clusterLambda, stepsFromEnd);
+        clusterReward = p1ClusterBonus * eligibility;
+      }
+    }
+    
+    const combinedReward = immediateReward + winReward + clusterReward;
+    let scaledCombined = combinedRewardRange !== 0
+      ? (combinedReward - minCombinedReward) / combinedRewardRange
+      : 0.5;
+    scaledCombined = Math.max(0.01, Math.min(0.99, scaledCombined));
+    
+    finalOutputVector[step.actualMoveIndex] = scaledCombined;
+    aiPlayer.trainingData.push({ input: step.state, output: finalOutputVector });
+    trainingSamplesAdded++;
+  }
+  
+  return { winner, p1Score, p2Score, moves: movesCount, firstMove, trainingSamplesAdded };
+}
+
+/**
+ * Run a game: AI (P1) vs Random (P2)
+ * Random opponent picks any valid move uniformly at random.
+ * @param {AIPlayer} aiPlayer - The learning AI (always P1)
+ * @param {GridManager} gridManager - The game state
+ * @returns {{ winner, p1Score, p2Score, moves, firstMove, trainingSamplesAdded }}
+ */
+async function _runGameVsRandom(aiPlayer, gridManager) {
+  // Create a lightweight random opponent
+  const randomOpponent = {
+    playerNumber: 2,
+    getMove(gridManager) {
+      const { rows, cols } = gridManager;
+      const validMoves = [];
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          for (let rotation = 0; rotation < 4; rotation++) {
+            if (gridManager.isValidMove(x, y, rotation)) {
+              validMoves.push({ x, y, rotation });
+            }
+          }
+        }
+      }
+      return validMoves.length > 0 ? validMoves[Math.floor(Math.random() * validMoves.length)] : null;
+    }
+  };
+  return _runGameVsOpponent(aiPlayer, randomOpponent, gridManager);
 }
 
 async function main() {
@@ -209,6 +370,13 @@ async function main() {
   console.log(`  Exploration:    ${opts.exploration}`);
   console.log(`  Expl. mode:     ${opts.explorationMode}`);
   console.log(`  Self-play mode: ${opts.selfPlayMode}`);
+  console.log(`  Opponent mix:   ${opts.opponentMix}`);
+  if (opts.opponentMix === 'mixed') {
+    console.log(`  Heuristic ratio: ${opts.heuristicRatio}`);
+    console.log(`  Random ratio:   ${opts.randomRatio}`);
+    console.log(`  Network ratio:  ${(1 - opts.heuristicRatio - opts.randomRatio).toFixed(2)}`);
+  }
+  console.log(`  Cluster reward: ${opts.enableClusterReward ? 'ON (TD(λ))' : 'OFF'}`);
   console.log(`  Replay ratio:   ${opts.replayRatio}`);
   console.log(`  Replay buffer:   ${opts.replaySize}`);
   console.log(`  Start from:     ${opts.startFrom}`);
@@ -249,6 +417,10 @@ async function main() {
     explorationFactor: opts.exploration,
     explorationMode: opts.explorationMode || 'perMove',
     selfPlayMode: opts.selfPlayMode,
+    enableClusterReward: opts.enableClusterReward,
+    clusterRewardFactor: opts.clusterRewardFactor,
+    clusterLambda: opts.clusterLambda,
+    clusterGamma: opts.clusterGamma,
     networkJSON,
   });
 
@@ -287,7 +459,15 @@ async function main() {
     logStream.write('-'.repeat(40));
 
     // Phase 1: Self-play games to generate training data
-    logStream.write(`  🎮 Running ${opts.games} self-play games...`);
+    // Supports mixed opponents: network, heuristic, random
+    const opponentMix = opts.opponentMix;
+    let heuristicPlayer = null;
+    if (opponentMix === 'heuristic' || opponentMix === 'mixed') {
+      heuristicPlayer = new HeuristicPlayer(2, { explorationFactor: 0.05 });
+      await heuristicPlayer.initialize();
+    }
+
+    logStream.write(`  🎮 Running ${opts.games} self-play games (${opponentMix} mode)...`);
     const selfPlayStart = Date.now();
     
     aiPlayer.reset();
@@ -299,10 +479,40 @@ async function main() {
     let samplesGenerated = 0;
     let firstMoves = [];
     let finalBoards = []; // Array of { cell: { player, rotation } }
+    let opponentTypeCounts = { network: 0, heuristic: 0, random: 0 };
 
     for (let g = 0; g < opts.games; g++) {
+      // Determine opponent type for this game
+      let opponentType = 'network'; // default
+      if (opponentMix === 'random') {
+        opponentType = 'random';
+      } else if (opponentMix === 'heuristic') {
+        opponentType = 'heuristic';
+      } else if (opponentMix === 'mixed') {
+        const r = Math.random();
+        if (r < opts.heuristicRatio) {
+          opponentType = 'heuristic';
+        } else if (r < opts.heuristicRatio + opts.randomRatio) {
+          opponentType = 'random';
+        } else {
+          opponentType = 'network';
+        }
+      }
+      opponentTypeCounts[opponentType]++;
+
       gridManager.reset();
-      const result = aiPlayer.runSelfPlayGame(gridManager);
+      let result;
+
+      if (opponentType === 'network') {
+        // Standard self-play: both sides use network
+        result = aiPlayer.runSelfPlayGame(gridManager);
+      } else if (opponentType === 'heuristic') {
+        // AI (P1) vs Heuristic (P2)
+        result = await _runGameVsOpponent(aiPlayer, heuristicPlayer, gridManager);
+      } else {
+        // AI (P1) vs Random (P2)
+        result = await _runGameVsRandom(aiPlayer, gridManager);
+      }
       
       if (result.winner === 0) selfPlayWins.draws++;
       else selfPlayWins[result.winner]++;
@@ -351,6 +561,9 @@ async function main() {
     const p2Max = computeMax(selfPlayScores[2]);
     
     logStream.write(`  ✅ Self-play complete: ${opts.games} games, ${samplesGenerated} samples, ${selfPlayDuration}ms`);
+    if (opponentMix !== 'network' && opponentMix !== 'random') {
+      logStream.write(`     Opponent breakdown: Network=${opponentTypeCounts.network}, Heuristic=${opponentTypeCounts.heuristic}, Random=${opponentTypeCounts.random}`);
+    }
 
     // Phase 2: Train network with experience replay
     const newTrainingData = aiPlayer.getTrainingData();
@@ -475,7 +688,10 @@ async function main() {
     const cycleDuration = ((Date.now() - cycleStart) / 1000).toFixed(0);
     const p1ScoreStr = `med=${p1Median.toFixed(0)} (σ²=${p1Variance.toFixed(0)}, ${p1Min}-${p1Max})`;
     const p2ScoreStr = `med=${p2Median.toFixed(0)} (σ²=${p2Variance.toFixed(0)}, ${p2Min}-${p2Max})`;
-    logStream.write(`\n  📋 Cycle ${cycle} Summary | Self-play: P1=${selfPlayWins[1]} P2=${selfPlayWins[2]} D=${selfPlayWins.draws} | P1 ${p1ScoreStr} | P2 ${p2ScoreStr} | Train: ${trainResult?.initialError?.toFixed(6) ?? 'N/A'} → ${trainResult?.error?.toFixed(6) ?? 'N/A'} (${replaySamples.length} replay + ${newTrainingData.length} new) | Eval: ${(aiWinRate * 100).toFixed(1)}% (AI med=${evalP1Median.toFixed(0)}, Rand med=${evalP2Median.toFixed(0)}, gap=+${evalGap.toFixed(0)}) | Diversity: Open=${openingDiversity.toFixed(2)} Board=${boardDiversity.toFixed(2)} | Buf: ${replayBuffer.size} | ${cycleDuration}s\n`);
+    const oppMixStr = (opts.opponentMix !== 'network' && opts.opponentMix !== 'random')
+      ? ` (H=${opponentTypeCounts.heuristic},R=${opponentTypeCounts.random})`
+      : '';
+    logStream.write(`\n  📋 Cycle ${cycle} Summary | Self-play: P1=${selfPlayWins[1]} P2=${selfPlayWins[2]} D=${selfPlayWins.draws}${oppMixStr} | P1 ${p1ScoreStr} | P2 ${p2ScoreStr} | Train: ${trainResult?.initialError?.toFixed(6) ?? 'N/A'} → ${trainResult?.error?.toFixed(6) ?? 'N/A'} (${replaySamples.length} replay + ${newTrainingData.length} new) | Eval: ${(aiWinRate * 100).toFixed(1)}% (AI med=${evalP1Median.toFixed(0)}, Rand med=${evalP2Median.toFixed(0)}, gap=+${evalGap.toFixed(0)}) | Diversity: Open=${openingDiversity.toFixed(2)} Board=${boardDiversity.toFixed(2)} | Buf: ${replayBuffer.size} | ${cycleDuration}s\n`);
 
     // Save checkpoint
     if (cycle % opts.saveEvery === 0 || cycle === opts.cycles) {

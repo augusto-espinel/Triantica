@@ -170,15 +170,34 @@ calculateImmediateRewardVector(state, player) {
 }
 ```
 
-### Reward Components Summary (Exp 11+)
+### Reward Components Summary
 
-| Component | Type | Factor | Purpose |
-|-----------|------|--------|----------|
-| **Claim bonus** | Immediate | 0.3/triangle | Encourage enclosure creation |
-| **Cluster growth** | Immediate | 0.1/triangle | Encourage cluster building |
-| **Largest lead** | Immediate | 0.2/lead delta | Direct win condition optimization |
-| **Win/loss** | Final outcome | ±1.0 (λ=1) | Credit ALL moves equally |
-| **Cluster contribution** | Final outcome | 0.1/triangle (TD λ=0.9) | Credit moves IN winning cluster |
+| Component | Type | Factor | Purpose | Default |
+|-----------|------|--------|---------|--------|
+| **Claim bonus** | Immediate | 0.3/triangle | Encourage enclosure creation | ON |
+| **Cluster growth** | Immediate | 0.1/triangle | Encourage cluster building | ON |
+| **Largest lead** | Immediate | 0.2/lead delta | Direct win condition optimization | ON |
+| **Win/loss** | Final outcome | ±1.0 (λ=1) | Credit ALL moves equally | ON |
+| **Cluster contribution** | Final outcome | 0.1/triangle (TD λ=0.9) | Credit moves IN winning cluster | **OFF** |
+
+> ⚠️ **Exp 11 Result:** TD(λ) cluster-contribution reward **degraded performance** (49.2% vs 51-53% baseline). It's now **disabled by default** but configurable.
+
+#### Configurable TD(λ) Cluster Reward
+
+```javascript
+// In AIPlayer constructor:
+this.enableClusterReward = config.enableClusterReward ?? false;  // OFF by default
+this.clusterRewardFactor = config.clusterRewardFactor ?? 0.1;
+this.clusterLambda = config.clusterLambda ?? 0.9;
+this.clusterGamma = config.clusterGamma ?? 0.99;
+```
+
+```bash
+# Enable for future experiments:
+node src/server/train.js --enable-cluster-reward true \
+                          --cluster-reward-factor 0.1 \
+                          --cluster-lambda 0.9
+```
 
 ### Reward Scaling
 

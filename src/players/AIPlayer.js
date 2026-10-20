@@ -55,6 +55,10 @@ export class AIPlayer extends PlayerInterface {
    * @param {number} config.explorationFactor - Probability of random move (default 0.2)
    * @param {number} config.immediacyFactor - Probability of immediate-reward move vs network (default 0.9)
    * @param {string} config.explorationMode - 'perMove' | 'perGame' (default 'perMove')
+   * @param {boolean} config.enableClusterReward - Enable TD(λ) cluster-contribution reward (default: false)
+   * @param {number} config.clusterRewardFactor - Per-triangle cluster bonus (default: 0.1)
+   * @param {number} config.clusterLambda - Eligibility trace decay (default: 0.9)
+   * @param {number} config.clusterGamma - Discount factor (default: 0.99)
    * @param {object} config.networkJSON - Pre-trained network state (optional)
    * @param {Function} config.brainFactory - () => brain.js reference (for testing/DI)
    */
@@ -71,6 +75,11 @@ export class AIPlayer extends PlayerInterface {
     this.trainingData = [];
     this._networkJSON = config.networkJSON || null;
     this._brainFactory = config.brainFactory || null;
+    // TD(λ) cluster reward configuration
+    this.enableClusterReward = config.enableClusterReward ?? false;
+    this.clusterRewardFactor = config.clusterRewardFactor ?? 0.1;
+    this.clusterLambda = config.clusterLambda ?? 0.9;
+    this.clusterGamma = config.clusterGamma ?? 0.99;
   }
 
   /**
@@ -599,18 +608,22 @@ export class AIPlayer extends PlayerInterface {
     // Only moves that placed triangles IN the final largest cluster get
     // the cluster contribution bonus, with TD(λ) decay going backwards.
     // Win/loss reward still propagates equally (λ=1) to all moves.
+    //
+    // CONFIGURABLE: Set config.enableClusterReward = true to enable.
+    // Default: disabled (Exp 12+). The cluster reward added noise that
+    // suppressed learning (see Exp 11 results).
 
-    const gamma = 0.99;    // Discount factor
-    const lambda = 0.9;    // Eligibility trace decay for cluster reward
-    const clusterRewardFactor = 0.1;  // Per-triangle reward in the largest cluster
+    const gamma = this.clusterGamma;    // Discount factor
+    const lambda = this.clusterLambda;    // Eligibility trace decay for cluster reward
+    const clusterRewardFactor = this.clusterRewardFactor;  // Per-triangle reward in the largest cluster
 
     // Get the actual triangles in each player's largest cluster
     const p1LargestCluster = gridManager.getLargestContiguousCluster(1);
     const p2LargestCluster = gridManager.getLargestContiguousCluster(2);
 
     // Build lookup sets for fast membership testing
-    const p1ClusterSet = new Set(p1LargestCluster.map(t => `${t.x},${t.y},${t.rotation}`));
-    const p2ClusterSet = new Set(p2LargestCluster.map(t => `${t.x},${t.y},${t.rotation}`));
+    const p1ClusterSet = this.enableClusterReward ? new Set(p1LargestCluster.map(t => `${t.x},${t.y},${t.rotation}`)) : null;
+    const p2ClusterSet = this.enableClusterReward ? new Set(p2LargestCluster.map(t => `${t.x},${t.y},${t.rotation}`)) : null;
 
     // Total cluster bonus per player (proportional to cluster size)
     const p1ClusterBonus = p1LargestCluster.length * clusterRewardFactor;
@@ -620,12 +633,13 @@ export class AIPlayer extends PlayerInterface {
     const finalRewardWeight = 1.0;
     const totalMoves = gameHistory.length;
 
-    // Updated normalization bounds including cluster contribution bonus
-    // Using consistent raw scale: immediate (0-15.5) + win/loss (±1.0) + cluster (0-10.0)
+    // Updated normalization bounds
+    // Without cluster reward: immediate (0-15.5) + win/loss (±1.0) = range ~17.5
+    // With cluster reward: immediate (0-15.5) + win/loss (±1.0) + cluster (0-10.0) = range ~27.5
     const minImmediateReward = 0;
     const maxImmediateReward = 15.5;  // Realistic max
-    const minCombinedReward = minImmediateReward - (1.0 * finalRewardWeight) - 0;  // Lost, no immediate, no cluster
-    const maxCombinedReward = maxImmediateReward + (1.0 * finalRewardWeight) + 10.0;  // Won, max immediate, max cluster
+    const minCombinedReward = minImmediateReward - (1.0 * finalRewardWeight) - (this.enableClusterReward ? 0 : 0);
+    const maxCombinedReward = maxImmediateReward + (1.0 * finalRewardWeight) + (this.enableClusterReward ? 10.0 : 0);
     const combinedRewardRange = maxCombinedReward - minCombinedReward;
 
     // TD(λ) cluster contribution reward
@@ -670,18 +684,21 @@ export class AIPlayer extends PlayerInterface {
       // 2. Cluster contribution reward: TD(λ=0.9)
       //    Only moves whose triangles are IN the final largest cluster get this.
       //    Credit decays based on distance from game end.
+      //    DISABLED by default (enableClusterReward=false).
       let clusterReward = 0;
-      const moveKey = `${step.move.x},${step.move.y},${step.move.rotation}`;
+      if (this.enableClusterReward) {
+        const moveKey = `${step.move.x},${step.move.y},${step.move.rotation}`;
 
-      const isP1Contributor = step.player === 1 && p1ClusterSet.has(moveKey);
-      const isP2Contributor = step.player === 2 && p2ClusterSet.has(moveKey);
+        const isP1Contributor = step.player === 1 && p1ClusterSet.has(moveKey);
+        const isP2Contributor = step.player === 2 && p2ClusterSet.has(moveKey);
 
-      if (isP1Contributor || isP2Contributor) {
-        // This move contributed to the winning cluster
-        // Credit decays exponentially with distance from game end
-        const eligibility = Math.pow(gamma * lambda, stepsFromEnd);
-        const clusterBonus = isP1Contributor ? p1ClusterBonus : p2ClusterBonus;
-        clusterReward = clusterBonus * eligibility;
+        if (isP1Contributor || isP2Contributor) {
+          // This move contributed to the winning cluster
+          // Credit decays exponentially with distance from game end
+          const eligibility = Math.pow(gamma * lambda, stepsFromEnd);
+          const clusterBonus = isP1Contributor ? p1ClusterBonus : p2ClusterBonus;
+          clusterReward = clusterBonus * eligibility;
+        }
       }
 
       // Combined: immediate + win/loss (λ=1) + cluster contribution (TD λ=0.9)

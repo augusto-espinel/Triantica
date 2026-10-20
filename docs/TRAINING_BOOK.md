@@ -31,19 +31,15 @@
 
 ### 🔍 Key Insight
 
-**The network learned the wrong objective.**
+**Sophisticated reward shaping made things worse.** Exp 10 (lead reward) and Exp 11 (TDλ cluster contribution) both regressed below baseline. The simplest signal works best.
 
-Current rewards: Claim territory (+0.3), grow clusters (+0.1 per triangle), lead bonus (+0.2/lead)
-Actual win condition: Build the **largest single cluster**
-
-These overlap but are NOT identical. The AI plays "safely" to maximize points, not "strategically" to dominate the board.
+**New hypothesis:** The problem is architectural — the network cannot learn spatial reasoning with a flat 401-vector. Mixed-opponent curriculum may help by providing better training data.
 
 ### 📋 Recommended Next Steps
 
-1. **Test per-game exploration** — Cleaner training trajectories (Exp 11)
-2. **A/B test: normalization fix alone** — Is lead reward actually helping, or just better normalization?
-3. **Consider curriculum learning** — Start vs random, switch to network when >60%
-4. **Consider temporal discounting** — γ^t weighting for final reward
+1. **Experiment 12: Mixed-opponent curriculum** — Train vs 40% heuristic, 40% network, 20% random
+2. **If curriculum fails:** Consider architecture changes (CNN, attention)
+3. **If curriculum succeeds:** Refine opponent ratios, then consider MCTS
 
 ---
 
@@ -1781,7 +1777,7 @@ for (let t = totalMoves - 1; t >= 0; t--) {
 | 8 | network | 10 | 55% | 53% | Network-mode works |
 | **9** | **network** | **20** | **50-53%** | **50%** | **Score ↑ but win rate flat** |
 | **10** | **network** | **10** | **48-54%** | **51%** | **Lead reward FAILED: -2.2% trend** |
-| **11** | **network** | **20** | **?** | **?** | **TD(λ) cluster-contribution** |
+| **11** | **network** | **17** | **45-54%** | **49.2%** | **TD(λ) FAILED: -2% worse** |
 
 ---
 
@@ -1921,6 +1917,93 @@ class ReplayBuffer {
 ```
 
 **Decision:** Implement for Experiment 8.
+
+---
+
+## Experiment 11 Results (2026-10-20)
+
+**Config:** 17 cycles, 100 games/cycle, 200 eval games, `--self-play-mode network`, lr=0.01, exploration=0.2, TD(λ=0.9) cluster-contribution reward
+**Log:** `experiments/logs/exp11.log`
+**Duration:** ~2 hours
+
+### The Numbers
+
+| Metric | Exp 9 (baseline) | Exp 10 (lead) | Exp 11 (TDλ) |
+|--------|------------------|---------------|---------------|
+| Mean win rate | 51-53% | 50.1% | **49.2%** |
+| AI score median | 37→45 ↑ | 42→36 ↓ | 33→37 (flat) |
+| Score gap vs random | +8 improvement | -6 regression | +4 (barely) |
+
+### Score Trend Analysis
+
+```
+Exp 11 Score Progression (AI Median):
+Cycle 1:  33 | Cycle 6:  42 | Cycle 11: 40 | Cycle 16: 37
+Cycle 2:  32 | Cycle 7:  40 | Cycle 12: 38 | 
+Cycle 3:  38 | Cycle 8:  37 | Cycle 13: 39 | 
+Cycle 4:  38 | Cycle 9:  35 | Cycle 14: 37 | 
+Cycle 5:  35 | Cycle 10: 38| Cycle 15: 37 | 
+
+First 5 avg: 35.2, Last 5 avg: 37.6 (+2.4 minimal)
+Score gap (AI-Rand): first 5 avg=+1.0, last 5 avg=+1.0 (no improvement)
+```
+
+### Diagnosis
+
+**TD(λ) cluster reward destroyed the learning signal.**
+
+1. **Conflicting gradient signals**: The immediate reward says "grow any cluster (+0.1/triangle)" but the TD(λ) bonus says "only moves in the winning cluster matter." The network received contradictory gradients.
+
+2. **Most moves get zero cluster bonus**: In a game with ~80 triangles per player, only those in the largest cluster get credit. The network learned that most of its moves "don't matter" → learned helplessness.
+
+3. **Sparse terminal reward overwhelms dense intermediate signal**: Classic RL problem — the win/loss reward is so sparse that it dominates the gradient, drowning out the cluster-contribution signal.
+
+### Conclusion
+
+**Adding sophisticated reward shaping made performance WORSE.** The simplest signal (Exp 9: claims + cluster + win/loss) remains the best. The problem is likely architectural, not reward-related.
+
+---
+
+## Experiment 12: Curriculum Learning (Planned)
+
+**Hypothesis:** The network needs a stable, competent opponent to learn from — not random (too easy) or self (circular equilibrium).
+
+**Approach:** Mixed opponent training with HeuristicPlayer:
+- 40% games vs Heuristic (competent, deterministic)
+- 40% games vs Network (self-play for improvement)
+- 20% games vs Random (maintain diversity)
+
+**Why this could work:**
+
+1. **Anchoring to competence**: Heuristic always plays reasonably, so the network can't coast. Must learn real strategy.
+
+2. **Imitation signal**: When heuristic wins, its moves become positive training examples. Network learns by imitation.
+
+3. **Stable target**: Unlike network self-play where both drift, heuristic is fixed. Progress measurable.
+
+4. **No reward engineering needed**: Use simple Exp 9 reward, let curriculum do the work.
+
+**Implementation:**
+
+```bash
+node src/server/train.js \
+  --cycles 20 \
+  --games 100 \
+  --eval-games 200 \
+  --opponent-mix mixed \
+  --heuristic-ratio 0.4 \
+  --random-ratio 0.2 \
+  --enable-cluster-reward false \
+  --start-from checkpoint-cycle-15.json \
+  --log exp12.log
+```
+
+**Configurable TD(λ):** The cluster reward is disabled by default (`enableClusterReward: false`) but can be re-enabled via `--enable-cluster-reward true`.
+
+**Success criteria:**
+- Win rate >55% sustained across cycles 15-20
+- AI median score >40 consistently
+- Self-play win rates approaching 50/50 (competitive)
 
 ---
 
