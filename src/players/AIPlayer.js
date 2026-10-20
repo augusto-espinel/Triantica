@@ -148,6 +148,14 @@ export class AIPlayer extends PlayerInterface {
       activation: 'sigmoid',
     });
 
+    // Initialize weights with random data (brain.js needs this before run())
+    const dummyInput = new Array(inputSize).fill(0).map(() => Math.random());
+    const dummyOutput = new Array(outputSize).fill(0.5);
+    this.network.train([{ input: dummyInput, output: dummyOutput }], {
+      iterations: 1,
+      errorThresh: 1.0,
+    });
+
     this.isNetworkLoaded = false;
   }
 
