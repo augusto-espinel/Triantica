@@ -270,6 +270,9 @@ async function _runGameVsOpponent(aiPlayer, opponent, gridManager) {
     }
     if (success) gridManager.claimEnclosedTriangles(currentPlayer);
     movesCount++;
+    
+    // Switch to other player for next turn
+    gridManager.currentPlayer = currentPlayer === 1 ? 2 : 1;
   }
   
   // Determine winner
