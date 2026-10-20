@@ -1,13 +1,13 @@
 /**
  * Automated training pipeline for Triantica AI
- * 
+ *
  * Runs self-play games → trains network → evaluates vs random → repeats
- * Designed for M2 Ultra: uses single-threaded brain.js training 
+ * Designed for M2 Ultra: uses single-threaded brain.js training
  * (brain.js GPU not available in Node, but M2 is fast enough for CPU)
- * 
+ *
  * Usage:
  *   node src/server/train.js [options]
- *   
+ *
  * Options:
  *   --cycles N         Number of train+eval cycles (default: 10)
  *   --games N          Self-play games per cycle (default: 50)
@@ -104,7 +104,7 @@ function computeBoardDiversity(finalBoards) {
   if (finalBoards.length === 0) return 0;
   const numCells = finalBoards[0].length;
   let totalEntropy = 0;
-  
+
   for (let i = 0; i < numCells; i++) {
     // Count ownership states for this cell across all games
     // State: "t1_p,t2_p" (e.g., "1,2" means t1 owned by P1, t2 owned by P2)
@@ -115,20 +115,20 @@ function computeBoardDiversity(finalBoards) {
     }
     totalEntropy += computeEntropy(Object.values(stateCounts));
   }
-  
+
   return totalEntropy / numCells;
 }
 
 /**
  * Automated training pipeline for Triantica AI
- * 
+ *
  * Runs self-play games → trains network → evaluates vs random → repeats
- * Designed for M2 Ultra: uses single-threaded brain.js training 
+ * Designed for M2 Ultra: uses single-threaded brain.js training
  * (brain.js GPU not available in Node, but M2 is fast enough for CPU)
- * 
+ *
  * Usage:
  *   node src/server/train.js [options]
- *   
+ *
  * Options:
  *   --cycles N         Number of train+eval cycles (default: 10)
  *   --games N          Self-play games per cycle (default: 50)
@@ -211,11 +211,10 @@ function parseArgs() {
  * @param {AIPlayer} aiPlayer - The learning AI (always P1)
  * @param {object} opponent - Opponent player with getMove(gridManager) method (P2)
  * @param {GridManager} gridManager - The game state
- * @returns {{ winner, p1Score, p2Score, moves, firstMove, trainingSamplesAdded }}
+ * @returns {Promise<{ winner, p1Score, p2Score, moves, firstMove, trainingSamplesAdded }>}
  */
 async function _runGameVsOpponent(aiPlayer, opponent, gridManager) {
   const player = 1; // AI is always P1
-  const oppPlayer = 2;
   gridManager.currentPlayer = 1;
   gridManager.reset();
   
@@ -235,7 +234,7 @@ async function _runGameVsOpponent(aiPlayer, opponent, gridManager) {
       const immediateRewardVector = aiPlayer.calculateImmediateRewardVector(gridManager, player);
       const rawImmediateReward = immediateRewardVector.reduce((sum, v) => sum + v, 0) / immediateRewardVector.length;
       
-      move = aiPlayer.getMove(gridManager);
+      move = await aiPlayer.getMove(gridManager);
       if (!move) break;
       
       const actualMoveIndex = (move.y * gridManager.cols + move.x) * 4 + move.rotation;
@@ -253,10 +252,22 @@ async function _runGameVsOpponent(aiPlayer, opponent, gridManager) {
     } else {
       // Opponent's turn (no training data collected for opponent)
       move = opponent.getMove(gridManager);
-      if (!move) break;
+      if (!move) {
+        console.error('Opponent returned null/undefined move');
+        break;
+      }
+      if (typeof move.x !== 'number' || typeof move.y !== 'number' || typeof move.rotation !== 'number') {
+        console.error('Opponent returned invalid move:', JSON.stringify(move));
+        break;
+      }
     }
     
+    // Debug: log move before placing
+    // console.log(`P${currentPlayer} move:`, move);
     const success = gridManager.placeTriangle(move.x, move.y, move.rotation, currentPlayer);
+    if (!success) {
+      console.error(`Failed to place triangle at (${move.x}, ${move.y}, r${move.rotation}) for player ${currentPlayer}`);
+    }
     if (success) gridManager.claimEnclosedTriangles(currentPlayer);
     movesCount++;
   }
@@ -273,11 +284,10 @@ async function _runGameVsOpponent(aiPlayer, opponent, gridManager) {
   }
   
   // Generate training data from AI's moves only
-  // (opponent moves are not used for training the AI)
   const finalRewardWeight = 1.0;
   const totalMoves = gameHistory.length;
   
-  // TD(λ) cluster reward setup (same as AIPlayer.runSelfPlayGame)
+  // TD(λ) cluster reward setup
   const p1LargestCluster = gridManager.getLargestContiguousCluster(1);
   const p1ClusterSet = aiPlayer.enableClusterReward
     ? new Set(p1LargestCluster.map(t => `${t.x},${t.y},${t.rotation}`))
@@ -332,7 +342,7 @@ async function _runGameVsOpponent(aiPlayer, opponent, gridManager) {
  * Random opponent picks any valid move uniformly at random.
  * @param {AIPlayer} aiPlayer - The learning AI (always P1)
  * @param {GridManager} gridManager - The game state
- * @returns {{ winner, p1Score, p2Score, moves, firstMove, trainingSamplesAdded }}
+ * @returns {Promise<{ winner, p1Score, p2Score, moves, firstMove, trainingSamplesAdded }>}
  */
 async function _runGameVsRandom(aiPlayer, gridManager) {
   // Create a lightweight random opponent
@@ -359,7 +369,7 @@ async function _runGameVsRandom(aiPlayer, gridManager) {
 async function main() {
   const opts = parseArgs();
   const projectRoot = join(__dirname, '..', '..');
-  
+
   console.log('\n🏋️  Triantica AI Training Pipeline');
   console.log('='.repeat(50));
   console.log(`  Cycles:         ${opts.cycles}`);
@@ -387,14 +397,14 @@ async function main() {
   const logsDir = join(projectRoot, 'experiments', 'logs');
   mkdirSync(logsDir, { recursive: true });
   const logPath = opts.log || join(logsDir, `training-${Date.now()}.log`);
-  
+
   const logStream = {
     write: (msg) => {
       writeFileSync(logPath, msg, { flag: 'a' });
       console.log(msg.trim());
     }
   };
-  
+
   logStream.write(`\n🏋️  Triantica AI Training Pipeline\n`);
   logStream.write(`Started: ${new Date().toISOString()}\n`);
   logStream.write(`Log: ${logPath}\n\n`);
@@ -402,7 +412,7 @@ async function main() {
   // Load or create AI player
   let networkJSON = null;
   const networkPath = join(projectRoot, opts.startFrom);
-  
+
   if (existsSync(networkPath)) {
     try {
       networkJSON = JSON.parse(readFileSync(networkPath, 'utf-8'));
@@ -464,15 +474,14 @@ async function main() {
     let heuristicPlayer = null;
     if (opponentMix === 'heuristic' || opponentMix === 'mixed') {
       heuristicPlayer = new HeuristicPlayer(2, { explorationFactor: 0.05 });
-      await heuristicPlayer.initialize();
     }
 
     logStream.write(`  🎮 Running ${opts.games} self-play games (${opponentMix} mode)...`);
     const selfPlayStart = Date.now();
-    
+
     aiPlayer.reset();
     const gridManager = new GridManager();
-    
+
     let selfPlayWins = { 1: 0, 2: 0, draws: 0 };
     let selfPlayMoves = 0;
     let selfPlayScores = { 1: [], 2: [] }; // Array of all scores for median/variance
@@ -513,19 +522,19 @@ async function main() {
         // AI (P1) vs Random (P2)
         result = await _runGameVsRandom(aiPlayer, gridManager);
       }
-      
+
       if (result.winner === 0) selfPlayWins.draws++;
       else selfPlayWins[result.winner]++;
       selfPlayMoves += result.moves;
       selfPlayScores[1].push(result.p1Score || 0);
       selfPlayScores[2].push(result.p2Score || 0);
-      samplesGenerated += result.trainingSamplesAdded;
-      
+      samplesGenerated += result.trainingSamplesAdded || result.moves;
+
       // Track first move for diversity
       if (result.firstMove) {
         firstMoves.push(`${result.firstMove.x},${result.firstMove.y},r${result.firstMove.rotation}`);
       }
-      
+
       // Track final board state for diversity
       const boardState = [];
       for (let y = 0; y < gridManager.rows; y++) {
@@ -549,7 +558,7 @@ async function main() {
     const selfPlayDuration = Date.now() - selfPlayStart;
     const openingDiversity = computeOpeningDiversity(firstMoves);
     const boardDiversity = computeBoardDiversity(finalBoards);
-    
+
     // Compute score metrics for self-play
     const p1Median = computeMedian(selfPlayScores[1]);
     const p2Median = computeMedian(selfPlayScores[2]);
@@ -559,7 +568,7 @@ async function main() {
     const p2Min = computeMin(selfPlayScores[2]);
     const p1Max = computeMax(selfPlayScores[1]);
     const p2Max = computeMax(selfPlayScores[2]);
-    
+
     logStream.write(`  ✅ Self-play complete: ${opts.games} games, ${samplesGenerated} samples, ${selfPlayDuration}ms`);
     if (opponentMix !== 'network' && opponentMix !== 'random') {
       logStream.write(`     Opponent breakdown: Network=${opponentTypeCounts.network}, Heuristic=${opponentTypeCounts.heuristic}, Random=${opponentTypeCounts.random}`);
@@ -567,10 +576,10 @@ async function main() {
 
     // Phase 2: Train network with experience replay
     const newTrainingData = aiPlayer.getTrainingData();
-    
+
     // Add new samples to replay buffer
     replayBuffer.add(newTrainingData);
-    
+
     // Mix new data with replay buffer samples
     let trainingData;
     const replaySamples = replayBuffer.sample(Math.floor(newTrainingData.length * opts.replayRatio));
@@ -580,22 +589,22 @@ async function main() {
       const j = Math.floor(Math.random() * (i + 1));
       [trainingData[i], trainingData[j]] = [trainingData[j], trainingData[i]];
     }
-    
+
     logStream.write(`  📚 Training network (${opts.iterations} iterations, lr=${opts.learningRate}, ${trainingData.length} samples [${replaySamples.length} replay + ${newTrainingData.length} new])...`);
     const trainStart = Date.now();
-    
+
     // Set the mixed training data and train
     aiPlayer.setTrainingData(trainingData);
     const trainResult = aiPlayer.trainNetwork(opts.iterations, opts.learningRate);
-    
+
     const trainDuration = Date.now() - trainStart;
-    
+
     if (trainResult) {
       const errorDelta = trainResult.initialError - trainResult.error;
       const convRate = trainResult.errorReductionHalf;
       const convNote = convRate !== null ? ` | ${(convRate * 100).toFixed(0)}% error drop by half iters` : '';
       logStream.write(`  ✅ Training complete: error=${trainResult.error?.toFixed(6) ?? 'N/A'} (was ${trainResult.initialError?.toFixed(6) ?? 'N/A'}, Δ=${errorDelta?.toFixed(6) ?? 'N/A'})${convNote}, ${trainDuration}ms`);
-      
+
       // Log error convergence curve
       if (trainResult.errorSnapshots && trainResult.errorSnapshots.length > 1) {
         const curve = trainResult.errorSnapshots.map(s => `${s.iteration}:${s.error.toFixed(4)}`).join(' → ');
@@ -608,30 +617,30 @@ async function main() {
     // Phase 3: Evaluate vs Random
     logStream.write(`  📊 Evaluating vs Random (${opts.evalGames} games)...`);
     const evalStart = Date.now();
-    
+
     const evalAI = new AIPlayer(1, {
       difficulty: 'medium',
       explorationFactor: 0.05, // Lower exploration for evaluation
       networkJSON: aiPlayer.exportNetwork(),
     });
     await evalAI.initialize();
-    
+
     const session = new GameSession();
     session.setPlayers(evalAI, new RandomPlayer(2));
     const evalResults = await session.runGames(opts.evalGames);
-    
+
     const evalDuration = Date.now() - evalStart;
     const aiWinRate = evalResults.wins[1] / opts.evalGames;
-    
+
     // Compute eval score metrics
     const evalP1Median = computeMedian(evalResults.scores?.[1] || [0]);
     const evalP2Median = computeMedian(evalResults.scores?.[2] || [0]);
     const evalP1Variance = computeVariance(evalResults.scores?.[1] || [0]);
     const evalP2Variance = computeVariance(evalResults.scores?.[2] || [0]);
     const evalGap = evalP1Median - evalP2Median;
-    
+
     logStream.write(`  📈 AI Win Rate: ${(aiWinRate * 100).toFixed(1)}% (${evalResults.wins[1]}W / ${evalResults.wins[2]}L / ${evalResults.wins.draws}D)`);
-    logStream.write(`     Scores: AI med=${evalP1Median.toFixed(0)} (σ²=${evalP1Variance.toFixed(0)}), Random med=${evalP2Median.toFixed(0)} (σ²=${evalP2Variance.toFixed(0)}), gap=+${evalGap.toFixed(0)}`);
+    logStream.write(`     Scores: AI med=${evalP1Median.toFixed(0)} (σ2=${evalP1Variance.toFixed(0)}), Random med=${evalP2Median.toFixed(0)} (σ2=${evalP2Variance.toFixed(0)}), gap=+${evalGap.toFixed(0)}`);
     logStream.write(`     Avg moves: ${evalResults.avgMoves.toFixed(1)}, Duration: ${evalDuration}ms`);
 
     // Record cycle
@@ -686,8 +695,8 @@ async function main() {
 
     // Per-cycle summary line for easy log monitoring
     const cycleDuration = ((Date.now() - cycleStart) / 1000).toFixed(0);
-    const p1ScoreStr = `med=${p1Median.toFixed(0)} (σ²=${p1Variance.toFixed(0)}, ${p1Min}-${p1Max})`;
-    const p2ScoreStr = `med=${p2Median.toFixed(0)} (σ²=${p2Variance.toFixed(0)}, ${p2Min}-${p2Max})`;
+    const p1ScoreStr = `med=${p1Median.toFixed(0)} (σ2=${p1Variance.toFixed(0)}, ${p1Min}-${p1Max})`;
+    const p2ScoreStr = `med=${p2Median.toFixed(0)} (σ2=${p2Variance.toFixed(0)}, ${p2Min}-${p2Max})`;
     const oppMixStr = (opts.opponentMix !== 'network' && opts.opponentMix !== 'random')
       ? ` (H=${opponentTypeCounts.heuristic},R=${opponentTypeCounts.random})`
       : '';
@@ -705,7 +714,7 @@ async function main() {
 
     // Early stopping if AI is doing well
     if (aiWinRate >= 0.80) {
-      logStream.write(`\n🎯 AI reached ${(aiWinRate * 100).toFixed(1)}% win rate — training target met!`);
+      logStream.write(`\n🎯 AI reached ${(aiWinRate * 100).toFixed(1)}% win rate - training target met!`);
       break;
     }
   }
@@ -728,7 +737,7 @@ async function main() {
   logStream.write('\n' + '='.repeat(50));
   logStream.write('📊 Training Summary');
   logStream.write('='.repeat(50));
-  
+
   if (trainingLog.cycles.length > 1) {
     const first = trainingLog.cycles[0].evaluation.aiWinRate;
     const last = trainingLog.cycles[trainingLog.cycles.length - 1].evaluation.aiWinRate;
