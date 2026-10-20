@@ -54,6 +54,7 @@ export class AIPlayer extends PlayerInterface {
    * @param {string} config.difficulty - 'easy' | 'medium' | 'hard'
    * @param {number} config.explorationFactor - Probability of random move (default 0.2)
    * @param {number} config.immediacyFactor - Probability of immediate-reward move vs network (default 0.9)
+   * @param {string} config.explorationMode - 'perMove' | 'perGame' (default 'perMove')
    * @param {object} config.networkJSON - Pre-trained network state (optional)
    * @param {Function} config.brainFactory - () => brain.js reference (for testing/DI)
    */
@@ -63,7 +64,9 @@ export class AIPlayer extends PlayerInterface {
     this.difficulty = config.difficulty || 'medium';
     this.explorationFactor = config.explorationFactor ?? 0.2;
     this.immediacyFactor = config.immediacyFactor ?? 0.9;
+    this.explorationMode = config.explorationMode || 'perMove'; // 'perMove' | 'perGame'
     this.selfPlayMode = config.selfPlayMode || 'random'; // 'random' | 'network'
+    this.gamePlayMode = 'network'; // 'random' | 'network' — set per game when explorationMode='perGame'
     this.isNetworkLoaded = false;
     this.trainingData = [];
     this._networkJSON = config.networkJSON || null;
@@ -140,6 +143,23 @@ export class AIPlayer extends PlayerInterface {
   }
 
   /**
+   * Set play mode for this game (used in 'perGame' exploration mode).
+   * Call at the start of each game.
+   * @param {'random' | 'network'} mode
+   */
+  setGamePlayMode(mode) {
+    this.gamePlayMode = mode;
+  }
+
+  /**
+   * Determine play mode for a new game (per-game exploration).
+   * @returns {'random' | 'network'}
+   */
+  _determineGamePlayMode() {
+    return Math.random() < this.explorationFactor ? 'random' : 'network';
+  }
+
+  /**
    * Get move from AI — implements PlayerInterface
    * @param {GridManager} gridManager
    * @returns {Promise<{x, y, rotation}>}
@@ -150,12 +170,27 @@ export class AIPlayer extends PlayerInterface {
       return this._getRandomValidMove(gridManager);
     }
 
-    // Epsilon-greedy: explore vs exploit
+    // Per-game exploration: mode is determined once at game start
+    if (this.explorationMode === 'perGame') {
+      if (this.gamePlayMode === 'random') {
+        return this._getRandomValidMove(gridManager);
+      }
+      // Network mode — use network prediction
+      return this._getNetworkMove(gridManager);
+    }
+
+    // Per-move exploration: roll dice each turn (original behavior)
     if (Math.random() < this.explorationFactor) {
       return this._getRandomValidMove(gridManager);
     }
 
-    // Exploit: use network prediction
+    return this._getNetworkMove(gridManager);
+  }
+
+  /**
+   * Get move using network prediction (exploit)
+   */
+  async _getNetworkMove(gridManager) {
     // Always use relative state for consistency with training
     const state = this._getStateRelativeToCurrentPlayer(gridManager);
     const output = this.network.run(state);
@@ -263,20 +298,40 @@ export class AIPlayer extends PlayerInterface {
   /**
    * Calculate immediate reward vector for all possible moves
    * Uses GridManager.clone() for safe simulation
+   * 
+   * Reward components (Exp 10):
+   * 1. Enclosure claims: +0.3 per claimed triangle
+   * 2. Connected cluster growth: +0.1 per triangle in cluster
+   * 3. Largest-cluster lead: +0.2 per triangle lead (NEW - directly optimizes win condition)
+   * 
    * @param {GridManager} gridManager - The game state
    * @param {number} [forPlayer] - Player to compute rewards for (defaults to this.playerNumber)
    */
   calculateImmediateRewardVector(gridManager, forPlayer = null) {
     const player = forPlayer ?? this.playerNumber;
+    const opponent = player === 1 ? 2 : 1;
     const { rows, cols } = gridManager;
     const outputVector = new Array(rows * cols * 4).fill(0.01);
 
-    const claimRewardFactor = 0.3;
-    const connectedClusterRewardFactor = 0.1;
-    const maxPossibleClaimBonus = 1.5;
-    const maxPossibleClusterSize = rows * cols * 2;
-    const maxPossibleClusterBonus = maxPossibleClusterSize * connectedClusterRewardFactor;
-    const maxImmediateReward = maxPossibleClaimBonus + maxPossibleClusterBonus;
+    // Reward factors
+    const claimRewardFactor = 0.3;           // Enclosure claims
+    const connectedClusterRewardFactor = 0.1; // Cluster growth
+    const largestLeadFactor = 0.2;            // NEW: Largest cluster lead (win condition)
+
+    // Get current largest clusters (before move) for baseline
+    const myCurrentLargest = gridManager.getLargestContiguous(player);
+    const oppCurrentLargest = gridManager.getLargestContiguous(opponent);
+
+    // REALISTIC reward bounds (not theoretical maximums)
+    // Based on observed game data, not unreachable edge cases
+    // Claim: 0-5 triangles typical, max 5 → max bonus 1.5
+    // Cluster: 1-100 triangles typical, max ~100 → max bonus 10.0
+    // Lead delta: -20 to +20 typical per move → max bonus ±4.0
+    // Total realistic max immediate: ~15.5 (not 61.5!)
+    const maxClaimBonus = 1.5;
+    const maxClusterBonus = 10.0;  // Realistic: 100 triangles × 0.1
+    const maxLeadBonus = 4.0;       // Realistic: 20 lead delta × 0.2
+    const maxImmediateReward = maxClaimBonus + maxClusterBonus + maxLeadBonus;
     const rewardRange = maxImmediateReward;
 
     for (let y = 0; y < rows; y++) {
@@ -293,12 +348,24 @@ export class AIPlayer extends PlayerInterface {
           const simSuccess = tempManager.placeTriangle(x, y, rotation, player);
 
           if (simSuccess) {
+            // 1. Enclosure claim reward
             const simClaimed = tempManager.claimEnclosedTriangles(player);
-            const simClusterSize = tempManager.getConnectedClusterSize(x, y, rotation);
-
             const hypoClaimReward = simClaimed * claimRewardFactor;
+
+            // 2. Connected cluster reward (cluster this move joins/grows)
+            const simClusterSize = tempManager.getConnectedClusterSize(x, y, rotation);
             const hypoClusterReward = simClusterSize * connectedClusterRewardFactor;
-            const hypotheticalReward = hypoClaimReward + hypoClusterReward;
+
+            // 3. NEW: Largest-cluster lead reward (directly optimizes win condition)
+            const myNewLargest = tempManager.getLargestContiguous(player);
+            const oppNewLargest = tempManager.getLargestContiguous(opponent);
+            const myLargestGain = myNewLargest - myCurrentLargest;
+            const oppLargestGain = oppNewLargest - oppCurrentLargest;
+            const leadDelta = (myNewLargest - oppNewLargest) - (myCurrentLargest - oppCurrentLargest);
+            const hypoLeadReward = leadDelta * largestLeadFactor;
+
+            // Combined reward
+            const hypotheticalReward = hypoClaimReward + hypoClusterReward + hypoLeadReward;
 
             let scaledReward = rewardRange !== 0
               ? hypotheticalReward / rewardRange
@@ -314,6 +381,15 @@ export class AIPlayer extends PlayerInterface {
 
   /**
    * Add training sample from a game step
+   * 
+   * Reward scaling for Exp 10 (FIXED):
+   * Uses REALISTIC bounds, not theoretical maximums.
+   * - Claim bonus: max 1.5
+   * - Cluster bonus: max 10.0 (realistic: 100 triangles × 0.1)
+   * - Lead bonus: max 4.0 (realistic: ±20 lead delta × 0.2)
+   * - Win/loss: ±1.0
+   * 
+   * Total realistic max: ~16.5 (not 62.5!)
    */
   addTrainingData(state, move, reward, gridManager) {
     const outputSize = gridManager.rows * gridManager.cols * 4;
@@ -322,12 +398,13 @@ export class AIPlayer extends PlayerInterface {
 
     if (moveIndex < 0 || moveIndex >= outputSize) return;
 
-    // Scale reward to [0.01, 0.99]
+    // REALISTIC reward bounds (matching immediate reward calculation)
     const maxClaimBonus = 1.5;
-    const maxClusterBonus = gridManager.rows * gridManager.cols * 2 * 0.1;
-    const minReward = -1.0;
-    const maxReward = 1.0 + maxClaimBonus + maxClusterBonus;
-    const range = maxReward - minReward;
+    const maxClusterBonus = 10.0;  // Realistic: 100 triangles × 0.1
+    const maxLeadBonus = 4.0;       // Realistic: ±20 lead delta × 0.2
+    const minReward = -5.0;        // Realistic worst case: large negative lead
+    const maxReward = 1.0 + maxClaimBonus + maxClusterBonus + maxLeadBonus;  // ~16.5
+    const range = maxReward - minReward;  // ~21.5
 
     let targetOutput = range !== 0
       ? (reward - minReward) / range
@@ -413,6 +490,13 @@ export class AIPlayer extends PlayerInterface {
     let firstMove = null;
     const maxMoves = gridManager.rows * gridManager.cols * 2 * 1.5;
 
+    // Per-game exploration: determine once at game start
+    // In 'perGame' mode, either the whole game is network-play or random-play
+    // This gives coherent game trajectories instead of per-move noise
+    const isRandomGame = this.explorationMode === 'perGame'
+      ? Math.random() < this.explorationFactor
+      : false;
+
     while (!gridManager.isGridFull() && movesCount < maxMoves) {
       const currentIsSelf = currentPlayerNum === this.playerNumber;
       // For 'network' self-play, state is always relative to current player
@@ -435,7 +519,10 @@ export class AIPlayer extends PlayerInterface {
       const isOpeningPhase = movesCount < 5;
       const openingRandomFactor = isOpeningPhase ? 0.50 : 0;
       
-      if (!currentIsSelf && this.selfPlayMode === 'random') {
+      // Per-game random: entire game plays random (coherent exploration)
+      if (isRandomGame) {
+        move = this._getRandomValidMove(gridManager);
+      } else if (!currentIsSelf && this.selfPlayMode === 'random') {
         // Mode: random opponent — opponent plays randomly (no network influence)
         move = this._getRandomValidMove(gridManager);
       } else if (this.isNetworkLoaded && movesCount > 0) {

@@ -173,13 +173,19 @@ calculateImmediateRewardVector(state, player) {
 ### Reward Scaling
 
 ```javascript
-// Estimated bounds
-const minImmediateReward = 0;
-const maxImmediateReward = 1.5 + 20 = 21.5;  // max claims + max cluster
+// REALISTIC bounds (Exp 10+ — not theoretical maximums!)
+const maxClaimBonus = 1.5;    // max ~5 claims × 0.3
+const maxClusterBonus = 10.0;  // realistic ~100 triangles × 0.1
+const maxLeadBonus = 4.0;      // realistic ±20 lead delta × 0.2 (Exp 10+)
+const maxImmediateReward = 1.5 + 10.0 + 4.0;  // = 15.5
+const minReward = -5.0;        // realistic worst case
+const rewardRange = maxImmediateReward - minReward;  // = 20.5
 
-scaledReward = (reward - min) / (max - min);
+scaledReward = (reward - minReward) / rewardRange;
 scaledReward = Math.max(0.01, Math.min(0.99, scaledReward));
 ```
+
+> ⚠️ **Critical:** Never use theoretical maximums for normalization. The lead bonus theoretical max is 40 (200×0.2) but realistic max is ~4. Using theoretical values compresses 95% of the output range into unused territory, causing fake convergence.
 
 ### Final Outcome Integration
 
@@ -380,9 +386,11 @@ self.onmessage = (e) => {
 ```javascript
 const AI_CONFIG = {
     explorationFactor: 0.10,
+    explorationMode: 'perMove',    // 'perMove' | 'perGame' (Exp 10+)
     immediacyFactor: 0.20,
     claimRewardFactor: 0.30,
     clusterRewardFactor: 0.10,
+    largestLeadFactor: 0.20,       // Exp 10+ — largest-cluster-lead reward
     finalRewardWeight: 1.0,
     trainingIterations: 500,
     learningRate: 0.10

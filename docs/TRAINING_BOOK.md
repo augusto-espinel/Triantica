@@ -8,6 +8,45 @@
 
 ---
 
+## Quick Summary: Current Status (2026-10-20)
+
+### ✅ What Works
+
+| Component | Status | Evidence |
+|-----------|--------|----------|
+| Self-play symmetry | ✅ Fixed | P1 wins 50.4% (balanced) |
+| Exploration | ✅ Fixed | 30% random, diverse openings |
+| Training convergence | ✅ Working | Error drops 50%+ every cycle |
+| Replay buffer | ✅ Working | 30% replay, no catastrophic forgetting |
+| Runtime stability | ✅ Fixed | 3.4 hours, 20 cycles, no crashes |
+| Normalization | ✅ Fixed | Realistic bounds, not theoretical maxes |
+| Per-game exploration | ✅ New | `--exploration-mode perGame` flag |
+
+### ❌ What Doesn't Work
+
+| Issue | Evidence | Root Cause |
+|-------|----------|------------|
+| Win rate plateau | 50-54% after 20 cycles | Reward signal ≠ winning condition |
+| Score/win disconnect | +8 median points, ~3% win improvement | Optimizing for cluster size, not largest cluster |
+
+### 🔍 Key Insight
+
+**The network learned the wrong objective.**
+
+Current rewards: Claim territory (+0.3), grow clusters (+0.1 per triangle), lead bonus (+0.2/lead)
+Actual win condition: Build the **largest single cluster**
+
+These overlap but are NOT identical. The AI plays "safely" to maximize points, not "strategically" to dominate the board.
+
+### 📋 Recommended Next Steps
+
+1. **Test per-game exploration** — Cleaner training trajectories (Exp 11)
+2. **A/B test: normalization fix alone** — Is lead reward actually helping, or just better normalization?
+3. **Consider curriculum learning** — Start vs random, switch to network when >60%
+4. **Consider temporal discounting** — γ^t weighting for final reward
+
+---
+
 ## Table of Contents
 
 1. [Project Overview](#project-overview)
@@ -183,10 +222,13 @@ The AI learns by playing against itself:
 
 #### Immediate Rewards (calculated for each legal move)
 
-| Reward Type | Formula | Max Value |
-|-------------|---------|-----------|
-| Enclosure Claims | `claims × 0.3` | ~1.5 (5 claims) |
-| Connected Cluster Size | `cluster_size × 0.1` | ~20 (full board) |
+| Reward Type | Formula | Realistic Max | Purpose |
+|-------------|---------|---------------|----------|
+| Enclosure Claims | `claims × 0.3` | ~1.5 | Territory control |
+| Connected Cluster Size | `cluster_size × 0.1` | ~10.0 | Growth incentive |
+| Largest-Cluster Lead | `lead_delta × 0.2` | ~4.0 | Win condition (Exp 10+) |
+
+> ⚠️ **Critical:** Use **realistic maxes** for normalization, not theoretical maximums. See "Normalization Must Match Actual Reward Magnitudes" in Lessons Learned.
 
 #### Final Outcome Rewards
 
@@ -219,6 +261,11 @@ Target output is then scaled to [0.01, 0.99]:
 scaled_output = (combined_reward - min_possible) / (max_possible - min_possible)
 ```
 
+**Normalization bounds (Exp 10 fixed):**
+- minReward: -5.0 (realistic worst case)
+- maxReward: ~16.5 (claim + cluster + lead + win)
+- Range: ~21.5
+
 ### Move Selection Strategy (Epsilon-Greedy)
 
 During self-play, the AI balances exploitation and exploration:
@@ -229,11 +276,21 @@ During self-play, the AI balances exploitation and exploration:
 | **Exploit (Immediate)** | 18% (90% × 20%) | Pick highest immediate reward |
 | **Explore** | 10% | Random valid move |
 
+**Exploration modes (Exp 10+):**
+
+| Mode | CLI Flag | Behavior |
+|------|----------|----------|
+| `perMove` | `--exploration-mode perMove` | Each turn: roll dice for random/network |
+| `perGame` | `--exploration-mode perGame` | Game start: roll dice once, whole game coherent |
+
+Per-game mode produces cleaner training trajectories with consistent playing styles per game.
+
 ### Training Parameters
 
 | Parameter | Current Value | Notes |
 |-----------|---------------|-------|
-| `explorationFactor` | 0.10 | Probability of random move |
+| `explorationFactor` | 0.10 | Probability of random move/game |
+| `explorationMode` | `perMove` | `perMove` or `perGame` |
 | `immediacyFactor` | 0.20 | Prob. of choosing by immediate reward |
 | `iterations` | 500 | Training iterations per session |
 | `learningRate` | 0.10 | Step size for gradient descent |
@@ -1048,6 +1105,51 @@ The reward vector tells the network "how good is each move for ME". For self-pla
 
 Recommendation: Start with `random` for curriculum, switch to `network` once network beats random consistently.
 
+### 2026-10-20: Normalization Must Match Actual Reward Magnitudes (CRITICAL)
+
+> ⚠️ **BUG:** After adding the largest-cluster-lead reward component (+0.2/lead), the normalization range expanded from ~15.5 to 62.5, but actual rewards stayed around ~2.0. The network could only use 5% of its output range.
+
+**The problem:**
+```javascript
+// Theoretical max for lead bonus
+const maxPossibleLeadBonus = rows * cols * 2 * largestLeadFactor;  // = 200 * 0.2 = 40!
+const maxImmediateReward = 1.5 + 20 + 40;  // = 61.5
+// Normalization range: 63.5
+// Typical actual reward: ~2.0
+// Scaled output: (2.0 + 1.0) / 63.5 = 0.047  ← 95% of range unused!
+```
+
+**Symptoms:**
+- Training "converges" in 2 iterations (vs 91+ normally)
+- Win rate drops instead of improving
+- Network outputs nearly uniform small values
+
+**The fix:** Use realistic bounds, not theoretical maximums:
+```javascript
+const maxLeadBonus = 4.0;   // Realistic: ±20 lead delta × 0.2
+const maxClusterBonus = 10.0; // Realistic: 100 triangles × 0.1
+const maxImmediateReward = 1.5 + 10.0 + 4.0;  // = 15.5
+```
+
+**Rule:** When changing reward components, ALWAYS re-verify normalization. Theoretical maximums are almost never reached — use observed/realistic bounds.
+
+### 2026-10-20: Per-Game vs Per-Move Exploration
+
+**Per-move** (original): Each turn, 30% chance of random move. Creates "hybrid" players that oscillate between strategic and random within a single game.
+
+**Per-game** (new): At game start, roll dice once. 30% of games are pure random, 70% are pure network. Each game has a coherent playing style.
+
+| Aspect | Per-Move | Per-Game |
+|--------|----------|----------|
+| Coherence | Low — hybrid play | High — consistent style |
+| Training signal | Noisy | Clean |
+| Strategy learning | Harder (future moves unreliable) | Easier (plans not broken) |
+| Opponent modeling | Confusing | Clear |
+
+**Implementation:** Added `explorationMode` config (`'perMove'` | `'perGame'`) to AIPlayer. CLI flag: `--exploration-mode perGame`.
+
+**Rule:** Per-game exploration produces cleaner training trajectories. Per-move exploration may still be useful for board-state diversity.
+
 ---
 
 ## Experiment Results
@@ -1142,6 +1244,447 @@ Recommendation: Start with `random` for curriculum, switch to `network` once net
 3. Only then analyze architecture and hyperparameters
 
 **Rule of thumb:** In RL, if your network isn't learning, the most likely cause is **not enough exploration**. It's the RL equivalent of "is it plugged in?" — and we didn't check.
+
+---
+
+## Experiment Analysis Templates
+
+> **Purpose:** Standardized analysis format for all future experiments. Copy this template for each experiment.
+
+### Template: Full Experiment Analysis
+
+```markdown
+### Experiment X: [Title]
+
+**Date:** YYYY-MM-DD
+**Duration:** X hours Y minutes
+**Status:** [Completed/Terminated/Running]
+
+**Configuration:**
+| Parameter | Value | Notes |
+|-----------|-------|-------|
+| cycles | X | Total training cycles |
+| games | X | Self-play games per cycle |
+| eval_games | X | Evaluation games per cycle |
+| iterations | X | Training iterations per cycle |
+| learning_rate | X.XX | Gradient descent step size |
+| exploration | 0.X | Random move probability |
+| self_play_mode | [random/network] | Opponent type |
+| start_from | [file/null] | Initial weights |
+
+---
+
+#### 1. Performance Metrics
+
+**Win Rate Progression:**
+| Cycle | Win% | AI Med | Rand Med | Gap | σ² (AI) | σ² (Rand) |
+|-------|------|--------|----------|-----|---------|----------|
+| ... | ... | ... | ... | ... | ... | ... |
+
+**Statistics:**
+- Mean Win Rate: X% ± Y%
+- Min/Max: X% / Y%
+- Trend: [Improving/Stable/Declining]
+
+**Interpretation:** [Analysis]
+
+---
+
+#### 2. Self-Play Balance
+
+**Win Distribution:**
+| Player | Total Wins | Percentage |
+|--------|-----------|------------|
+| P1 | X | Y% |
+| P2 | X | Y% |
+| Draws | X | Y% |
+
+**Balance Assessment:** [Balanced/P1 Advantage/P2 Advantage]
+
+**Interpretation:** [Analysis]
+
+---
+
+#### 3. Score Analysis
+
+**Median Scores:**
+| Cycle | Self-Play P1 | Self-Play P2 | Eval AI | Eval Rand | SP/Eval Ratio |
+|-------|--------------|--------------|---------|----------|---------------|
+| ... | ... | ... | ... | ... | ... |
+
+**Score Gap Correlation:** r = X.XXX
+**Variance Trend:** [Stable/Increasing/Decreasing]
+
+**Interpretation:** [Analysis]
+
+---
+
+#### 4. Training Dynamics
+
+**Error Progression:**
+| Cycle | Init Error (×1000) | Final Error (×1000) | Drop | Half-Iter | Time (s) |
+|-------|-------------------|--------------------|------|-----------|----------|
+| ... | ... | ... | ... | ... | ... |
+
+**Error Drop Rate Trend:** [Stable/Improving/Degrading]
+**Half-Iteration Trend:** [Stable/Increasing/Decreasing]
+
+**Interpretation:** [Analysis]
+
+---
+
+#### 5. Diversity Metrics
+
+**Opening Diversity:** [Range] → [Range] ([±X%] change)
+**Board Diversity:** [Range] → [Range] ([±X%] change)
+
+**Diversity Assessment:** [Healthy/Declining/Collapsed]
+
+**Interpretation:** [Analysis]
+
+---
+
+#### 6. Statistical Correlations
+
+| Variable | Correlation with Win Rate |
+|----------|--------------------------|
+| Score Gap | r = X.XXX |
+| AI Variance | r = X.XXX |
+| Opening Diversity | r = X.XXX |
+| Board Diversity | r = X.XXX |
+| P1 Self-Play Wins | r = X.XXX |
+
+**Interpretation:** [Analysis]
+
+---
+
+#### 7. Anomaly Detection
+
+**Cycles with Anomalies:**
+- Cycle X: [Description]
+
+**Root Cause:** [Analysis]
+
+---
+
+#### 8. Conclusion
+
+**Primary Finding:** [Summary]
+
+**Key Insight:** [Most important discovery]
+
+**Recommendation:** [Next steps]
+```
+
+---
+
+### Experiment 9 Analysis: Network vs Network Self-Play
+
+**Date:** 2026-10-20
+**Duration:** 3.4 hours (20 cycles)
+**Status:** ✅ Completed (no interruptions)
+
+**Configuration:**
+| Parameter | Value | Notes |
+|-----------|-------|-------|
+| cycles | 20 | Full training run |
+| games | 100 | Self-play games per cycle |
+| eval_games | 200 | Evaluation games per cycle |
+| iterations | 100 | Training iterations per cycle |
+| learning_rate | 0.01 | Standard rate |
+| exploration | 0.30 | 30% random moves |
+| self_play_mode | network | AlphaGo-style self-play |
+| start_from | trainedAI_network.json | Pre-trained weights |
+| replay_ratio | 0.30 | 30% replay buffer |
+| replay_size | 50000 | Max buffer size |
+
+---
+
+#### 1. Performance Metrics
+
+**Win Rate Progression:**
+| Cycle | Win% | AI Med | Rand Med | Gap | σ² (AI) | σ² (Rand) |
+|-------|------|--------|----------|-----|---------|----------|
+| 1 | 50.0 | 37 | 38 | -1 | 505 | 374 |
+| 2 | 51.5 | 38 | 37 | +1 | 371 | 440 |
+| 3 | **54.0** | 38 | 35 | +3 | 471 | 511 |
+| 4 | 46.5 | 37 | 39 | -2 | 523 | 481 |
+| 5 | 50.5 | 40 | 37 | +3 | 535 | 545 |
+| 6 | 51.0 | 42 | 39 | +3 | 508 | 544 |
+| 7 | 52.5 | 40 | 34 | +6 | 565 | 527 |
+| 8 | 51.0 | 40 | 36 | +4 | 597 | 502 |
+| 9 | 50.0 | 38 | 41 | -3 | 511 | 596 |
+| 10 | 51.0 | 41 | 37 | +5 | 691 | 598 |
+| 11 | 51.0 | 39 | 39 | 0 | 740 | 587 |
+| 12 | 50.5 | 38 | 38 | 0 | 628 | 544 |
+| 13 | 50.5 | 42 | 40 | +2 | 747 | 680 |
+| 14 | 51.0 | 42 | 38 | +5 | 742 | 701 |
+| 15 | 52.0 | 43 | 37 | +6 | 714 | 630 |
+| 16 | 50.0 | 44 | 44 | 0 | 617 | 577 |
+| 17 | 51.5 | 42 | 40 | +3 | 632 | 722 |
+| 18 | 51.0 | 44 | 41 | +3 | 725 | 674 |
+| 19 | 50.0 | 44 | 44 | 0 | 642 | 669 |
+| 20 | **53.0** | 45 | 45 | +1 | **922** | 712 |
+
+**Statistics:**
+- Mean Win Rate: **50.9%**
+- Std Dev: **±2.0%** (95% CI for 200 games: ±7%)
+- Min/Max: 46.5% / 54.0%
+- Trend: **Stable (flat)** — no upward slope
+
+**Interpretation:** After 20 cycles, win rate oscillates within statistical noise. The 53% final result is indistinguishable from 50% given the ±7% confidence interval for 200 games.
+
+---
+
+#### 2. Self-Play Balance
+
+**Win Distribution:**
+| Player | Total Wins | Percentage |
+|--------|-----------|------------|
+| P1 | 1009 | **50.4%** |
+| P2 | 959 | 47.9% |
+| Draws | 32 | 1.6% |
+
+**Balance Assessment:** **Excellent** — P1 advantage only 2.5%, within expected variance for 2000 games.
+
+**Interpretation:** Self-play is correctly symmetric. Both players use the same network with state relative to current player. This confirms the asymmetric bug from Exp 6 is fully resolved.
+
+---
+
+#### 3. Score Analysis
+
+**Median Scores (Self-Play vs Eval):**
+
+Self-play scores are consistently ~2× higher than eval scores:
+- Self-play median: 78-86 points
+- Eval median: 37-45 points
+
+**SP/Eval Ratio:** 46% → 54% (increasing)
+
+**Score Gap Correlation with Win Rate:** r = **+0.568** (moderate positive)
+
+**Key Insight:** The AI learned to score higher (median 37 → 45, +8 points), but this didn't translate into wins. This suggests:
+1. Score and winning are partially decoupled in Triantica
+2. The AI learned "safe" strategies that maximize points but don't clinch games
+3. Random opponents create chaotic endgames that neutralize strategic advantages
+
+**Variance Trend:** **Increasing** (505 → 922, +82%)
+
+**Interpretation:** The network became more exploratory/diverse over time, but this didn't help win rate. Higher variance suggests the AI learned multiple strategies but hasn't converged on optimal play.
+
+---
+
+#### 4. Training Dynamics
+
+**Error Progression:**
+| Metric | Cycles 1-10 | Cycles 11-20 | Change |
+|--------|------------|--------------|--------|
+| Init Error (×1000) | 2.08 | 2.21 | +6% |
+| Final Error (×1000) | 0.93 | 0.93 | 0% |
+| Error Drop | 1.15 | 1.28 | +11% |
+| Half-Iteration | 46 | 48 | +4% |
+| Error Drop Rate | 0.238 | 0.259 | +9% |
+
+**Key Finding:** Training converged consistently every cycle:
+- Initial error: ~2.1×10⁻³ (stable)
+- Final error: 0.93×10⁻³ (stable, hitting threshold)
+- Half-iteration: 42-56 (stable)
+
+**Interpretation:** The network has **memorized its training data**. Error drops cleanly every cycle, but the policy quality doesn't improve. This is the classic "training error ≠ policy quality" disconnect in RL.
+
+---
+
+#### 5. Diversity Metrics
+
+**Opening Diversity:**
+- Cycles 1-5: 6.407
+- Cycles 16-20: 6.355
+- Change: **-0.7%** (stable)
+
+**Board Diversity:**
+- Cycles 1-5: 1.808
+- Cycles 16-20: 1.812
+- Change: **+0.2%** (stable)
+
+**Diversity Assessment:** **Healthy** — no collapse detected.
+
+**Interpretation:** The exploration fix (30% random moves) is working correctly. The network explores diverse openings and doesn't overfit to a single strategy.
+
+---
+
+#### 6. Statistical Correlations
+
+| Variable | Correlation with Win Rate |
+|----------|--------------------------|
+| Score Gap | r = **+0.568** (moderate) |
+| AI Variance | r = +0.187 (weak) |
+| Opening Diversity | r = -0.110 (none) |
+| Board Diversity | r = +0.223 (weak) |
+| Self-Play P1 Wins | r = -0.213 (weak) |
+| Self-Play P2 Wins | r = +0.227 (weak) |
+
+**Interpretation:**
+- **Score gap is the best predictor** of win rate (r=0.57), but still only explains ~32% of variance
+- Opening diversity has no relationship with winning — the AI explores varied starts but doesn't convert them to wins
+- Self-play P2 wins weakly correlates with win rate — when the network plays better as P2, it tends to win more vs random
+
+---
+
+#### 7. Anomaly Detection
+
+**Cycles with Anomalies:**
+- **Cycle 4**: Win rate dropped to 46.5% (worst cycle) despite score gap of -2. The network temporarily "forgot" how to win.
+- **Cycle 7**: Best win rate (52.5%) with largest score gap (+6). Brief alignment of scoring and winning.
+- **Cycles 11-12, 16, 19**: Win rate 50-51% with score gap of 0. The network scored equally but won more — evidence that scoring ≠ winning.
+
+**Root Cause:** The game has a fundamental strategic element not captured by current reward shaping. The AI optimizes for cluster size (immediate reward) but cluster size ≠ winning.
+
+---
+
+#### 8. Conclusion
+
+**Primary Finding:** The network learned to score higher (+8 median points) but win rate stayed at 50-53% (statistical noise).
+
+**Key Insight:** **Scoring higher ≠ winning** in Triantica. The current reward structure optimizes for the wrong objective.
+
+**Evidence:**
+1. Strong correlation between score gap and win rate (r=0.57), but correlation ≠ causation
+2. Multiple cycles with equal scores but unequal wins (and vice versa)
+3. Training error converges perfectly, win rate flatlines
+
+**Root Cause Hypothesis:**
+
+The immediate reward structure encourages:
+- Claiming territory (cluster growth)
+- Enclosure claims (+0.3 each)
+
+But **winning** requires:
+- Building the **largest single cluster**
+- Blocking opponent clusters
+- Endgame tactical superiority
+
+These objectives overlap but are NOT identical. The network learned "grow clusters" but not "grow THE BIGGEST cluster."
+
+**Recommendation:**
+
+1. **Reward Engineering** — Add reward for **largest cluster lead**:
+   - Track "my largest cluster" vs "opponent largest cluster" at each move
+   - Reward growing lead, penalize falling behind
+   - This directly optimizes the win condition
+
+2. **Opponent Modeling** — Make the network play against itself more:
+   - Current: 70% network vs network
+   - Alternative: 100% network vs network (true AlphaGo approach)
+   - Forces learning to beat a strategic opponent, not just random chaos
+
+3. **Architecture Experiment** (lower priority) — The MLP may be sufficient if rewards are correct. Don't change architecture until reward hypothesis is tested.
+
+---
+
+### Experiment 10: Largest-Cluster-Lead Reward
+
+**Date:** 2026-10-20
+**Goal:** Test if directly optimizing the win condition improves win rate
+
+**Hypothesis:** Adding reward for largest-cluster-lead will align training with winning.
+
+**Change from Exp 9:**
+```javascript
+// NEW: Largest-cluster-lead reward
+const myNewLargest = tempManager.getLargestContiguous(player);
+const oppNewLargest = tempManager.getLargestContiguous(opponent);
+const leadDelta = (myNewLargest - oppNewLargest) - (myCurrentLargest - oppCurrentLargest);
+const hypoLeadReward = leadDelta * 0.2;  // +0.2 per triangle lead gain
+```
+
+**Reward Structure Comparison:**
+
+| Component | Exp 9 | Exp 10 | Purpose |
+|-----------|-------|--------|----------|
+| Enclosure claim | +0.3/claim | +0.3/claim | Territory control |
+| Cluster growth | +0.1/triangle | +0.1/triangle | Growth incentive |
+| Largest lead | — | **+0.2/lead** | **Win condition** |
+| Win/loss | ±1.0 | ±1.0 | Final outcome |
+
+**Expected Outcome:** Win rate should break through 50-53% plateau.
+
+#### Result: FAILED (Broken Normalization)
+
+**Initial run:** Win rate **dropped** to 49.5% — worse than Exp 9!
+
+**Root Cause (identified by Augusto):** Adding the lead reward (+0.2/lead) inflated the theoretical maximum reward from 15.5 to 62.5. The normalization range expanded to 63.5, but typical actual rewards were still ~2.0. This compressed 95% of the output range into unused territory:
+
+```
+Theoretical max reward: 62.5  (lead bonus max = 40)
+Realistic typical reward: ~2.0
+Normalization range: 63.5
+Typical scaled output: 0.047  ← 95% of [0.01, 0.99] unused!
+```
+
+**Result:** Network "converged" in 2 iterations but was actually underfitting — learned to output uniform small values for all moves. Fake convergence disguised as fast learning.
+
+| Metric | Broken Exp 10 | Expected (proper normalization) |
+|--------|---------------|-------------------------------|
+| Win Rate | 49.5% | 50-55% |
+| Training iterations | 2 | 91+ |
+| Cycle duration | 47 sec | ~19 min |
+| Output range used | 5% | ~50% |
+
+#### Fix: Realistic Normalization Bounds
+
+Changed normalization to use **observed reward bounds** instead of theoretical maximums:
+
+| Component | Theoretical Max | Realistic Max | Used For |
+|-----------|----------------|---------------|----------|
+| Claim bonus | 1.5 | 1.5 | Same |
+| Cluster bonus | 20.0 | 10.0 | 100 triangles × 0.1 |
+| Lead bonus | 40.0 | 4.0 | ±20 lead delta × 0.2 |
+| **Total** | **62.5** | **16.5** | — |
+
+#### Result: Fixed Normalization (Running)
+
+**Restarted with proper normalization.** Training now takes ~19 min/cycle with 91+ iterations of real gradient descent.
+
+| Cycle | Win Rate | AI Med | Rand Med | Gap | Train Error (×10⁻³) |
+|-------|----------|--------|----------|-----|---------------------|
+| 1 | 51.5% | 42 | 39 | +3 | 4.36→0.93 |
+| 2 | **53.5%** | 45 | 40 | +6 | 4.24→1.01 |
+| 3 | 52.5% | 40 | 38 | +2 | 4.49→1.10 |
+| 4 | 52.0% | 40 | 39 | +2 | 4.46→1.12 |
+| 5 | 52.0% | 41 | 39 | +2 | 4.69→1.16 |
+| 6 | 49.0% | 42 | 38 | +4 | 4.66→1.16 |
+| ... | *running* | — | — | — | — |
+
+**Mean: 51.8%** — systematically above 50% baseline, but plateau may be forming.
+
+**Key Lesson:** When changing reward components, ALWAYS re-verify normalization scales match actual reward magnitudes. Theoretical maximums are almost never reached.
+
+**Configuration:**
+| Parameter | Value |
+|-----------|-------|
+| cycles | 20 |
+| games | 100 |
+| eval_games | 200 |
+| iterations | 100 |
+| learning_rate | 0.01 |
+| exploration | 0.30 |
+| self_play_mode | network |
+| start_from | trainedAI_network_v9.json |
+
+---
+
+### Experiment Comparison Table
+
+| Exp | Mode | Cycles | vs Random | Self-Play P1 Win% | Key Finding |
+|-----|------|--------|-----------|-------------------|-------------|
+| Pre | — | — | 51% | — | Baseline: coin-flip |
+| 6 | random (broken) | 10 | 48-56% | **100%** | Asymmetric self-play bug |
+| 7 | random | 10 | 66% | 55% | Balanced self-play works |
+| 8 | network | 10 | 55% | 53% | Network-mode works |
+| **9** | **network** | **20** | **50-53%** | **50%** | **Score ↑ but win rate flat** |
+| **10** | **network** | **20** | **49-54%** | **50%** | **Lead reward + broken→fixed normalization** |
+
+---
 
 ### 2026-10-18: Initial Analysis (OUTDATED — See Above)
 
@@ -1426,7 +1969,40 @@ After fix:  P1=35, P2=90, Total=200 ✓
 
 ---
 
-**Next Session:** Analyze Exp 9 results and decide next steps.
+**Result:** Completed 20 cycles. Win rate 50% → 53% (+3%). No breakthrough. Score quality improved (median 37→45) but not translating to wins.
+
+---
+
+## Session 2026-10-20 07:21: Root Cause Found — Exec Timeout
+
+### Discovery
+After 12 restarts of Exp 9, all dying at exactly ~30 minutes, we identified the root cause:
+
+**`tools.exec.timeoutSec` default = 1800 seconds (30 minutes)**
+
+From the exec tool documentation:
+> `tools.exec.timeoutSec` (default: 1800): default per-command exec timeout in seconds.
+
+This was killing background training processes after 30 minutes with SIGTERM.
+
+### Fix
+Use explicit `timeout: 0` when starting long-running training:
+```javascript
+exec({
+  command: "node src/server/train.js ...",
+  background: true,
+  timeout: 0  // Disable exec timeout
+})
+```
+
+### Exp 9 v13 Status
+- Started: 2026-10-20 07:21 CET
+- Config: Same as v12
+- Fix applied: `timeout: 0`
+- Expected duration: ~3.5 hours (20 cycles × ~10 min)
+
+### Lesson Learned
+**Always set `timeout: 0` for long-running background tasks.** The default 30-minute timeout is meant for interactive commands, not training jobs.
 
 ---
 

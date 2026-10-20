@@ -173,6 +173,7 @@ function parseArgs() {
     log: null,
     replayRatio: 0.5, // fraction of training data from replay buffer
     replaySize: 50000, // max replay buffer size
+    explorationMode: 'perMove', // 'perMove' | 'perGame'
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -182,7 +183,7 @@ function parseArgs() {
       const val = args[++i];
       if (key === 'learningRate' || key === 'exploration' || key === 'replayRatio') {
         opts[key] = parseFloat(val);
-      } else if (key === 'startFrom' || key === 'output' || key === 'selfPlayMode' || key === 'log') {
+      } else if (key === 'startFrom' || key === 'output' || key === 'selfPlayMode' || key === 'log' || key === 'explorationMode') {
         opts[key] = val;
       } else if (key === 'replaySize') {
         opts[key] = parseInt(val, 10);
@@ -206,6 +207,7 @@ async function main() {
   console.log(`  Train iters:    ${opts.iterations}`);
   console.log(`  Learning rate:  ${opts.learningRate}`);
   console.log(`  Exploration:    ${opts.exploration}`);
+  console.log(`  Expl. mode:     ${opts.explorationMode}`);
   console.log(`  Self-play mode: ${opts.selfPlayMode}`);
   console.log(`  Replay ratio:   ${opts.replayRatio}`);
   console.log(`  Replay buffer:   ${opts.replaySize}`);
@@ -245,6 +247,7 @@ async function main() {
   const aiPlayer = new AIPlayer(1, {
     difficulty: 'medium',
     explorationFactor: opts.exploration,
+    explorationMode: opts.explorationMode || 'perMove',
     selfPlayMode: opts.selfPlayMode,
     networkJSON,
   });
