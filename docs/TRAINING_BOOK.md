@@ -106,7 +106,9 @@ gridManager.currentPlayer = currentPlayer === 1 ? 2 : 1;
 
 ---
 
-## Experiment 13a: Gradient Isolation (Planned)
+## Experiment 13a: Gradient Isolation
+
+**Status:** Implemented (2026-10-20)
 
 **Hypothesis:** The network is learning to predict 1-step greedy heuristic for 399/400 outputs, not the win/loss signal. This dilutes the learning signal by 399:1.
 
@@ -115,30 +117,39 @@ gridManager.currentPlayer = currentPlayer === 1 ? 2 : 1;
 - Network computes loss across all 400 outputs
 - 99.75% of gradient forces memorization of heuristic, not win/loss
 
-**Proposed Fix:** Self-anchored target masking
+**Implementation:** Self-anchored target masking
 
 ```javascript
 // Get current network prediction for unchosen moves
 const currentPrediction = this.network.run(step.state);
 
-// Build target: zero gradient for unchosen moves
-const finalOutputVector = [...currentPrediction];
-finalOutputVector[step.actualMoveIndex] = scaledCombined;
-
-// Suppress illegal moves to minimum baseline
+// Build target: anchor unchosen moves to current prediction (zero gradient)
 for (let i = 0; i < 400; i++) {
-  if (!isLegalMove(i, gridManager)) {
-    finalOutputVector[i] = 0.01;
+  if (i === step.actualMoveIndex) {
+    finalOutputVector[i] = scaledCombined; // chosen move gets reward
+  } else {
+    finalOutputVector[i] = currentPrediction[i] || 0.5; // anchor (no gradient)
   }
 }
 ```
 
 **Key insight:** Setting target = prediction for unchosen moves creates zero-loss gradient → those outputs don't learn anything. Only the chosen move receives the learning signal.
 
+**Configuration:**
+```bash
+node src/server/train.js \
+  --cycles 20 \
+  --games 100 \
+  --eval-games 200 \
+  --opponent-mix mixed \
+  --gradient-isolation true \
+  --log experiments/logs/exp13a.log
+```
+
 **Execution:**
-- Keep current encoding (401-vector)
-- Can reuse Exp 12 weights
+- Fresh start from zero weights (meaning changes with gradient isolation)
 - Same curriculum (40% heuristic, 40% network, 20% random)
+- Same encoding (401-vector)
 
 **Success criteria:**
 - Win rate >58% sustained

@@ -491,7 +491,7 @@ export class AIPlayer extends PlayerInterface {
    * Run a self-play game for training
    * Compatible with GameSession's game loop but also usable standalone
    */
-  runSelfPlayGame(gridManager) {
+  runSelfPlayGame(gridManager, gradientIsolation = false) {
     const gameHistory = [];
     const opponentPlayer = this.playerNumber === 1 ? 2 : 1;
     let currentPlayerNum = 1;
@@ -709,7 +709,41 @@ export class AIPlayer extends PlayerInterface {
         : 0.5;
       scaledCombined = Math.max(0.01, Math.min(0.99, scaledCombined));
 
-      finalOutputVector[step.actualMoveIndex] = scaledCombined;
+      if (gradientIsolation && this.network) {
+        // Exp 13a: Self-anchored target masking
+        // Get current network prediction for unchosen moves
+        const currentPrediction = this.network.run(step.state);
+        
+        // Build target: anchor unchosen moves to current prediction (zero gradient)
+        // Only the chosen move gets the learning signal
+        for (let i = 0; i < 400; i++) {
+          if (i === step.actualMoveIndex) {
+            finalOutputVector[i] = scaledCombined; // chosen move gets reward
+          } else {
+            finalOutputVector[i] = currentPrediction[i] || 0.5; // anchor to prediction (no gradient)
+          }
+        }
+        
+        // Suppress illegal moves to minimum baseline
+        // Check legality based on state at time of move
+        for (let y = 0; y < 10; y++) {
+          for (let x = 0; x < 10; x++) {
+            const cellIndex = y * 10 + x;
+            const cellValue = step.state[cellIndex];
+            if (cellValue !== 0) {
+              // Cell is occupied, all 4 rotations illegal
+              for (let r = 0; r < 4; r++) {
+                const moveIndex = (y * 10 + x) * 4 + r;
+                finalOutputVector[moveIndex] = 0.01;
+              }
+            }
+          }
+        }
+      } else {
+        // Original behavior: all moves get targets (immediate reward heuristic)
+        finalOutputVector[step.actualMoveIndex] = scaledCombined;
+      }
+      
       this.trainingData.push({ input: step.state, output: finalOutputVector });
     }
 

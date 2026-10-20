@@ -182,6 +182,7 @@ function parseArgs() {
     clusterRewardFactor: 0.1, // per-triangle cluster bonus
     clusterLambda: 0.9, // eligibility trace decay
     clusterGamma: 0.99, // discount factor
+    gradientIsolation: false, // Exp 13a: only train on chosen move, anchor unchosen to current prediction
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -193,7 +194,7 @@ function parseArgs() {
         opts[key] = parseFloat(val);
       } else if (key === 'startFrom' || key === 'output' || key === 'selfPlayMode' || key === 'log' || key === 'explorationMode' || key === 'opponentMix') {
         opts[key] = val;
-      } else if (key === 'enableClusterReward') {
+      } else if (key === 'enableClusterReward' || key === 'gradientIsolation') {
         opts[key] = val === 'true';
       } else if (key === 'replaySize') {
         opts[key] = parseInt(val, 10);
@@ -213,7 +214,7 @@ function parseArgs() {
  * @param {GridManager} gridManager - The game state
  * @returns {Promise<{ winner, p1Score, p2Score, moves, firstMove, trainingSamplesAdded }>}
  */
-async function _runGameVsOpponent(aiPlayer, opponent, gridManager) {
+async function _runGameVsOpponent(aiPlayer, opponent, gridManager, gradientIsolation = false) {
   const player = 1; // AI is always P1
   gridManager.currentPlayer = 1;
   gridManager.reset();
@@ -332,7 +333,41 @@ async function _runGameVsOpponent(aiPlayer, opponent, gridManager) {
       : 0.5;
     scaledCombined = Math.max(0.01, Math.min(0.99, scaledCombined));
     
-    finalOutputVector[step.actualMoveIndex] = scaledCombined;
+    if (gradientIsolation && aiPlayer.network) {
+      // Exp 13a: Self-anchored target masking
+      // Get current network prediction for unchosen moves
+      const currentPrediction = aiPlayer.network.run(step.state);
+      
+      // Build target: anchor unchosen moves to current prediction (zero gradient)
+      // Only the chosen move gets the learning signal
+      for (let i = 0; i < 400; i++) {
+        if (i === step.actualMoveIndex) {
+          finalOutputVector[i] = scaledCombined; // chosen move gets reward
+        } else {
+          finalOutputVector[i] = currentPrediction[i] || 0.5; // anchor to prediction (no gradient)
+        }
+      }
+      
+      // Suppress illegal moves to minimum baseline
+      // Check legality based on state at time of move
+      for (let y = 0; y < 10; y++) {
+        for (let x = 0; x < 10; x++) {
+          const cellIndex = y * 10 + x;
+          const cellValue = step.state[cellIndex];
+          if (cellValue !== 0) {
+            // Cell is occupied, all 4 rotations illegal
+            for (let r = 0; r < 4; r++) {
+              const moveIndex = (y * 10 + x) * 4 + r;
+              finalOutputVector[moveIndex] = 0.01;
+            }
+          }
+        }
+      }
+    } else {
+      // Original behavior: all moves get targets (immediate reward heuristic)
+      finalOutputVector[step.actualMoveIndex] = scaledCombined;
+    }
+    
     aiPlayer.trainingData.push({ input: step.state, output: finalOutputVector });
     trainingSamplesAdded++;
   }
@@ -366,7 +401,36 @@ async function _runGameVsRandom(aiPlayer, gridManager) {
       return validMoves.length > 0 ? validMoves[Math.floor(Math.random() * validMoves.length)] : null;
     }
   };
-  return _runGameVsOpponent(aiPlayer, randomOpponent, gridManager);
+  return _runGameVsOpponent(aiPlayer, randomOpponent, gridManager, false);
+}
+
+/**
+ * Run a game: AI (P1) vs Random (P2) with gradient isolation
+ * @param {AIPlayer} aiPlayer - The learning AI (always P1)
+ * @param {GridManager} gridManager - The game state
+ * @param {boolean} gradientIsolation - Enable gradient isolation
+ * @returns {Promise<{ winner, p1Score, p2Score, moves, firstMove, trainingSamplesAdded }>}
+ */
+async function _runGameVsRandomWithIsolation(aiPlayer, gridManager, gradientIsolation) {
+  // Create a lightweight random opponent
+  const randomOpponent = {
+    playerNumber: 2,
+    getMove(gridManager) {
+      const { rows, cols } = gridManager;
+      const validMoves = [];
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          for (let rotation = 0; rotation < 4; rotation++) {
+            if (gridManager.isValidMove(x, y, rotation)) {
+              validMoves.push({ x, y, rotation });
+            }
+          }
+        }
+      }
+      return validMoves.length > 0 ? validMoves[Math.floor(Math.random() * validMoves.length)] : null;
+    }
+  };
+  return _runGameVsOpponent(aiPlayer, randomOpponent, gridManager, gradientIsolation);
 }
 
 async function main() {
@@ -390,6 +454,7 @@ async function main() {
     console.log(`  Network ratio:  ${(1 - opts.heuristicRatio - opts.randomRatio).toFixed(2)}`);
   }
   console.log(`  Cluster reward: ${opts.enableClusterReward ? 'ON (TD(λ))' : 'OFF'}`);
+  console.log(`  Gradient isolation: ${opts.gradientIsolation ? 'ON (Exp 13a)' : 'OFF'}`);
   console.log(`  Replay ratio:   ${opts.replayRatio}`);
   console.log(`  Replay buffer:   ${opts.replaySize}`);
   console.log(`  Start from:     ${opts.startFrom}`);
@@ -517,13 +582,13 @@ async function main() {
 
       if (opponentType === 'network') {
         // Standard self-play: both sides use network
-        result = aiPlayer.runSelfPlayGame(gridManager);
+        result = aiPlayer.runSelfPlayGame(gridManager, opts.gradientIsolation);
       } else if (opponentType === 'heuristic') {
         // AI (P1) vs Heuristic (P2)
-        result = await _runGameVsOpponent(aiPlayer, heuristicPlayer, gridManager);
+        result = await _runGameVsOpponent(aiPlayer, heuristicPlayer, gridManager, opts.gradientIsolation);
       } else {
         // AI (P1) vs Random (P2)
-        result = await _runGameVsRandom(aiPlayer, gridManager);
+        result = await _runGameVsRandomWithIsolation(aiPlayer, gridManager, opts.gradientIsolation);
       }
 
       if (result.winner === 0) selfPlayWins.draws++;
