@@ -16,7 +16,7 @@
  *   --learning-rate F  Learning rate (default: 0.1)
  *   --exploration F    Exploration factor (default: 0.3)
  *   --self-play-mode M  Self-play mode: 'random' or 'network' (default: random)
- *   --start-from FILE  Load pre-trained network (default: trainedAI_network.json)
+ *   --start-from FILE  Load pre-trained network (default: trainedAI_network.json, use 'fresh' for random init)
  *   --output FILE      Save trained network (default: trainedAI_network_v2.json)
  */
 
@@ -137,7 +137,7 @@ function computeBoardDiversity(finalBoards) {
  *   --learning-rate F  Learning rate (default: 0.1)
  *   --exploration F    Exploration factor (default: 0.3)
  *   --self-play-mode M  Self-play mode: 'random' or 'network' (default: random)
- *   --start-from FILE  Load pre-trained network (default: trainedAI_network.json)
+ *   --start-from FILE  Load pre-trained network (default: trainedAI_network.json, use 'fresh' for random init)
  *   --output FILE      Save trained network (default: trainedAI_network_v2.json)
  *   --save-every N     Save checkpoint every N cycles (default: 5)
  *   --log FILE         Log progress to file (default: experiments/logs/training-TIMESTAMP.log)
@@ -516,7 +516,7 @@ async function main() {
       learningRate: opts.learningRate,
       exploration: opts.exploration,
       selfPlayMode: opts.selfPlayMode,
-      startFrom: opts.startFrom,
+      startFrom: opts.startFrom === 'fresh' || opts.startFrom === 'none' ? null : opts.startFrom,
       output: opts.output,
       saveEvery: opts.saveEvery,
     },
