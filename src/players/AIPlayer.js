@@ -153,7 +153,6 @@ export class AIPlayer extends PlayerInterface {
     const dummyOutput = new Array(outputSize).fill(0.5);
     this.network.train([{ input: dummyInput, output: dummyOutput }], {
       iterations: 1,
-      errorThresh: 1.0,
     });
 
     this.isNetworkLoaded = false;
