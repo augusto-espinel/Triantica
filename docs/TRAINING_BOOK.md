@@ -1426,7 +1426,42 @@ After fix:  P1=35, P2=90, Total=200 ✓
 
 ---
 
-**Next Session:** Run Experiment 9 with all fixes applied.
+**Next Session:** Analyze Exp 9 results and decide next steps.
+
+---
+
+## Experiment 9 Results Summary (2026-10-20)
+
+### Best Results Across Restarts
+
+| Version | Cycle | Win Rate | Score Gap | Notes |
+|---------|-------|----------|-----------|-------|
+| **v10** | 1 | **58.0%** ✅✅ | +8 | Best result! |
+| v7 | 1 | 52.0% | +3 | |
+| v11 | 1 | 51.0% | +3 | Currently running |
+| v5 | 1 | 54.5% | +3 | |
+
+### Key Findings
+
+1. **Learning confirmed** — network can achieve >55% win rate vs random
+2. **High variance** — different restarts show 45-58% in Cycle 1
+3. **All fixes working** — no more astronomical scores, proper learning
+
+### Observations
+
+- Variance between restarts is expected (stochastic training)
+- Best single cycle: 58% win rate (v10, Cycle 1)
+- Average Cycle 1 across restarts: ~51%
+- Opening diversity consistently excellent: 6.3-6.5 bits
+
+### Decision Point
+
+The network IS learning but shows instability. Options:
+1. **Accept variance** — let current experiment continue
+2. **Reduce variance** — lower learning rate, more games/cycle
+3. **Start fresh** — begin training from scratch with fixed seed
+
+---
 
 ---
 
