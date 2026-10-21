@@ -1200,12 +1200,14 @@ triggerAIMove() {
 
     // Use setTimeout instead of Phaser delayedCall to debug
     setTimeout(() => {
-      this.debugText.setText(`P${currentPlayerNum} TIMEOUT FIRED`);
-      
-      if (playerType === 'random') {
-        // Random player: select random valid move
-        const validMoves = this.gridManager.getValidMoves();
-        this.debugText.setText(`P${currentPlayerNum} random: ${validMoves.length} valid moves`);
+      try {
+        this.debugText.setText(`P${currentPlayerNum} TIMEOUT FIRED`);
+        
+        if (playerType === 'random') {
+          // Random player: select random valid move
+          this.debugText.setText(`P${currentPlayerNum} calling getValidMoves...`);
+          const validMoves = this.gridManager.getValidMoves();
+          this.debugText.setText(`P${currentPlayerNum} random: ${validMoves?.length || 'NULL'} valid moves`);
         if (validMoves.length > 0) {
           move = validMoves[Math.floor(Math.random() * validMoves.length)];
         } else {
@@ -1272,6 +1274,10 @@ triggerAIMove() {
           this.handleTurnSwitch();
         }
       }
+    } catch (err) {
+      this.debugText.setText(`ERROR in timeout: ${err.message}`);
+      console.error('Error in triggerNonHumanMove timeout:', err);
+    }
     }, 200);
   }
 
