@@ -549,6 +549,15 @@ class GameScene extends Phaser.Scene {
     // Make sure human input is enabled/disabled correctly at the start
     this.updateInputStateForCurrentPlayer();
 
+    // Add on-screen debug text for mobile debugging
+    this.debugText = this.add.text(10, 10, 'Debug: Initializing...', {
+      font: '14px Arial',
+      fill: '#FFFF00',
+      backgroundColor: '#000000',
+      padding: { x: 5, y: 2 }
+    }).setDepth(200).setScrollFactor(0);
+    this.debugText.setText(`Mode: ${this.gameMode} | P1: ${this.players[1]?.type || '?'} | P2: ${this.players[2]?.type || '?'}`);
+
     // 'Train AI' button if mode is AvA
     if (this.gameMode === 'AvA') {
       this.trainButton = this.add.text(this.cameras.main.width - 250, 20, 'Run Training Game', { /* style */ })
@@ -1019,11 +1028,14 @@ class GameScene extends Phaser.Scene {
 
   handleTurnSwitch() {
     console.log(`[handleTurnSwitch] Current: ${this.gridManager.currentPlayer}, Extra turns: ${this.gridManager.extraTurns}`);
+    this.debugText.setText(`Turn: P${this.gridManager.currentPlayer} | Extra: ${this.gridManager.extraTurns} | P1: ${this.players[1]?.type} | P2: ${this.players[2]?.type}`);
+    
     if (this.gridManager.extraTurns > 0) {
         this.gridManager.extraTurns--; // [cite: 229]
         // Current player continues, check player type
         const pType = this.players[this.gridManager.currentPlayer].type;
         console.log(`[handleTurnSwitch] Same player (${this.gridManager.currentPlayer}), type: ${pType}`);
+        this.debugText.setText(`P${this.gridManager.currentPlayer} (${pType}) extra turn`);
         if (pType === 'ai') {
              this.time.delayedCall(100, this.triggerAIMove, [], this); // AI takes another turn
         } else if (pType === 'random' || pType === 'heuristic') {
@@ -1039,12 +1051,14 @@ class GameScene extends Phaser.Scene {
         // Check the type of the NEW current player
         const pType = this.players[this.gridManager.currentPlayer].type;
         console.log(`[handleTurnSwitch] Switched to player ${this.gridManager.currentPlayer}, type: ${pType}`);
+        this.debugText.setText(`SWITCHED: P${this.gridManager.currentPlayer} (${pType})`);
         if (pType === 'ai') {
              this.disableHumanInput(); // Disable human input while AI thinks
              this.time.delayedCall(100, this.triggerAIMove, [], this); // Start AI's turn
         } else if (pType === 'random' || pType === 'heuristic') {
              this.disableHumanInput();
              console.log(`[handleTurnSwitch] Scheduling triggerNonHumanMove for ${pType} player`);
+             this.debugText.setText(`CALLING: triggerNonHumanMove for P${this.gridManager.currentPlayer} (${pType})`);
              this.time.delayedCall(100, this.triggerNonHumanMove, [], this);
         } else {
              this.enableHumanInput(); // Human player
@@ -1070,6 +1084,15 @@ class GameScene extends Phaser.Scene {
 triggerAIMove() {
   const currentPlayerNum = this.gridManager.currentPlayer;
   const aiInstance = this.aiInstances[currentPlayerNum];
+  
+  if (!aiInstance || this.players[currentPlayerNum].type !== 'ai') {
+      console.error("triggerAIMove called for non-AI player or missing instance.");
+      this.debugText.setText(`ERROR: P${currentPlayerNum} not AI!`);
+      return;
+  }
+  
+  this.debugText.setText(`P${currentPlayerNum} (AI) thinking...`);
+  
   const state = aiInstance._getStateRepresentation();
   let move;
   // 1. Calculate IMMEDIATE rewards for all moves from this state
@@ -1165,6 +1188,7 @@ triggerAIMove() {
     if (!this.players[currentPlayerNum]) {
       console.error(`[triggerNonHumanMove] Player ${currentPlayerNum} not found in players object!`);
       console.log(`[triggerNonHumanMove] Players:`, JSON.stringify(this.players));
+      this.debugText.setText(`ERROR: P${currentPlayerNum} not in players object!`);
       return;
     }
     
@@ -1172,6 +1196,7 @@ triggerAIMove() {
     let move;
 
     console.log(`[triggerNonHumanMove] ${playerType} Player ${currentPlayerNum} is thinking...`);
+    this.debugText.setText(`P${currentPlayerNum} (${playerType}) thinking...`);
 
     this.time.delayedCall(200, () => {
       if (playerType === 'random') {
@@ -1189,6 +1214,7 @@ triggerAIMove() {
 
       if (move && typeof move.x !== 'undefined' && typeof move.y !== 'undefined' && typeof move.rotation !== 'undefined') {
         console.log(`${playerType} Player ${currentPlayerNum} chose: (${move.x}, ${move.y}), Rot: ${move.rotation}`);
+        this.debugText.setText(`P${currentPlayerNum} (${playerType}): (${move.x},${move.y}) rot=${move.rotation}`);
 
         // Apply the move
         this.gridManager.selectedRotation = move.rotation;
@@ -1214,12 +1240,14 @@ triggerAIMove() {
             }
           } else {
             console.error(`${playerType} Error: Move (${move.x}, ${move.y}, ${move.rotation}) failed placement.`);
+            this.debugText.setText(`ERROR: ${playerType} move failed!`);
             this.gridManager.extraTurns = 0;
             this.handleTurnSwitch();
           }
         }, [], this);
       } else {
         console.error(`${playerType} Player ${currentPlayerNum} failed to produce a valid move.`);
+        this.debugText.setText(`ERROR: ${playerType} failed to move!`);
         if (this.gridManager.isGridFull()) {
           this.handleGameOver();
         } else {
