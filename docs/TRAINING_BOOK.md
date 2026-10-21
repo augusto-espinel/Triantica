@@ -459,3 +459,44 @@ This allows observing the trained AI's play style directly in the browser, compa
 - Observe AI games to understand strategic patterns
 - Compare pre-training and post-training AI behavior
 
+
+### Final Results
+
+| Metric | Value |
+|--------|-------|
+| Starting win rate | 70.0% |
+| Final win rate | 63.0% |
+| Change | **-7.0%** |
+| Total time | 8640.8s (~144 min) |
+| vs Heuristic | 0 wins / ~760 games |
+
+**Full trajectory:**
+```
+70.0 → 61.5 → 71.5 → 70.0 → 74.0 → 62.5 → 70.5 → 64.0 → 68.0 → 66.5
+   → 67.5 → 72.0 → 73.0 → 68.0 → 69.5 → 73.5 → 60.0 → 67.5 → 65.0 → 63.0
+```
+
+**Mean: 67.9%, Range: 60.0-74.0%**
+
+### Conclusion: Hypothesis Failed
+
+Learning from the opponent's perspective did NOT help. The hypothesis was:
+
+> "If the network trains on the heuristic's winning moves, it will learn how strong players think."
+
+**Why it failed:**
+1. The heuristic's strategy is not representable in the current network architecture
+2. Adding opponent-perspective data creates conflicting gradients (good for P2, bad for P1)
+3. The heuristic plays a fundamentally different game than the network can encode
+
+**vs Heuristic:** Still 0% — no improvement at all across 760+ heuristic games.
+
+### Path Forward
+
+Mixed curriculum with a dominant heuristic is a dead end. Options:
+
+1. **Pure network self-play** — remove heuristic entirely, let network evolve its own strategies
+2. **Weaken heuristic** — inject 25-35% random moves so AI can occasionally win
+3. **Architecture change (Exp 13b)** — canonical encoding + value head
+4. **Accept ceiling** — 81.5% vs Random is the limit for this architecture
+
