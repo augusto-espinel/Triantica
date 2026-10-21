@@ -1199,17 +1199,29 @@ triggerAIMove() {
     this.debugText.setText(`P${currentPlayerNum} (${playerType}) thinking...`);
 
     this.time.delayedCall(200, () => {
+      this.debugText.setText(`P${currentPlayerNum} (${playerType}) inside 200ms callback`);
+      
       if (playerType === 'random') {
         // Random player: select random valid move
         const validMoves = this.gridManager.getValidMoves();
+        this.debugText.setText(`P${currentPlayerNum} random: ${validMoves.length} valid moves`);
         if (validMoves.length > 0) {
           move = validMoves[Math.floor(Math.random() * validMoves.length)];
+        } else {
+          this.debugText.setText(`ERROR: No valid moves for random!`);
         }
       } else if (playerType === 'heuristic') {
         // Heuristic player: use greedy heuristic
         // Create a temporary HeuristicPlayer instance
-        const heuristicPlayer = new HeuristicPlayer(currentPlayerNum, { explorationFactor: 0 });
-        move = heuristicPlayer.getMove(this.gridManager);
+        try {
+          const heuristicPlayer = new HeuristicPlayer(currentPlayerNum, { explorationFactor: 0 });
+          this.debugText.setText(`P${currentPlayerNum} heuristic: calling getMove...`);
+          move = heuristicPlayer.getMove(this.gridManager);
+          this.debugText.setText(`P${currentPlayerNum} heuristic: move=${JSON.stringify(move)}`);
+        } catch (err) {
+          this.debugText.setText(`ERROR heuristic: ${err.message}`);
+          console.error('Heuristic error:', err);
+        }
       }
 
       if (move && typeof move.x !== 'undefined' && typeof move.y !== 'undefined' && typeof move.rotation !== 'undefined') {
@@ -1222,8 +1234,12 @@ triggerAIMove() {
         this.cursorPos.y = move.y;
         this.updateCursor();
 
+        this.debugText.setText(`P${currentPlayerNum} placing at (${move.x},${move.y})...`);
+        
         this.time.delayedCall(100, () => {
+          this.debugText.setText(`P${currentPlayerNum} calling placeTriangle...`);
           const success = this.gridManager.placeTriangle(move.x, move.y);
+          this.debugText.setText(`P${currentPlayerNum} placeTriangle=${success}`);
           if (success) {
             const enclosed = this.gridManager.claimEnclosedTriangles();
             if (enclosed > 0) {
