@@ -207,3 +207,212 @@ Benefits:
 | 13b | Canonical encoding | Planned | Exp 13a success |
 | 14 | CNN architecture | Backlog | If 13a/13b fail |
 | 15 | Attention mechanism | Backlog | If 13a/13b fail |
+
+---
+
+## 🐛 Critical Bug Fix: Eval Win Rate Measurement (2026-10-21)
+
+**Bug:** `GameSession.runGames()` swaps players every game for fairness, but `train.js` computed AI win rate as `wins[1] / evalGames`. After the swap, `wins[1]` contains Random's wins. This caused eval to always report ~50% regardless of actual AI skill.
+
+**Fix:** Track wins by identity (AI vs opponent) rather than by slot number. `results.wins` now has `{ ai, random, draws, bySlot }`.
+
+**Impact:** Every experiment from 1-12 reported ~50% eval win rate. The real rate was ~75% (confirmed by diagnostic). The network was learning — we just couldn't see it.
+
+**Per-opponent tracking also added:** Self-play summary now breaks down wins by opponent type (Network/Heuristic/Random), revealing that:
+- Network vs Network self-play is actually ~50/50 (fair)
+- Heuristic beats AI 100% (0 wins in 111 games)
+- AI beats Random ~73% in training
+
+The "P2 dominance" in Exp 12 was entirely Heuristic-as-P2 wins inflating the P2 count.
+
+## Experiment 12 Replicated (Fixed Eval)
+
+**Started:** 2026-10-21 05:11 (with eval bug fix)
+**Completed:** 2026-10-21 07:15
+**Log:** `experiments/logs/exp12r_v2.log`
+**Network:** `experiments/data/exp12r_v2_network.json`
+
+**Config:** Same as original Exp 12:
+- 20 cycles × 100 games, 100 iterations/cycle, lr=0.01
+- Mixed opponents: 40% Heuristic, 20% Random, 40% Network
+- Starting from exp12b_network.json
+- Gradient isolation: OFF
+- Exploration: 0.2
+
+**Key difference from original:** Eval now correctly tracks AI wins regardless of player slot swap.
+
+### Bug Fix Impact
+
+| Metric | Original (Broken) | Fixed Eval |
+|--------|-------------------|------------|
+| Cycle 1 eval win rate | 49.0% | **78.5%** |
+| Per-opponent wins (Cycle 1) | Not tracked | Net: 18/21 Heur: 0/40 Rand: 17/4 |
+
+The network was performing at ~78% vs Random all along. The 49% was a measurement artifact from the player-swap bug in `GameSession.runGames()`.
+
+### Per-Opponent Breakdown
+
+Training self-play results decomposed by opponent type:
+- **Network vs Network:** ~46-55% P1 win rate (fair game, slight P2 edge in some cycles)
+- **AI vs Heuristic:** 0% win rate consistently (heuristic too strong)
+- **AI vs Random:** ~70-81% win rate (real performance indicator)
+
+### Full Results
+
+| Cycle | Eval Win Rate | AI Med | Rand Med | Gap | vs Net | vs Heur | vs Rand |
+|-------|---------------|--------|----------|-----|--------|---------|--------|
+| 1 | 74.5% | 40 | 40 | ±0 | 19/17/1 | 0/37/0 | 13/3/0 |
+| 2 | 78.0% | 38 | 39 | -1 | 25/19/1 | 0/39/0 | 10/4/2 |
+| 3 | 79.0% | 41 | 43 | -2 | 20/19/0 | 0/38/0 | 17/6/0 |
+| 4 | **81.5%** | 41 | 40 | +1 | 19/23/0 | 0/35/0 | 18/5/0 |
+| 5 | 80.5% | 41 | 44 | -3 | 18/16/0 | 0/50/0 | 13/3/0 |
+| 6 | 79.0% | 41 | 41 | ±0 | 18/19/1 | 0/42/0 | 12/8/0 |
+| 7 | 78.0% | 42 | 39 | +3 | 17/19/2 | 0/47/0 | 9/5/1 |
+| 8 | **81.5%** | 39 | 40 | -1 | 22/24/0 | 0/38/0 | 10/6/0 |
+| 9 | 79.0% | 42 | 43 | -1 | 23/15/1 | 0/38/0 | 18/5/0 |
+| 10 | 80.5% | 39 | 42 | -3 | 17/14/1 | 0/44/0 | 19/5/0 |
+| 11 | 78.0% | 42 | 40 | +3 | 19/12/1 | 0/47/0 | 13/8/0 |
+| 12 | 74.0% | 40 | 38 | +2 | 17/25/0 | 0/35/0 | 16/6/1 |
+| 13 | 71.5% | 39 | 40 | -1 | 11/19/2 | 0/42/0 | 15/9/2 |
+| 14 | 74.5% | 39 | 41 | -2 | 19/15/1 | 0/38/0 | 15/11/1 |
+| 15 | 77.0% | 39 | 38 | +1 | 17/18/0 | 0/46/0 | 12/7/0 |
+| 16 | 70.5% | 42 | 37 | +5 | 13/22/0 | 0/44/0 | 16/5/0 |
+| 17 | 75.5% | 40 | 41 | -1 | 15/23/1 | 0/39/0 | 13/9/0 |
+| 18 | 72.5% | 39 | 36 | +4 | 16/25/1 | 0/41/0 | 14/3/0 |
+| 19 | 72.0% | 42 | 44 | -2 | 24/24/1 | 0/35/0 | 9/7/0 |
+| 20 | 70.5% | 34 | 39 | -5 | 23/20/2 | 0/42/0 | 11/2/0 |
+
+**Starting win rate:** 74.5%
+**Final win rate:** 70.5%
+**Peak win rate:** 81.5% (cycles 4, 8)
+**Change:** -4.0%
+
+### Per-Opponent Breakdown Trends
+
+**vs Heuristic:**
+- 0% win rate across ALL 20 cycles (heuristic dominates completely)
+- Heuristic always plays as P2 in self-play, wins 100%
+- Zero learning signal from heuristic opponent (pure loss gradient)
+
+**vs Random:**
+- Self-play win rate: 56-85% range
+- Eval win rate peaked at 81.5%, declined to 70.5%
+- Relatively stable performance against random
+
+**vs Network (self-play):**
+- Roughly 50/50 split (fair game)
+- Slight P2 advantage in later cycles (16-19: P2 won more)
+- Cycle 20: 23/20/2 (P1 wins 51%)
+
+### Key Findings
+
+1. **Did network improve past 85%?** NO — peak was 81.5%, never reached 85%. Final was 70.5%, showing regression.
+
+2. **Eval trajectory:** Early peak (cycles 4-8), then gradual decline. Oscillation pattern similar to Exp 12 and 12b.
+
+3. **Heuristic opponent fails:** 0% win rate means pure loss signal. Network learns "avoid this outcome" but never learns HOW to win against it.
+
+4. **Training converges, win rate doesn't:** Error → 0.0009 every cycle, but win rate regresses. Confirms gradient dilution diagnosis.
+
+### Conclusion
+
+The curriculum learning approach (40% heuristic, 40% network, 20% random) fails to produce sustained improvement. The heuristic opponent provides no positive learning signal (100% loss rate). The network beats random at ~75% but cannot break through to 85%+.
+
+**Recommendation:** Proceed to Exp 13a (gradient isolation) or Exp 13b (canonical encoding). Consider removing or weakening heuristic opponent — 0% win rate = zero positive gradient.
+
+---
+
+
+### Full 20-Cycle Results
+
+| Cycle | Eval vs Random | Trend |
+|-------|---------------|-------|
+| 1 | 74.5% | |
+| 2 | 78.0% | ↑ |
+| 3 | 79.0% | ↑ |
+| 4 | **81.5%** | ↑ Peak |
+| 5 | 80.5% | ↓ |
+| 6 | 79.0% | ↓ |
+| 7 | 78.0% | ↓ |
+| 8 | 81.5% | Spike |
+| 9 | 79.0% | ↓ |
+| 10 | 80.5% | |
+| 11 | 78.0% | ↓ |
+| 12 | 74.0% | ↓ |
+| 13 | 71.5% | ↓ |
+| 14 | 74.5% | |
+| 15 | 77.0% | |
+| 16 | 70.5% | ↓ |
+| 17 | 75.5% | |
+| 18 | 72.5% | ↓ |
+| 19 | 72.0% | ↓ |
+| 20 | 70.5% | ↓ |
+
+**Starting win rate:** 74.5%
+**Final win rate:** 70.5%
+**Change:** -4.0%
+
+### Analysis
+
+Two distinct phases:
+1. **Cycles 1-4:** Rapid improvement 74.5% → 81.5%. Fresh training signal from mixed opponents.
+2. **Cycles 5-20:** Gradual decline 81.5% → 70.5%. Heuristic loss signal dominates.
+
+**Root cause:** The 0% win rate vs Heuristic means ~36% of training data is pure loss signal. Over time, this teaches the network "I lose" more strongly than it learns "I beat random." The heuristic games act as catastrophic interference.
+
+**Key insight:** The Exp 12b network (starting point) was already at ~78% vs Random — we just couldn't see it because of the eval bug. The brief training boost to 81.5% is real but unsustainable with the current opponent mix.
+
+### Conclusion
+
+Mixed curriculum with a dominant heuristic opponent is counterproductive. The network needs either:
+- **Weakened heuristic** (higher exploration, ~20-30% random moves) so AI can occasionally win and learn from victories
+- **Pure network self-play** or **vs-random-only** to avoid the loss-signal ceiling
+- **Loss weighting** to balance heuristic loss signal against random win signal
+
+The 81.5% peak proves the architecture can learn. The decline proves the training mix matters more than the architecture.
+
+---
+
+## Experiment 12s — Learn from Heuristic's Perspective
+
+**Started:** 2026-10-21 08:05
+**Log:** `experiments/logs/exp12s.log`
+**Network:** `experiments/data/exp12s_network.json`
+**Starting from:** `experiments/data/exp12r_network.json` (the 85% early-stop checkpoint)
+
+### Hypothesis
+
+The previous experiments collected training data only from the AI's perspective. When the heuristic opponent won as P2, the network learned "I lose" but never learned *how* the heuristic won.
+
+**New feature:** `--train-on-opponent-moves` flag enables collecting training data from the opponent's perspective during vs-opponent games. This means:
+- When heuristic wins as P2, we train on its winning moves (positive reward)
+- The network learns what strong play looks like from P2's perspective
+- Converts pure loss signal into learning signal
+
+### Config
+
+Same as Exp 12r but with new flag:
+```bash
+node src/server/train.js \
+  --cycles 20 \
+  --games 100 \
+  --eval-games 200 \
+  --iterations 100 \
+  --learning-rate 0.01 \
+  --exploration 0.2 \
+  --self-play-mode network \
+  --opponent-mix mixed \
+  --heuristic-ratio 0.4 \
+  --random-ratio 0.2 \
+  --train-on-opponent-moves true \
+  --start-from experiments/data/exp12r_network.json \
+  --output experiments/data/exp12s_network.json \
+  --log experiments/logs/exp12s.log
+```
+
+### Expected Behavior
+
+- Heuristic games should now contribute positive training signal when heuristic wins
+- The 81.5% → 70.5% degradation from Exp 12r should not repeat
+- Win rate should stabilize or improve past cycle 4
+

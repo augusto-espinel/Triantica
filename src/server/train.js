@@ -183,6 +183,7 @@ function parseArgs() {
     clusterLambda: 0.9, // eligibility trace decay
     clusterGamma: 0.99, // discount factor
     gradientIsolation: false, // Exp 13a: only train on chosen move, anchor unchosen to current prediction
+    trainOnOpponentMoves: false, // Exp 12s: learn from opponent's winning moves
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -194,9 +195,10 @@ function parseArgs() {
         opts[key] = parseFloat(val);
       } else if (key === 'startFrom' || key === 'output' || key === 'selfPlayMode' || key === 'log' || key === 'explorationMode' || key === 'opponentMix') {
         opts[key] = val;
-      } else if (key === 'enableClusterReward' || key === 'gradientIsolation') {
+      } else if (key === 'enableClusterReward' || key === 'gradientIsolation' || key === 'trainOnOpponentMoves') {
         opts[key] = val === 'true';
-      } else if (key === 'replaySize') {
+      } else if (key === 'replaySize' || key === 'trainOnOpponentMoves') {
+        // trainOnOpponentMoves is boolean, handled above
         opts[key] = parseInt(val, 10);
       } else {
         opts[key] = parseInt(val, 10);
@@ -208,13 +210,15 @@ function parseArgs() {
 
 /**
  * Run a game: AI (P1) vs an opponent player (P2)
- * Both players' moves are collected as training data for the AI.
+ * When trainOnOpponentMoves is true, collects training data from both perspectives.
  * @param {AIPlayer} aiPlayer - The learning AI (always P1)
  * @param {object} opponent - Opponent player with getMove(gridManager) method (P2)
  * @param {GridManager} gridManager - The game state
+ * @param {boolean} gradientIsolation - Enable gradient isolation
+ * @param {boolean} trainOnOpponent - Also train on opponent's moves from their perspective
  * @returns {Promise<{ winner, p1Score, p2Score, moves, firstMove, trainingSamplesAdded }>}
  */
-async function _runGameVsOpponent(aiPlayer, opponent, gridManager, gradientIsolation = false) {
+async function _runGameVsOpponent(aiPlayer, opponent, gridManager, gradientIsolation = false, trainOnOpponent = false) {
   const player = 1; // AI is always P1
   gridManager.currentPlayer = 1;
   gridManager.reset();
@@ -251,7 +255,7 @@ async function _runGameVsOpponent(aiPlayer, opponent, gridManager, gradientIsola
       
       if (!firstMove) firstMove = move;
     } else {
-      // Opponent's turn (no training data collected for opponent)
+      // Opponent's turn
       move = opponent.getMove(gridManager);
       if (!move) {
         console.error('Opponent returned null/undefined move');
@@ -260,6 +264,23 @@ async function _runGameVsOpponent(aiPlayer, opponent, gridManager, gradientIsola
       if (typeof move.x !== 'number' || typeof move.y !== 'number' || typeof move.rotation !== 'number') {
         console.error('Opponent returned invalid move:', JSON.stringify(move));
         break;
+      }
+      
+      // Exp 12s: also collect training data from opponent's perspective
+      if (trainOnOpponent) {
+        const state = aiPlayer._getStateRelativeToCurrentPlayer(gridManager);
+        const immediateRewardVector = aiPlayer.calculateImmediateRewardVector(gridManager, 2);
+        const rawImmediateReward = immediateRewardVector.reduce((sum, v) => sum + v, 0) / immediateRewardVector.length;
+        const actualMoveIndex = (move.y * gridManager.cols + move.x) * 4 + move.rotation;
+        
+        gameHistory.push({
+          player: 2,
+          move,
+          state,
+          immediateRewardVector,
+          rawImmediateReward,
+          actualMoveIndex,
+        });
       }
     }
     
@@ -291,12 +312,17 @@ async function _runGameVsOpponent(aiPlayer, opponent, gridManager, gradientIsola
   const finalRewardWeight = 1.0;
   const totalMoves = gameHistory.length;
   
-  // TD(λ) cluster reward setup
+  // TD(λ) cluster reward setup - both players when trainOnOpponent
   const p1LargestCluster = gridManager.getLargestContiguousCluster(1);
+  const p2LargestCluster = gridManager.getLargestContiguousCluster(2);
   const p1ClusterSet = aiPlayer.enableClusterReward
     ? new Set(p1LargestCluster.map(t => `${t.x},${t.y},${t.rotation}`))
     : null;
+  const p2ClusterSet = aiPlayer.enableClusterReward
+    ? new Set(p2LargestCluster.map(t => `${t.x},${t.y},${t.rotation}`))
+    : null;
   const p1ClusterBonus = p1LargestCluster.length * aiPlayer.clusterRewardFactor;
+  const p2ClusterBonus = p2LargestCluster.length * aiPlayer.clusterRewardFactor;
   
   // Normalization
   const maxImmediateReward = 15.5;
@@ -319,11 +345,13 @@ async function _runGameVsOpponent(aiPlayer, opponent, gridManager, gradientIsola
     
     // Cluster contribution reward (if enabled)
     let clusterReward = 0;
-    if (aiPlayer.enableClusterReward && step.player === 1 && p1ClusterSet) {
+    if (aiPlayer.enableClusterReward) {
       const moveKey = `${step.move.x},${step.move.y},${step.move.rotation}`;
-      if (p1ClusterSet.has(moveKey)) {
+      const clusterSet = step.player === 1 ? p1ClusterSet : p2ClusterSet;
+      const clusterBonus = step.player === 1 ? p1ClusterBonus : p2ClusterBonus;
+      if (clusterSet && clusterSet.has(moveKey)) {
         const eligibility = Math.pow(aiPlayer.clusterGamma * aiPlayer.clusterLambda, stepsFromEnd);
-        clusterReward = p1ClusterBonus * eligibility;
+        clusterReward = clusterBonus * eligibility;
       }
     }
     
@@ -413,6 +441,7 @@ async function _runGameVsRandom(aiPlayer, gridManager) {
  */
 async function _runGameVsRandomWithIsolation(aiPlayer, gridManager, gradientIsolation) {
   // Create a lightweight random opponent
+  // Note: trainOnOpponent=false for random - not worth learning from random moves
   const randomOpponent = {
     playerNumber: 2,
     getMove(gridManager) {
@@ -430,7 +459,7 @@ async function _runGameVsRandomWithIsolation(aiPlayer, gridManager, gradientIsol
       return validMoves.length > 0 ? validMoves[Math.floor(Math.random() * validMoves.length)] : null;
     }
   };
-  return _runGameVsOpponent(aiPlayer, randomOpponent, gridManager, gradientIsolation);
+  return _runGameVsOpponent(aiPlayer, randomOpponent, gridManager, gradientIsolation, false);
 }
 
 async function main() {
@@ -557,6 +586,7 @@ async function main() {
     let firstMoves = [];
     let finalBoards = []; // Array of { cell: { player, rotation } }
     let opponentTypeCounts = { network: 0, heuristic: 0, random: 0 };
+    let winsByOpponent = { network: { 1: 0, 2: 0, draws: 0 }, heuristic: { 1: 0, 2: 0, draws: 0 }, random: { 1: 0, 2: 0, draws: 0 } };
 
     for (let g = 0; g < opts.games; g++) {
       // Determine opponent type for this game
@@ -584,15 +614,15 @@ async function main() {
         // Standard self-play: both sides use network
         result = aiPlayer.runSelfPlayGame(gridManager, opts.gradientIsolation);
       } else if (opponentType === 'heuristic') {
-        // AI (P1) vs Heuristic (P2)
-        result = await _runGameVsOpponent(aiPlayer, heuristicPlayer, gridManager, opts.gradientIsolation);
+        // AI (P1) vs Heuristic (P2) - learn from heuristic's winning moves if enabled
+        result = await _runGameVsOpponent(aiPlayer, heuristicPlayer, gridManager, opts.gradientIsolation, opts.trainOnOpponentMoves);
       } else {
-        // AI (P1) vs Random (P2)
+        // AI (P1) vs Random (P2) - don't learn from random moves
         result = await _runGameVsRandomWithIsolation(aiPlayer, gridManager, opts.gradientIsolation);
       }
 
-      if (result.winner === 0) selfPlayWins.draws++;
-      else selfPlayWins[result.winner]++;
+      if (result.winner === 0) { selfPlayWins.draws++; winsByOpponent[opponentType].draws++; }
+      else { selfPlayWins[result.winner]++; winsByOpponent[opponentType][result.winner]++; }
       selfPlayMoves += result.moves;
       selfPlayScores[1].push(result.p1Score || 0);
       selfPlayScores[2].push(result.p2Score || 0);
@@ -640,6 +670,15 @@ async function main() {
     logStream.write(`  ✅ Self-play complete: ${opts.games} games, ${samplesGenerated} samples, ${selfPlayDuration}ms`);
     if (opponentMix !== 'network' && opponentMix !== 'random') {
       logStream.write(`     Opponent breakdown: Network=${opponentTypeCounts.network}, Heuristic=${opponentTypeCounts.heuristic}, Random=${opponentTypeCounts.random}`);
+      // Per-opponent win rates
+      for (const [opp, counts] of Object.entries(winsByOpponent)) {
+        const total = counts[1] + counts[2] + counts.draws;
+        if (total > 0) {
+          const p1Rate = ((counts[1] / total) * 100).toFixed(0);
+          const p2Rate = ((counts[2] / total) * 100).toFixed(0);
+          logStream.write(`     ${opp}: ${total} games → P1=${counts[1]} (${p1Rate}%) P2=${counts[2]} (${p2Rate}%) D=${counts.draws}`);
+        }
+      }
     }
 
     // Phase 2: Train network with experience replay
@@ -698,7 +737,7 @@ async function main() {
     const evalResults = await session.runGames(opts.evalGames);
 
     const evalDuration = Date.now() - evalStart;
-    const aiWinRate = evalResults.wins[1] / opts.evalGames;
+    const aiWinRate = evalResults.wins.ai / opts.evalGames;
 
     // Compute eval score metrics
     const evalP1Median = computeMedian(evalResults.scores?.[1] || [0]);
@@ -707,7 +746,7 @@ async function main() {
     const evalP2Variance = computeVariance(evalResults.scores?.[2] || [0]);
     const evalGap = evalP1Median - evalP2Median;
 
-    logStream.write(`  📈 AI Win Rate: ${(aiWinRate * 100).toFixed(1)}% (${evalResults.wins[1]}W / ${evalResults.wins[2]}L / ${evalResults.wins.draws}D)`);
+    logStream.write(`  📈 AI Win Rate: ${(aiWinRate * 100).toFixed(1)}% (${evalResults.wins.ai}W / ${evalResults.wins.random}L / ${evalResults.wins.draws}D)`);
     logStream.write(`     Scores: AI med=${evalP1Median.toFixed(0)} (σ2=${evalP1Variance.toFixed(0)}), Random med=${evalP2Median.toFixed(0)} (σ2=${evalP2Variance.toFixed(0)}), gap=+${evalGap.toFixed(0)}`);
     logStream.write(`     Avg moves: ${evalResults.avgMoves.toFixed(1)}, Duration: ${evalDuration}ms`);
 
@@ -717,6 +756,8 @@ async function main() {
       selfPlay: {
         games: opts.games,
         wins: selfPlayWins,
+        winsByOpponent: opts.opponentMix !== 'network' && opts.opponentMix !== 'random' ? winsByOpponent : undefined,
+        opponentTypeCounts: opts.opponentMix !== 'network' && opts.opponentMix !== 'random' ? opponentTypeCounts : undefined,
         avgMoves: selfPlayMoves / opts.games,
         scores: {
           p1: { median: p1Median, variance: p1Variance, min: p1Min, max: p1Max },
@@ -743,8 +784,8 @@ async function main() {
       evaluation: {
         games: opts.evalGames,
         opponent: 'random',
-        aiWins: evalResults.wins[1],
-        opponentWins: evalResults.wins[2],
+        aiWins: evalResults.wins.ai,
+        opponentWins: evalResults.wins.random,
         draws: evalResults.wins.draws,
         scores: {
           ai: { median: evalP1Median, variance: evalP1Variance },
@@ -768,7 +809,10 @@ async function main() {
     const oppMixStr = (opts.opponentMix !== 'network' && opts.opponentMix !== 'random')
       ? ` (H=${opponentTypeCounts.heuristic},R=${opponentTypeCounts.random})`
       : '';
-    logStream.write(`\n  📋 Cycle ${cycle} Summary | Self-play: P1=${selfPlayWins[1]} P2=${selfPlayWins[2]} D=${selfPlayWins.draws}${oppMixStr} | P1 ${p1ScoreStr} | P2 ${p2ScoreStr} | Train: ${trainResult?.initialError?.toFixed(6) ?? 'N/A'} → ${trainResult?.error?.toFixed(6) ?? 'N/A'} (${replaySamples.length} replay + ${newTrainingData.length} new) | Eval: ${(aiWinRate * 100).toFixed(1)}% (AI med=${evalP1Median.toFixed(0)}, Rand med=${evalP2Median.toFixed(0)}, gap=+${evalGap.toFixed(0)}) | Diversity: Open=${openingDiversity.toFixed(2)} Board=${boardDiversity.toFixed(2)} | Buf: ${replayBuffer.size} | ${cycleDuration}s\n`);
+    const oppWinStr = (opts.opponentMix !== 'network' && opts.opponentMix !== 'random')
+      ? ` | Net: ${winsByOpponent.network[1]}/${winsByOpponent.network[2]}/${winsByOpponent.network.draws} Heur: ${winsByOpponent.heuristic[1]}/${winsByOpponent.heuristic[2]}/${winsByOpponent.heuristic.draws} Rand: ${winsByOpponent.random[1]}/${winsByOpponent.random[2]}/${winsByOpponent.random.draws}`
+      : '';
+    logStream.write(`\n  📋 Cycle ${cycle} Summary | Self-play: P1=${selfPlayWins[1]} P2=${selfPlayWins[2]} D=${selfPlayWins.draws}${oppMixStr} | P1 ${p1ScoreStr} | P2 ${p2ScoreStr} | Train: ${trainResult?.initialError?.toFixed(6) ?? 'N/A'} → ${trainResult?.error?.toFixed(6) ?? 'N/A'} (${replaySamples.length} replay + ${newTrainingData.length} new) | Eval: ${(aiWinRate * 100).toFixed(1)}% (AI med=${evalP1Median.toFixed(0)}, Rand med=${evalP2Median.toFixed(0)}, gap=+${evalGap.toFixed(0)}) | Diversity: Open=${openingDiversity.toFixed(2)} Board=${boardDiversity.toFixed(2)} | Buf: ${replayBuffer.size} | ${cycleDuration}s${oppWinStr}\n`);
 
     // Save checkpoint
     if (cycle % opts.saveEvery === 0 || cycle === opts.cycles) {
@@ -781,7 +825,7 @@ async function main() {
     }
 
     // Early stopping if AI is doing well
-    if (aiWinRate >= 0.80) {
+    if (aiWinRate >= 0.95) {
       logStream.write(`\n🎯 AI reached ${(aiWinRate * 100).toFixed(1)}% win rate - training target met!`);
       break;
     }

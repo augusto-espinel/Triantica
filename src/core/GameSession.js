@@ -163,7 +163,7 @@ export class GameSession {
   async runGames(count) {
     const results = {
       games: [],
-      wins: { 1: 0, 2: 0, draws: 0 },
+      wins: { ai: 0, random: 0, draws: 0, bySlot: { 1: 0, 2: 0 } },
       totalMoves: 0,
       totalDuration: 0,
       totalScores: { 1: 0, 2: 0 },
@@ -174,8 +174,18 @@ export class GameSession {
       const gameResult = await this.runGame();
       results.games.push(gameResult);
 
+      // Track which player slot the AI occupies
+      // (they swap every game for fairness, so wins[1]/wins[2] don't map to AI/Random consistently)
+      const aiPlayerSlot = (i % 2 === 0) ? 1 : 2;
+      const aiWon = gameResult.winner === aiPlayerSlot;
+      const randomWon = gameResult.winner === (aiPlayerSlot === 1 ? 2 : 1);
+
       if (gameResult.winner === 0) results.wins.draws++;
-      else results.wins[gameResult.winner]++;
+      else if (aiWon) results.wins.ai++;
+      else if (randomWon) results.wins.random++;
+
+      // Still track by player number for score stats
+      results.wins.bySlot[gameResult.winner]++;
 
       results.totalMoves += gameResult.moves;
       results.totalDuration += gameResult.duration;
