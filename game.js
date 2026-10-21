@@ -1546,7 +1546,7 @@ class MenuScene extends Phaser.Scene {
       // Optional: Add a button for dedicated AI training if you implement that separately
       // createMenuButton(centerY + 250, 'Train AI (Fast)', 'TrainAI');
       // --- Create the Training Button ---
-      const trainButtonY = centerY + 250; // Adjust Y position as needed
+      const trainButtonY = centerY + 310; // Moved down to avoid overlap
       const trainButton = this.add.text(centerX, trainButtonY, 'Train AI (Self-Play)', buttonStyle)
           .setOrigin(0.5)
           .setInteractive({ useHandCursor: true });
