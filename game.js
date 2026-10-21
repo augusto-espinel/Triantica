@@ -35,6 +35,37 @@ class GridManager {
     return this.grid.flat().every(cell => cell.triangles.length === 2);
   }
 
+  getValidMoves() {
+    const moves = [];
+    for (let y = 0; y < this.rows; y++) {
+      for (let x = 0; x < this.cols; x++) {
+        for (let rotation = 0; rotation < 4; rotation++) {
+          if (this.isValidMove(x, y, rotation)) {
+            moves.push({ x, y, rotation });
+          }
+        }
+      }
+    }
+    return moves;
+  }
+
+  isValidMove(x, y, rotation) {
+    const cell = this.grid[y][x];
+    if (cell.triangles.length >= 2) return false;
+    if (cell.triangles.length === 1) {
+      const newGroup = this.getDiagonalGroup(rotation);
+      const existingGroup = this.getDiagonalGroup(cell.triangles[0].rotation);
+      if (newGroup === existingGroup || cell.triangles[0].rotation === rotation) {
+        return false;
+      }
+    }
+    const originalRotation = this.selectedRotation;
+    this.selectedRotation = rotation;
+    const valid = this.isValidPlacement(x, y);
+    this.selectedRotation = originalRotation;
+    return valid;
+  }
+
   createGrid() {
       return Array(this.rows).fill().map(() => 
         Array(this.cols).fill().map(() => ({
