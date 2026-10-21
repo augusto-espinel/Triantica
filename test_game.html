@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Game</title>
+</head>
+<body>
+    <h1>Test Output</h1>
+    <pre id="output"></pre>
+    
+    <script type="module">
+        import { GridManager } from './src/core/GridManager.js';
+        import { RandomPlayer } from './src/players/RandomPlayer.js';
+        import { HeuristicPlayer } from './src/players/HeuristicPlayer.js';
+        
+        const output = document.getElementById('output');
+        
+        function log(msg) {
+            output.textContent += msg + '\n';
+            console.log(msg);
+        }
+        
+        async function test() {
+            log('Creating GridManager...');
+            const grid = new GridManager();
+            log(`Current player: ${grid.currentPlayer}`);
+            
+            log('Creating RandomPlayer...');
+            const random = new RandomPlayer(2);
+            
+            log('Getting move from RandomPlayer...');
+            const move = await random.getMove(grid);
+            log(`Move: ${JSON.stringify(move)}`);
+            
+            log('Creating HeuristicPlayer...');
+            const heuristic = new HeuristicPlayer(2, { explorationFactor: 0 });
+            
+            log('Getting move from HeuristicPlayer...');
+            const move2 = heuristic.getMove(grid);
+            log(`Move: ${JSON.stringify(move2)}`);
+            
+            log('Test complete!');
+        }
+        
+        test().catch(err => {
+            output.textContent += 'ERROR: ' + err.message + '\n' + err.stack;
+            console.error(err);
+        });
+    </script>
+</body>
+</html>

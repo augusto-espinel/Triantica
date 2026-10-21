@@ -1018,10 +1018,12 @@ class GameScene extends Phaser.Scene {
   }
 
   handleTurnSwitch() {
+    console.log(`[handleTurnSwitch] Current: ${this.gridManager.currentPlayer}, Extra turns: ${this.gridManager.extraTurns}`);
     if (this.gridManager.extraTurns > 0) {
         this.gridManager.extraTurns--; // [cite: 229]
         // Current player continues, check player type
         const pType = this.players[this.gridManager.currentPlayer].type;
+        console.log(`[handleTurnSwitch] Same player (${this.gridManager.currentPlayer}), type: ${pType}`);
         if (pType === 'ai') {
              this.time.delayedCall(100, this.triggerAIMove, [], this); // AI takes another turn
         } else if (pType === 'random' || pType === 'heuristic') {
@@ -1036,11 +1038,13 @@ class GameScene extends Phaser.Scene {
 
         // Check the type of the NEW current player
         const pType = this.players[this.gridManager.currentPlayer].type;
+        console.log(`[handleTurnSwitch] Switched to player ${this.gridManager.currentPlayer}, type: ${pType}`);
         if (pType === 'ai') {
              this.disableHumanInput(); // Disable human input while AI thinks
              this.time.delayedCall(100, this.triggerAIMove, [], this); // Start AI's turn
         } else if (pType === 'random' || pType === 'heuristic') {
              this.disableHumanInput();
+             console.log(`[handleTurnSwitch] Scheduling triggerNonHumanMove for ${pType} player`);
              this.time.delayedCall(100, this.triggerNonHumanMove, [], this);
         } else {
              this.enableHumanInput(); // Human player
@@ -1157,10 +1161,17 @@ triggerAIMove() {
   // Handle Random and Heuristic player moves
   triggerNonHumanMove() {
     const currentPlayerNum = this.gridManager.currentPlayer;
+    
+    if (!this.players[currentPlayerNum]) {
+      console.error(`[triggerNonHumanMove] Player ${currentPlayerNum} not found in players object!`);
+      console.log(`[triggerNonHumanMove] Players:`, JSON.stringify(this.players));
+      return;
+    }
+    
     const playerType = this.players[currentPlayerNum].type;
     let move;
 
-    console.log(`${playerType} Player ${currentPlayerNum} is thinking...`);
+    console.log(`[triggerNonHumanMove] ${playerType} Player ${currentPlayerNum} is thinking...`);
 
     this.time.delayedCall(200, () => {
       if (playerType === 'random') {
