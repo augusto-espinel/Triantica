@@ -654,3 +654,63 @@ Network:   40% of games (remaining)
 
 4. **Increase exploration vs Random:** If the AI wins 70% vs Random, it may need more exploration to push higher. Try 30-40%.
 
+
+---
+
+## Experiment 13 — Pure Network Self-Play
+
+**Started:** 2026-10-21 12:30
+**Log:** `experiments/logs/exp13.log`
+**Network:** `experiments/data/exp13_network.json`
+**Starting from:** `experiments/data/exp12r_network.json` (the 85% early-stop checkpoint)
+
+### Hypothesis
+
+Removing all external opponents (random and heuristic) will eliminate conflicting gradients and allow the network to evolve its own strategies through pure self-play.
+
+### Configuration
+
+```bash
+node src/server/train.js \
+  --cycles 20 \
+  --games 100 \
+  --eval-games 200 \
+  --iterations 100 \
+  --learning-rate 0.01 \
+  --exploration 0.3 \
+  --self-play-mode network \
+  --opponent-mix network \
+  --start-from experiments/data/exp12r_network.json \
+  --output experiments/data/exp13_network.json \
+  --log experiments/logs/exp13.log
+```
+
+**Key changes from Exp 12:**
+- `--opponent-mix network` (100% network self-play, no random/heuristic)
+- `--exploration 0.3` (higher exploration for discovery)
+- Starting from the strongest checkpoint (85% vs Random)
+
+### Expected Behavior
+
+1. Win rate should start at ~85% (baseline from checkpoint)
+2. Network plays itself, exploring new strategies through 30% random moves
+3. May initially drop as network explores, then stabilize or improve
+4. Should NOT show the degradation pattern from mixed curriculum
+
+### Success Criteria
+
+- Win rate stabilizes above 80% without degradation
+- Opening diversity remains high (network explores different strategies)
+- No 0% win rate anomalies (no dominant external opponent)
+
+### Reference: Postponed Architecture Change
+
+**Exp 14 (formerly "13b")** — Canonical State Encoding + Value Head Architecture
+
+This experiment involves fundamental architecture changes:
+- 4-slot per-cell encoding (canonical representation)
+- Value head instead of 400-output policy head
+- Fresh weights (not starting from current network)
+
+Postponed until we understand the ceiling of the current architecture with pure self-play.
+
