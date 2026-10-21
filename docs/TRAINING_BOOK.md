@@ -500,3 +500,157 @@ Mixed curriculum with a dominant heuristic is a dead end. Options:
 3. **Architecture change (Exp 13b)** — canonical encoding + value head
 4. **Accept ceiling** — 81.5% vs Random is the limit for this architecture
 
+
+---
+
+## Game Mode Reference — Exploration & Opponent Mix
+
+This section documents how randomness, exploration, and opponent selection work across all game modes.
+
+### Key Concepts
+
+**Exploration** — Probability of making a random move instead of using the trained network. Used to discover new strategies and avoid overfitting.
+
+**Opponent Mix** — What type of opponent the AI plays against during training.
+
+**Self-Play Mode** — When both players use the network, how the opponent makes decisions.
+
+---
+
+### 1. Training — Self-Play Games (Network vs Network)
+
+**When:** `--opponent-mix network` (default) or when mixed mode selects network opponent.
+
+**How it works:** Both players use the same network. The network is conditioned on `currentPlayer` in the input, so it predicts good moves for whoever is moving.
+
+**Exploration:** Hardcoded in `runSelfPlayGame()` — ignores `--exploration` CLI flag.
+
+| Game Phase | Random | Greedy Immediate | Network |
+|------------|--------|-----------------|---------|
+| Opening (first 5 moves) | 50% | 10% | 40% |
+| Mid-game | 10% | 10% | 80% |
+| Endgame | 10% | 10% | 80% |
+
+- **Random:** Pure random valid move
+- **Greedy Immediate:** Move with highest immediate reward (enclosure + cluster growth)
+- **Network:** Network's top-scoring valid move
+
+**Why hardcoded:** Self-play needs higher exploration to discover diverse strategies. Opening diversity (50% random) ensures the network sees many different game trajectories.
+
+---
+
+### 2. Training — vs-Opponent Games (AI vs Random/Heuristic)
+
+**When:** `--opponent-mix random`, `--opponent-mix heuristic`, or mixed mode.
+
+**Opponent behavior:**
+
+| Opponent | Exploration | Strategy |
+|----------|-------------|----------|
+| Random | 0% | Pure random valid moves |
+| Heuristic | 5% | Greedy enclosure + cluster growth (injected randomness for training variety) |
+
+Note: During training, HeuristicPlayer is created with `explorationFactor: 0.05`.
+
+**AI behavior:** Uses `--exploration` CLI flag (default 0.2).
+
+| Mode | AI Exploration |
+|------|----------------|
+| vs Random | 20% random moves |
+| vs Heuristic | 20% random moves |
+
+---
+
+### 3. Training — Mixed Opponent Mode
+
+**When:** `--opponent-mix mixed`
+
+**Per-game opponent selection:**
+
+```
+Heuristic: 40% of games (from --heuristic-ratio 0.4)
+Random:    20% of games (from --random-ratio 0.2)
+Network:   40% of games (remaining)
+```
+
+**Why this matters:** The ratio determines training signal composition.
+
+- **vs Heuristic (40%):** 0% win rate → pure loss signal → teaches "you lose"
+- **vs Random (20%):** 70-75% win rate → mixed signal → teaches some winning
+- **vs Network (40%):** 50% win rate → neutral signal → teaches self-consistency
+
+**Problem:** Heuristic games (40% of total) contribute 0 positive gradient. This dilutes learning.
+
+---
+
+### 4. Evaluation (Measuring Strength)
+
+**When:** After each training cycle.
+
+**Configuration:**
+- Opponent: Always RandomPlayer (pure random, 0% exploration)
+- AI exploration: Fixed at 5%
+- Games: 200 (from `--eval-games`)
+
+**Why 5%:** Evaluation should mostly exploit learned strategy, with minimal noise. 5% random provides slight variation without distorting the measurement.
+
+**Why vs Random only:** We need a stable baseline to compare across cycles. Random is deterministic and provides consistent measurement. Heuristic would show 0% across all cycles (no signal).
+
+---
+
+### 5. Actual Gameplay (Phaser UI)
+
+**Modes:**
+
+| Mode | Player 1 | Player 2 | P1 Exploration | P2 Exploration |
+|------|----------|----------|----------------|-----------------|
+| HvH | Human | Human | N/A | N/A |
+| HvAI | Human | AI | N/A | 20% (default) |
+| AvR | AI | Random | 20% | 0% |
+| AvH | AI | Heuristic | 20% | 0% |
+| AvA | AI | AI | 20% | 20% |
+
+**Important:** AvA in the UI does NOT use the self-play logic from training. It uses regular `getMove()` with 20% exploration for both players. This is for observation only — the training self-play uses higher, phase-dependent exploration.
+
+---
+
+### 6. Summary Table
+
+| Context | P1 Strategy | P2 Strategy | Exploration Source |
+|---------|-------------|-------------|-------------------|
+| Training: Network self-play | Network + phase-dependent | Network + phase-dependent | Hardcoded (10-50%) |
+| Training: vs Random | Network + 20% random | Pure random | CLI flag |
+| Training: vs Heuristic | Network + 20% random | Heuristic + 5% random | CLI flag |
+| Training: Mixed | Varies per game | Varies per game | Per-opponent-type |
+| Evaluation | Network + 5% random | Pure random | Fixed |
+| UI: AvR | Network + 20% random | Pure random | Default config |
+| UI: AvH | Network + 20% random | Pure greedy heuristic | Default config |
+| UI: AvA | Network + 20% random | Network + 20% random | Default config |
+
+---
+
+### Problems Identified
+
+1. **Inconsistent exploration between training and UI:** Training self-play uses 10-50% exploration (phase-dependent), but UI AvA uses flat 20%.
+
+2. **Mixed mode signal imbalance:** 40% heuristic games contribute 0 positive gradient, diluting learning.
+
+3. **Evaluation doesn't measure vs Heuristic:** We only test vs Random, so we never see the 0% win rate during training.
+
+4. **Opponent exploration during training:** Heuristic has 5% random moves, which may confuse the network about what "strong play" looks like.
+
+---
+
+### Recommendations
+
+1. **Add vs-Heuristic evaluation:** Include a separate eval vs Heuristic to track progress against strong opponents.
+
+2. **Align UI AvA with training self-play:** Either make AvA use phase-dependent exploration, or make training use flat exploration for consistency.
+
+3. **Reduce or eliminate heuristic opponent:** If 0% win rate, either:
+   - Remove heuristic from training entirely (pure self-play)
+   - Weaken heuristic to 70-80% win rate (inject 25-35% random moves)
+   - Accept that this opponent is beyond current architecture
+
+4. **Increase exploration vs Random:** If the AI wins 70% vs Random, it may need more exploration to push higher. Try 30-40%.
+
