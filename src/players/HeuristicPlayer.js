@@ -121,3 +121,8 @@ export class HeuristicPlayer extends PlayerInterface {
     // No state to reset
   }
 }
+
+// Global for browser
+if (typeof window !== 'undefined') {
+  window.HeuristicPlayer = HeuristicPlayer;
+}

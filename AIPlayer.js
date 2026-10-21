@@ -685,3 +685,10 @@ class AIPlayer {
     }
 
 }
+
+// Global for browser
+if (typeof window !== "undefined") {
+  window.AIPlayer = AIPlayer;
+}
+
+export { AIPlayer };

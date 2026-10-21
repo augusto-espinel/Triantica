@@ -416,3 +416,46 @@ node src/server/train.js \
 - The 81.5% → 70.5% degradation from Exp 12r should not repeat
 - Win rate should stabilize or improve past cycle 4
 
+
+---
+
+## UI Update — AI vs Opponent Selection
+
+**Added:** 2026-10-21 10:15
+
+### New Menu Options
+
+The Phaser game now supports selecting AI opponents:
+
+- **AI vs Random** (`AvR`): Watch AI play against a random baseline
+- **AI vs Heuristic** (`AvH`): Watch AI play against the greedy heuristic
+- **AI vs AI** (`AvA`): Watch AI play against itself (network self-play)
+
+### Implementation
+
+Modified `game.js`:
+- Added new menu buttons in `MenuScene`
+- New `triggerNonHumanMove()` method handles Random and Heuristic players
+- Updated `handleTurnSwitch()` to route to correct move method based on player type
+- Player types: `human`, `ai`, `random`, `heuristic`
+
+Modified `index.html`:
+- Added ES6 module imports for RandomPlayer and HeuristicPlayer
+- Global window exports for compatibility with game.js
+
+Modified player files:
+- Added global exports to `AIPlayer.js` and `HeuristicPlayer.js`
+
+### Purpose
+
+This allows observing the trained AI's play style directly in the browser, comparing:
+- How AI performs against random (should win ~70-75%)
+- How AI performs against heuristic (currently 0%)
+- AI self-play dynamics
+
+### Next Steps
+
+- Run `npm run dev` to test the new menu
+- Observe AI games to understand strategic patterns
+- Compare pre-training and post-training AI behavior
+

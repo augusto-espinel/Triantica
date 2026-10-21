@@ -504,6 +504,18 @@ class GameScene extends Phaser.Scene {
         const aiPlayerNumber = 2;
         await initializeAI(aiPlayerNumber); // Use the helper function
 
+    } else if (this.gameMode === 'AvR') {
+        // AI vs Random: P1 is AI, P2 is Random
+        await initializeAI(1);
+        this.players[2] = { type: 'random' };
+        this.time.delayedCall(100, this.triggerAIMove, [], this);
+
+    } else if (this.gameMode === 'AvH') {
+        // AI vs Heuristic: P1 is AI, P2 is Heuristic
+        await initializeAI(1);
+        this.players[2] = { type: 'heuristic' };
+        this.time.delayedCall(100, this.triggerAIMove, [], this);
+
     } else if (this.gameMode === 'AvA') {
         await initializeAI(1); // Initialize P1
         await initializeAI(2); // Initialize P2
@@ -1008,28 +1020,32 @@ class GameScene extends Phaser.Scene {
   handleTurnSwitch() {
     if (this.gridManager.extraTurns > 0) {
         this.gridManager.extraTurns--; // [cite: 229]
-        // console.log(`Player <span class="math-inline">\{this\.gridManager\.currentPlayer\} has an extra turn \(</span>{this.gridManager.extraTurns} remaining).`);
-        // Current player continues, check if it's AI or Human
-        if (this.players[this.gridManager.currentPlayer].type === 'ai') {
+        // Current player continues, check player type
+        const pType = this.players[this.gridManager.currentPlayer].type;
+        if (pType === 'ai') {
              this.time.delayedCall(100, this.triggerAIMove, [], this); // AI takes another turn
+        } else if (pType === 'random' || pType === 'heuristic') {
+             this.time.delayedCall(100, this.triggerNonHumanMove, [], this);
         } else {
-             this.enableHumanInput(); // Ensure human input is enabled for the extra turn
+             this.enableHumanInput(); // Human player
         }
     } else {
         // Switch player
         this.gridManager.currentPlayer = this.gridManager.currentPlayer === 1 ? 2 : 1; // [cite: 230]
-        // console.log(`Switching to Player ${this.gridManager.currentPlayer}`);
         this.updateCursor(); // Update cursor color [cite: 204]
 
         // Check the type of the NEW current player
-        if (this.players[this.gridManager.currentPlayer].type === 'ai') {
+        const pType = this.players[this.gridManager.currentPlayer].type;
+        if (pType === 'ai') {
              this.disableHumanInput(); // Disable human input while AI thinks
              this.time.delayedCall(100, this.triggerAIMove, [], this); // Start AI's turn
+        } else if (pType === 'random' || pType === 'heuristic') {
+             this.disableHumanInput();
+             this.time.delayedCall(100, this.triggerNonHumanMove, [], this);
         } else {
-             this.enableHumanInput(); // Enable input for the human player
+             this.enableHumanInput(); // Human player
         }
     }
-    // Consider adding a visual indicator for whose turn it is
   }
 
   redrawTriangles() {
@@ -1137,6 +1153,72 @@ triggerAIMove() {
       }
     }, [], this);
   }
+
+  // Handle Random and Heuristic player moves
+  triggerNonHumanMove() {
+    const currentPlayerNum = this.gridManager.currentPlayer;
+    const playerType = this.players[currentPlayerNum].type;
+    let move;
+
+    console.log(`${playerType} Player ${currentPlayerNum} is thinking...`);
+
+    this.time.delayedCall(200, () => {
+      if (playerType === 'random') {
+        // Random player: select random valid move
+        const validMoves = this.gridManager.getValidMoves();
+        if (validMoves.length > 0) {
+          move = validMoves[Math.floor(Math.random() * validMoves.length)];
+        }
+      } else if (playerType === 'heuristic') {
+        // Heuristic player: use greedy heuristic
+        // Create a temporary HeuristicPlayer instance
+        const heuristicPlayer = new HeuristicPlayer(currentPlayerNum, { explorationFactor: 0 });
+        move = heuristicPlayer.getMove(this.gridManager);
+      }
+
+      if (move && typeof move.x !== 'undefined' && typeof move.y !== 'undefined' && typeof move.rotation !== 'undefined') {
+        console.log(`${playerType} Player ${currentPlayerNum} chose: (${move.x}, ${move.y}), Rot: ${move.rotation}`);
+
+        // Apply the move
+        this.gridManager.selectedRotation = move.rotation;
+        this.cursorPos.x = move.x;
+        this.cursorPos.y = move.y;
+        this.updateCursor();
+
+        this.time.delayedCall(100, () => {
+          const success = this.gridManager.placeTriangle(move.x, move.y);
+          if (success) {
+            const enclosed = this.gridManager.claimEnclosedTriangles();
+            if (enclosed > 0) {
+              this.gridManager.extraTurns += 1;
+              console.log(`${playerType} Player ${this.gridManager.currentPlayer} enclosed ${enclosed} triangle(s) and gets an extra turn.`);
+            }
+            this.redrawTriangles();
+            this.updateScore();
+
+            if (this.gridManager.isGridFull()) {
+              this.handleGameOver();
+            } else {
+              this.handleTurnSwitch();
+            }
+          } else {
+            console.error(`${playerType} Error: Move (${move.x}, ${move.y}, ${move.rotation}) failed placement.`);
+            this.gridManager.extraTurns = 0;
+            this.handleTurnSwitch();
+          }
+        }, [], this);
+      } else {
+        console.error(`${playerType} Player ${currentPlayerNum} failed to produce a valid move.`);
+        if (this.gridManager.isGridFull()) {
+          this.handleGameOver();
+        } else {
+          this.gridManager.extraTurns = 0;
+          this.handleTurnSwitch();
+        }
+      }
+    }, [], this);
+  }
+
   drawTriangle(x, y, rotation, player) {
       const color = player === 1 ? 0xff0000 : 0x0000ff;
       this.triangleGraphics.fillStyle(color);
@@ -1363,9 +1445,11 @@ class MenuScene extends Phaser.Scene {
       };
 
       // --- Create the Buttons ---
-      createMenuButton(centerY - 50, 'Human vs Human', 'HvH');
-      createMenuButton(centerY + 50, 'Human vs AI', 'HvAI');
-      createMenuButton(centerY + 150, 'AI vs AI (Visual)', 'AvA');
+      createMenuButton(centerY - 100, 'Human vs Human', 'HvH');
+      createMenuButton(centerY - 20, 'Human vs AI', 'HvAI');
+      createMenuButton(centerY + 60, 'AI vs Random', 'AvR');
+      createMenuButton(centerY + 140, 'AI vs Heuristic', 'AvH');
+      createMenuButton(centerY + 220, 'AI vs AI (Network)', 'AvA');
       // Optional: Add a button for dedicated AI training if you implement that separately
       // createMenuButton(centerY + 250, 'Train AI (Fast)', 'TrainAI');
       // --- Create the Training Button ---
