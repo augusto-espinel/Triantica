@@ -1198,8 +1198,9 @@ triggerAIMove() {
     console.log(`[triggerNonHumanMove] ${playerType} Player ${currentPlayerNum} is thinking...`);
     this.debugText.setText(`P${currentPlayerNum} (${playerType}) thinking...`);
 
-    this.time.delayedCall(200, () => {
-      this.debugText.setText(`P${currentPlayerNum} (${playerType}) inside 200ms callback`);
+    // Use setTimeout instead of Phaser delayedCall to debug
+    setTimeout(() => {
+      this.debugText.setText(`P${currentPlayerNum} TIMEOUT FIRED`);
       
       if (playerType === 'random') {
         // Random player: select random valid move
@@ -1236,7 +1237,7 @@ triggerAIMove() {
 
         this.debugText.setText(`P${currentPlayerNum} placing at (${move.x},${move.y})...`);
         
-        this.time.delayedCall(100, () => {
+        setTimeout(() => {
           this.debugText.setText(`P${currentPlayerNum} calling placeTriangle...`);
           const success = this.gridManager.placeTriangle(move.x, move.y);
           this.debugText.setText(`P${currentPlayerNum} placeTriangle=${success}`);
@@ -1260,7 +1261,7 @@ triggerAIMove() {
             this.gridManager.extraTurns = 0;
             this.handleTurnSwitch();
           }
-        }, [], this);
+        }, 100);
       } else {
         console.error(`${playerType} Player ${currentPlayerNum} failed to produce a valid move.`);
         this.debugText.setText(`ERROR: ${playerType} failed to move!`);
@@ -1271,7 +1272,7 @@ triggerAIMove() {
           this.handleTurnSwitch();
         }
       }
-    }, [], this);
+    }, 200);
   }
 
   drawTriangle(x, y, rotation, player) {
