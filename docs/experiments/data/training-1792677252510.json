@@ -1,0 +1,109 @@
+{
+  "startedAt": "2026-10-22T13:54:07.343Z",
+  "options": {
+    "cycles": 1,
+    "games": 0,
+    "evalGames": 100,
+    "iterations": 200,
+    "learningRate": 0.1,
+    "exploration": 0.3,
+    "selfPlayMode": "random",
+    "startFrom": "trainedAI_network.json",
+    "output": "trainedAI_network_v2.json",
+    "saveEvery": 5
+  },
+  "cycles": [
+    {
+      "cycle": 1,
+      "selfPlay": {
+        "games": 0,
+        "wins": {
+          "1": 0,
+          "2": 0,
+          "draws": 0
+        },
+        "winsByOpponent": {
+          "network": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          },
+          "heuristic": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          },
+          "random": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          }
+        },
+        "opponentTypeCounts": {
+          "network": 0,
+          "heuristic": 0,
+          "random": 0
+        },
+        "avgMoves": null,
+        "scores": {
+          "p1": {
+            "median": 0,
+            "variance": 0,
+            "min": 0,
+            "max": 0
+          },
+          "p2": {
+            "median": 0,
+            "variance": 0,
+            "min": 0,
+            "max": 0
+          }
+        },
+        "openingDiversity": 0,
+        "boardDiversity": 0,
+        "samplesGenerated": 0,
+        "durationMs": 1
+      },
+      "training": {
+        "iterations": 200,
+        "learningRate": 0.1,
+        "samplesUsed": 0,
+        "replaySamplesUsed": 0,
+        "newSamplesUsed": 0,
+        "replayBufferSize": 0,
+        "initialError": null,
+        "finalError": null,
+        "errorSnapshots": [],
+        "errorReductionHalf": null,
+        "durationMs": 0
+      },
+      "evaluation": {
+        "games": 100,
+        "opponent": "random",
+        "aiWins": 87,
+        "opponentWins": 10,
+        "draws": 3,
+        "scores": {
+          "ai": {
+            "median": 27,
+            "variance": 397.82960000000014
+          },
+          "opponent": {
+            "median": 26.5,
+            "variance": 543.2696
+          },
+          "gap": 0.5
+        },
+        "avgScores": {
+          "1": 32.52,
+          "2": 34.48
+        },
+        "aiWinRate": 0.87,
+        "avgMoves": 162,
+        "durationMs": 5142
+      },
+      "totalDurationMs": 5144
+    }
+  ],
+  "completedAt": "2026-10-22T13:54:12.510Z"
+}
