@@ -1,0 +1,23 @@
+{
+  "test1_AI_vs_Random": {
+    "totalMoves": 48,
+    "successfulMoves": 48,
+    "failedMoves": 0,
+    "successRate": "100.0",
+    "enclosureCount": 28,
+    "avgLegalMoves": "55.0",
+    "minLegalMoves": 25,
+    "maxLegalMoves": 85
+  },
+  "test2_AI_vs_Heuristic": {
+    "totalMoves": 52,
+    "successfulMoves": 52,
+    "failedMoves": 0,
+    "successRate": "100.0",
+    "enclosureCount": 31,
+    "avgLegalMoves": "N/A",
+    "minLegalMoves": "N/A",
+    "maxLegalMoves": "N/A"
+  },
+  "timestamp": "2026-10-22T13:23:26.005Z"
+}

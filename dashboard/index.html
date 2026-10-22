@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Triantica Training Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0d1117; --card: #161b22; --border: #30363d; --text: #c9d1d9;
+      --text-bright: #f0f6fc; --text-muted: #8b949e; --accent: #58a6ff;
+      --green: #3fb950; --red: #f85149; --yellow: #d29922; --purple: #bc8cff;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+    header { display: flex; justify-content: space-between; align-items: center; padding: 16px 0; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+    header h1 { font-size: 24px; color: var(--text-bright); }
+    header h1 span { color: var(--accent); }
+    
+    .tabs { display: flex; gap: 4px; margin-bottom: 20px; background: var(--card); border-radius: 8px; padding: 4px; border: 1px solid var(--border); }
+    .tab { padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; color: var(--text-muted); border: none; background: none; }
+    .tab:hover { color: var(--text); }
+    .tab.active { background: var(--accent); color: var(--bg); font-weight: 600; }
+    
+    .overview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+    .exp-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; cursor: pointer; position: relative; }
+    .exp-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+    .exp-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+    .exp-card h3 { font-size: 15px; color: var(--text-bright); margin-bottom: 4px; }
+    .exp-card .date { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
+    .exp-card .win-rate { font-size: 28px; font-weight: 700; }
+    .exp-card .win-rate.good { color: var(--green); }
+    .exp-card .win-rate.mid { color: var(--yellow); }
+    .exp-card .win-rate.bad { color: var(--red); }
+    .exp-card .delta { font-size: 13px; }
+    .exp-card .delta.positive { color: var(--green); }
+    .exp-card .delta.negative { color: var(--red); }
+    .heuristic-badge { position: absolute; top: 12px; right: 12px; font-size: 11px; padding: 2px 8px; border-radius: 4px; background: rgba(248,81,73,0.15); color: var(--red); }
+    
+    .detail-panel { display: none; }
+    .detail-panel.active { display: block; }
+    .detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .detail-header h2 { font-size: 20px; color: var(--text-bright); }
+    .back-btn { background: var(--card); border: 1px solid var(--border); color: var(--text); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+    
+    .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+    .detail-grid.full { grid-template-columns: 1fr; }
+    .section { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+    .section h3 { font-size: 14px; color: var(--accent); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+    
+    .params-table { width: 100%; border-collapse: collapse; }
+    .params-table td { padding: 4px 8px; font-size: 13px; border-bottom: 1px solid var(--border); }
+    .params-table td:first-child { color: var(--text-muted); width: 45%; }
+    .params-table td:last-child { color: var(--text-bright); font-family: monospace; }
+    .params-table tr.changed { background: rgba(88,166,255,0.08); }
+    .params-table tr.changed td:last-child { color: var(--accent); }
+    
+    .summary-text { font-size: 14px; margin-bottom: 12px; }
+    .change-list, .bug-list { list-style: none; font-size: 13px; }
+    .change-list li::before { content: '🔧 '; }
+    .bug-list li::before { content: '🐛 '; }
+    
+    .chart-container { position: relative; height: 260px; margin: 8px 0; }
+    .chart-container.tall { height: 340px; }
+    
+    .compare-selector { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+    .exp-checkbox { display: flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--card); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 13px; }
+    .exp-checkbox:hover { border-color: var(--accent); }
+    .exp-checkbox input { accent-color: var(--accent); }
+    
+    .comparison-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px; }
+    .comp-metric { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px; text-align: center; }
+    .comp-metric .label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; }
+    .comp-metric .value { font-size: 22px; font-weight: 700; color: var(--text-bright); margin: 4px 0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header><h1>🏗️ <span>Triantica</span> Training Dashboard</h1></header>
+    
+    <div class="tabs">
+      <button class="tab active" data-view="overview">Overview</button>
+      <button class="tab" data-view="compare">Compare</button>
+    </div>
+    
+    <div id="view-overview"><div class="overview-grid" id="exp-cards"></div></div>
+    
+    <div id="view-detail" class="detail-panel">
+      <div class="detail-header">
+        <button class="back-btn" onclick="showView('overview')">← Back</button>
+        <h2 id="detail-title"></h2>
+      </div>
+      <div class="detail-grid">
+        <div class="section"><h3>Parameters</h3><table class="params-table" id="params-table"></table></div>
+        <div class="section">
+          <h3>Summary</h3><p class="summary-text" id="summary-text"></p>
+          <h3>Changes</h3><ul class="change-list" id="change-list"></ul>
+          <h3 style="margin-top:12px;">Bugs Fixed</h3><ul class="bug-list" id="bug-list"></ul>
+        </div>
+      </div>
+      <div class="detail-grid full">
+        <div class="section"><h3>Win Rate Over Cycles</h3><div class="chart-container"><canvas id="chart-winrate"></canvas></div></div>
+      </div>
+      <div class="detail-grid">
+        <div class="section"><h3>Training Error</h3><div class="chart-container"><canvas id="chart-error"></canvas></div></div>
+        <div class="section"><h3>vs Heuristic</h3><div class="chart-container"><canvas id="chart-heuristic"></canvas></div></div>
+      </div>
+    </div>
+    
+    <div id="view-compare" class="detail-panel">
+      <h2 style="margin-bottom:16px;color:var(--text-bright)">Cross-Experiment Comparison</h2>
+      <div class="compare-selector" id="compare-selector"></div>
+      <div class="comparison-grid" id="comp-metrics"></div>
+      <div class="section" style="margin-top:16px"><h3>Win Rate Comparison</h3><div class="chart-container tall"><canvas id="chart-compare-winrate"></canvas></div></div>
+      <div class="section" style="margin-top:16px"><h3>Error Trend Comparison</h3><div class="chart-container tall"><canvas id="chart-compare-error"></canvas></div></div>
+    </div>
+  </div>
+
+  <script>
+    let experiments = [], cycleData = {}, charts = {}, selectedCompare = new Set();
+    const PALETTE = ['#58a6ff','#3fb950','#f85149','#d29922','#bc8cff','#db6d28','#79c0ff','#56d364'];
+    
+    async function init() {
+      const resp = await fetch('experiments.json');
+      experiments = await resp.json();
+      
+      for (const exp of experiments) {
+        if (exp.dataFile) {
+          try {
+            const r = await fetch(`../experiments/data/${exp.dataFile}`);
+            cycleData[exp.id] = await r.json();
+          } catch(e) { console.warn(`No cycle data for ${exp.id}`); }
+        }
+      }
+      
+      renderOverview();
+      renderCompareSelector();
+      document.querySelectorAll('.tab').forEach(t => t.onclick = () => showView(t.dataset.view));
+    }
+    
+    function renderOverview() {
+      document.getElementById('exp-cards').innerHTML = experiments.map(exp => {
+        const r = exp.result;
+        const wrClass = r.peakWinRate >= 85 ? 'good' : r.peakWinRate >= 70 ? 'mid' : 'bad';
+        const deltaClass = r.improvement >= 0 ? 'positive' : 'negative';
+        return `<div class="exp-card" onclick="showDetail('${exp.id}')" id="card-${exp.id}">
+          <span class="heuristic-badge">0% vs Heuristic</span>
+          <h3>${exp.name}</h3>
+          <div class="date">${exp.date}</div>
+          <div class="win-rate ${wrClass}">${r.peakWinRate}%</div>
+          <div class="delta ${deltaClass}">${r.improvement>=0?'+':''}${r.improvement}pp</div>
+        </div>`;
+      }).join('');
+    }
+    
+    function showView(view) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.view === view));
+      document.getElementById('view-overview').style.display = view === 'overview' ? 'block' : 'none';
+      document.getElementById('view-detail').style.display = view === 'detail' ? 'block' : 'none';
+      document.getElementById('view-detail').classList.toggle('active', view === 'detail');
+      document.getElementById('view-compare').style.display = view === 'compare' ? 'block' : 'none';
+      document.getElementById('view-compare').classList.toggle('active', view === 'compare');
+    }
+    
+    function showDetail(expId) {
+      const exp = experiments.find(e => e.id === expId);
+      if (!exp) return;
+      document.querySelectorAll('.exp-card').forEach(c => c.classList.remove('selected'));
+      document.getElementById(`card-${expId}`).classList.add('selected');
+      showView('detail');
+      
+      document.getElementById('detail-title').textContent = exp.name;
+      const prevIdx = experiments.indexOf(exp) - 1;
+      const prevParams = prevIdx >= 0 ? experiments[prevIdx].parameters : {};
+      
+      document.getElementById('params-table').innerHTML = Object.entries(exp.parameters).map(([k,v]) => {
+        const changed = prevParams[k] !== undefined && prevParams[k] !== v;
+        const valStr = typeof v === 'boolean' ? (v ? '✅' : '❌') : v;
+        return `<tr class="${changed?'changed':''}"><td>${k}</td><td>${valStr}</td></tr>`;
+      }).join('');
+      
+      document.getElementById('summary-text').textContent = exp.summary;
+      document.getElementById('change-list').innerHTML = exp.changes.split('. ').filter(s=>s).map(s=>`<li>${s}</li>`).join('');
+      document.getElementById('bug-list').innerHTML = (exp.bugsFixed||[]).map(b=>`<li>${b}</li>`).join('')||'<li>None</li>';
+      
+      renderDetailCharts(exp);
+    }
+    
+    function renderDetailCharts(exp) {
+      const data = cycleData[exp.id];
+      Object.keys(charts).forEach(k => charts[k]?.destroy());
+      
+      const opts = {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: '#c9d1d9' } } },
+        scales: { x: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } },
+                  y: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } } }
+      };
+      
+      if (data?.cycles) {
+        const labels = data.cycles.map(c => `C${c.cycle}`);
+        const winRates = data.cycles.map(c => c.eval?.winRate ? (c.eval.winRate * 100) : null);
+        const errors = data.cycles.map(c => c.training?.finalError);
+        
+        charts.winrate = new Chart(document.getElementById('chart-winrate'), {
+          type: 'line',
+          data: { labels, datasets: [{ label: 'Win Rate vs Random (%)', data: winRates, borderColor: '#3fb950', backgroundColor: 'rgba(63,185,80,0.1)', fill: true, tension: 0.3 }] },
+          options: { ...opts, scales: { ...opts.scales, y: { ...opts.scales.y, min: 60, max: 100 } } }
+        });
+        
+        charts.error = new Chart(document.getElementById('chart-error'), {
+          type: 'line',
+          data: { labels, datasets: [{ label: 'Final Training Error', data: errors, borderColor: '#bc8cff', backgroundColor: 'rgba(188,140,255,0.1)', fill: true, tension: 0.3 }] },
+          options: opts
+        });
+      }
+      
+      // Placeholder for Heuristic chart
+      charts.heuristic = new Chart(document.getElementById('chart-heuristic'), {
+        type: 'bar',
+        data: { labels: ['vs Heuristic'], datasets: [{ label: 'Win Rate (%)', data: [0], backgroundColor: 'rgba(248,81,73,0.6)', borderColor: '#f85149', borderWidth: 1 }] },
+        options: { ...opts, scales: { ...opts.scales, y: { ...opts.scales.y, min: 0, max: 50 } } }
+      });
+    }
+    
+    function renderCompareSelector() {
+      document.getElementById('compare-selector').innerHTML = experiments.map(exp => 
+        `<label class="exp-checkbox"><input type="checkbox" onchange="toggleCompare('${exp.id}')"> ${exp.name}</label>`
+      ).join('');
+    }
+    
+    function toggleCompare(expId) {
+      if (selectedCompare.has(expId)) selectedCompare.delete(expId);
+      else selectedCompare.add(expId);
+      renderComparison();
+    }
+    
+    function renderComparison() {
+      const ids = [...selectedCompare];
+      if (ids.length === 0) {
+        document.getElementById('comp-metrics').innerHTML = '<div class="comp-metric"><div class="value">Select experiments to compare</div></div>';
+        return;
+      }
+      
+      const exps = ids.map(id => experiments.find(e => e.id === id));
+      const avgWin = exps.reduce((s,e) => s + e.result.peakWinRate, 0) / exps.length;
+      const avgImp = exps.reduce((s,e) => s + e.result.improvement, 0) / exps.length;
+      
+      document.getElementById('comp-metrics').innerHTML = `
+        <div class="comp-metric"><div class="label">Experiments</div><div class="value">${exps.length}</div></div>
+        <div class="comp-metric"><div class="label">Avg Peak Win Rate</div><div class="value">${avgWin.toFixed(1)}%</div></div>
+        <div class="comp-metric"><div class="label">Avg Improvement</div><div class="value">${avgImp>=0?'+':''}${avgImp.toFixed(1)}pp</div></div>
+        <div class="comp-metric"><div class="label">Heuristic Wall</div><div class="value" style="color:var(--red)">0%</div></div>
+      `;
+      
+      // Win rate comparison chart
+      Object.keys(charts).forEach(k => charts[k]?.destroy());
+      
+      const maxCycles = Math.max(...exps.map(e => cycleData[e.id]?.cycles?.length || 0));
+      const labels = Array.from({length: maxCycles}, (_, i) => `C${i+1}`);
+      
+      const datasets = exps.map((exp, i) => {
+        const data = cycleData[exp.id];
+        const winRates = data?.cycles?.map(c => c.eval?.winRate ? (c.eval.winRate * 100) : null) || [];
+        return {
+          label: exp.name,
+          data: winRates,
+          borderColor: PALETTE[i % PALETTE.length],
+          backgroundColor: 'transparent',
+          tension: 0.3
+        };
+      });
+      
+      charts.compareWinrate = new Chart(document.getElementById('chart-compare-winrate'), {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { labels: { color: '#c9d1d9' } } },
+          scales: {
+            x: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } },
+            y: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' }, min: 60, max: 100 }
+          }
+        }
+      });
+      
+      const errorDatasets = exps.map((exp, i) => {
+        const data = cycleData[exp.id];
+        const errors = data?.cycles?.map(c => c.training?.finalError) || [];
+        return {
+          label: exp.name,
+          data: errors,
+          borderColor: PALETTE[i % PALETTE.length],
+          backgroundColor: 'transparent',
+          tension: 0.3
+        };
+      });
+      
+      charts.compareError = new Chart(document.getElementById('chart-compare-error'), {
+        type: 'line',
+        data: { labels, datasets: errorDatasets },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { labels: { color: '#c9d1d9' } } },
+          scales: {
+            x: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } },
+            y: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } }
+          }
+        }
+      });
+    }
+    
+    init();
+  </script>
+</body>
+</html>

@@ -540,9 +540,9 @@ export class AIPlayer extends PlayerInterface {
       // Set current player BEFORE computing state (so state representation sees correct player)
       gridManager.currentPlayer = currentPlayerNum;
       
-      const state = this.selfPlayMode === 'network'
-        ? this._getStateRelativeToCurrentPlayer(gridManager)
-        : this._getStateRepresentation(gridManager);
+      // Always use state relative to current player for network predictions
+      // This ensures both P1 and P2 see the board from their own perspective
+      const state = this._getStateRelativeToCurrentPlayer(gridManager);
 
       // Calculate immediate rewards from current player's perspective for 'network' mode
       const immediateRewardVector = this.selfPlayMode === 'network'
@@ -820,10 +820,9 @@ export class AIPlayer extends PlayerInterface {
    * Get best move from network prediction
    */
   _getBestNetworkMove(gridManager) {
-    // Use state representation consistent with training data
-    const state = this.selfPlayMode === 'network'
-      ? this._getStateRelativeToCurrentPlayer(gridManager)
-      : this._getStateRepresentation(gridManager);
+    // Always use state relative to current player
+    // Both training and inference must use the same representation
+    const state = this._getStateRelativeToCurrentPlayer(gridManager);
     const output = this.network.run(state);
 
     const moves = [];

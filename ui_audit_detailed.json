@@ -1,0 +1,12 @@
+{
+  "summary": {
+    "totalMoves": 0,
+    "successfulMoves": 0,
+    "failedMoves": 0,
+    "successRate": 100,
+    "turns": []
+  },
+  "gridState": null,
+  "failedMoves": [],
+  "timestamp": "2026-10-22T12:14:46.098Z"
+}

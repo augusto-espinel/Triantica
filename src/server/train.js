@@ -170,7 +170,7 @@ function parseArgs() {
     iterations: 200,
     learningRate: 0.1,
     exploration: 0.3,
-    selfPlayMode: 'random',
+    selfPlayMode: 'network', // 'random' (vs random) | 'network' (proper self-play)
     startFrom: 'trainedAI_network.json',
     output: 'trainedAI_network_v2.json',
     saveEvery: 5,
