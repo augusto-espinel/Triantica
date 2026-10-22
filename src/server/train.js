@@ -799,7 +799,8 @@ async function main() {
 
     const evalAI = new AIPlayer(1, {
       difficulty: 'medium',
-      explorationFactor: 0.05, // Lower exploration for evaluation
+      explorationFactor: 0, // Pure network play for evaluation
+      explorationMode: 'perMove', // Per-move mode (no random games)
       networkJSON: aiPlayer.exportNetwork(),
     });
     await evalAI.initialize();

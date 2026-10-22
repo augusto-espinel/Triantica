@@ -186,20 +186,43 @@ export class AIPlayer extends PlayerInterface {
       return this._getRandomValidMove(gridManager);
     }
 
+    // Track move count for opening diversity (reset when grid is nearly empty)
+    if (!this._evalMoveCount) this._evalMoveCount = 0;
+    const occupiedCount = gridManager.grid.flat().filter(cell => cell.triangles.some(t => t !== 0)).length;
+    if (occupiedCount < 3) {
+      this._evalMoveCount = 0;
+    }
+    
+    // Opening diversity: 50% random for first 3 moves
+    const isOpeningPhase = this._evalMoveCount < 3;
+    const openingRandomFactor = isOpeningPhase ? 0.50 : 0;
+    
     // Per-game exploration: mode is determined once at game start
     if (this.explorationMode === 'perGame') {
       if (this.gamePlayMode === 'random') {
+        this._evalMoveCount++;
         return this._getRandomValidMove(gridManager);
       }
       // Network mode — use network prediction
+      this._evalMoveCount++;
       return this._getNetworkMove(gridManager);
     }
 
     // Per-move exploration: roll dice each turn (original behavior)
-    if (Math.random() < this.explorationFactor) {
+    const rand = Math.random();
+    
+    if (rand < openingRandomFactor) {
+      // Opening diversity: random move
+      this._evalMoveCount++;
+      return this._getRandomValidMove(gridManager);
+    }
+    
+    if (rand < this.explorationFactor + openingRandomFactor) {
+      this._evalMoveCount++;
       return this._getRandomValidMove(gridManager);
     }
 
+    this._evalMoveCount++;
     return this._getNetworkMove(gridManager);
   }
 
