@@ -199,15 +199,6 @@ Benefits:
 
 ---
 
-## Future Experiment Queue
-
-| Exp | Focus | Status | Dependencies |
-|-----|-------|--------|--------------|
-| 13a | Gradient isolation | Planned | Exp 12 results |
-| 13b | Canonical encoding | Planned | Exp 13a success |
-| 14 | CNN architecture | Backlog | If 13a/13b fail |
-| 15 | Attention mechanism | Backlog | If 13a/13b fail |
-
 ---
 
 ## 🐛 Critical Bug Fix: Eval Win Rate Measurement (2026-10-21)
@@ -906,6 +897,64 @@ The trajectory shows consistent improvement:
 - **+2.2pp improvement from continued training**
 
 The network is still learning after 10 cycles, suggesting room for further gains with more training.
+
+---
+
+## 🎯 Exp 15 Strategic Analysis: The Heuristic Wall
+
+### The Fundamental Problem
+
+**Heuristic vs AI: 181 games, 0 AI wins.**
+
+The Heuristic opponent uses a deterministic enclosure-focused strategy that the AI cannot crack:
+
+```
+HEURISTIC ALGORITHM:
+1. Scan all legal moves
+2. For each move, simulate:
+   - Enclosed triangles created (bonus turns)
+   - Connected cluster size gained
+   - Opponent enclosures blocked
+3. Pick move with highest composite score
+```
+
+This strategy consistently wins as P2 because:
+- First-mover disadvantage (P1 must open, P2 responds)
+- Enclosure chains compound (snowball effect)
+- Deterministic play = no exploitable mistakes
+
+### Why Can't AI Learn This?
+
+**Reward Function Gaps:**
+
+| Metric | In Reward | Strategic Value |
+|--------|-----------|------------------|
+| Enclosed triangles | ✓ (+0.5) | Local only |
+| Cluster size | ✓ (+0.1) | Current state only |
+| Lead delta | ✓ (±0.25) | Immediate result |
+| Enclosure potential | ✗ | Multi-turn lookahead |
+| Bonus turn chains | ✗ | Strategic planning |
+| Position value | ✗ | Long-term control |
+
+**Training Data Bias:**
+- 181 Heuristic games → 0 AI wins
+- AI never sees winning enclosure strategy in action
+- Network self-play creates local equilibrium
+- No strategic innovation pressure
+
+### What AI HAS Learned
+
+✓ Beat Random 88% of the time (vs P1: 78%, as P2: 20%)
+✓ Error curves converge properly (no overfitting)
+✓ Positional awareness improving over cycles
+✓ Avoid bad moves (negative rewards working)
+
+### What AI CANNOT Do
+
+✗ Plan enclosure chains
+✗ Exploit bonus turns strategically
+✗ Block opponent enclosures proactively
+✗ Build territorial control
 
 ---
 
