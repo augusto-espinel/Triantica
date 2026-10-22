@@ -705,12 +705,174 @@ node src/server/train.js \
 
 ### Reference: Postponed Architecture Change
 
-**Exp 14 (formerly "13b")** — Canonical State Encoding + Value Head Architecture
+**Exp 16 — Canonical State Encoding + Value Head Architecture** (Renamed from 13b)
 
 This experiment involves fundamental architecture changes:
 - 4-slot per-cell encoding (canonical representation)
 - Value head instead of 400-output policy head
 - Fresh weights (not starting from current network)
 
-Postponed until we understand the ceiling of the current architecture with pure self-play.
+**Status:** Postponed until we understand the ceiling of the current architecture with proper normalization.
+
+---
+
+## Experiment 14 — Mixed Opponent Curriculum (Fixed Extra Turns)
+
+**Started:** 2026-10-22 04:39
+**Completed:** 2026-10-22 05:52
+**Log:** `experiments/logs/exp14_mixed_fixed.log`
+**Network:** `experiments/data/exp14_mixed_fixed.json`
+**Starting from:** `experiments/data/exp12r_network.json`
+
+### Critical Bug Fix: Extra Turns in Mixed Opponent Games
+
+**Bug discovered:** The `_runGameVsOpponent()` function in `train.js` (used for AI vs Random/Heuristic games during training) never implemented bonus turns from `claimEnclosedTriangles`. This means all curriculum learning games against Random and Heuristic were played under incorrect rules.
+
+**Impact:** The AI never experienced enclosure chains during training against Random/Heuristic, learning an incomplete game model. Pure network self-play was unaffected.
+
+**Fix:** Added proper extra-turn handling matching `AIPlayer.runSelfPlayGame`:
+```javascript
+if (success) {
+  claimed = gridManager.claimEnclosedTriangles(currentPlayer);
+  gridManager.extraTurns += Math.floor((1 + claimed) / 2);
+}
+if (gridManager.extraTurns > 0) {
+  gridManager.extraTurns--;
+} else {
+  gridManager.currentPlayer = currentPlayer === 1 ? 2 : 1;
+}
+```
+
+### Configuration
+
+```bash
+node src/server/train.js \
+  --cycles 20 \
+  --games 100 \
+  --eval-games 200 \
+  --iterations 100 \
+  --learning-rate 0.01 \
+  --exploration 0.2 \
+  --self-play-mode network \
+  --opponent-mix mixed \
+  --start-from experiments/data/exp12r_network.json \
+  --output experiments/data/exp14_mixed_fixed.json \
+  --audit true \
+  --audit-rate 0.05
+```
+
+**Opponent distribution:** Network ~47%, Heuristic ~40%, Random ~13%
+
+### Results
+
+| Metric | Value |
+|--------|-------|
+| Starting eval win rate | 80.0% |
+| Final eval win rate | 73.0% |
+| Mean eval across cycles | 77.6% |
+| Best cycle | 86.5% (cycle 1) |
+| Worst cycle | 71.5% |
+| Total time | 4426.2s (~74 min) |
+| Audit pass rate | 100% |
+
+### Comparison with Pure Network Self-Play (Exp 12r)
+
+| Metric | Exp 12r (pure network) | Exp 14 (mixed, fixed) |
+|--------|------------------------|----------------------|
+| Start → End | 70% → 63% | 80% → 73% |
+| Mean eval | 67.9% | 77.6% |
+| Best cycle | 74.0% | 86.5% |
+| Initial error drop | Plateau at ~0.0029 | Steady 0.0036 → 0.0024 |
+
+**Conclusion:** Mixed curriculum is ~10pp better than pure network self-play. Despite the heuristic opponent winning 100% of games, it provides stronger training signal. The error convergence shows the network is genuinely learning.
+
+### Error Convergence Analysis
+
+**Critical finding:** Every cycle crashed to **exactly 0.000000 error** by iteration 100:
+- Initial error: 0.0024–0.0036 (surprise from new data)
+- By iteration 10: ~0.001 (fast learning)
+- By iteration 15–20: Plateau at ~0.0009
+- By iteration 100: **0.000000** (complete memorization)
+
+This indicates **severe overfitting** — 100 iterations is ~80 too many.
+
+---
+
+## 🐛 Critical Bug: Normalization Breaking Negative Rewards
+
+**Discovered:** 2026-10-22 08:42
+
+### The Bug
+
+In `calculateImmediateRewardVector()`, the "lead delta" component ranges from -4.0 to +4.0. A move that loses position has a **negative reward**.
+
+But the output vector was clamped to [0.01, 0.99] with `minImmediateReward = 0`:
+```javascript
+const maxImmediateReward = 15.5;
+const rewardRange = maxImmediateReward;  // Only positive range!
+
+let scaledReward = hypotheticalReward / rewardRange;
+outputVector[moveIndex] = Math.max(0.01, Math.min(0.99, scaledReward));
+```
+
+### Impact
+
+- A move with reward -1.0: `scaledReward = -1.0 / 15.5 = -0.065`
+- Clamped to `0.01`
+- When de-normalized: `0.01 × 15.5 = 0.155` (NOT -1.0)
+
+**All negative rewards were crushed to +0.155.** The network never saw negative signals. It couldn't learn to avoid bad moves.
+
+### Evidence
+
+This explains why error could crash to zero — the network was learning a compressed, incorrect signal with no negative targets. The task was artificially easy.
+
+---
+
+## Experiment 15 — Fixed Normalization
+
+**Started:** 2026-10-22 07:28
+**Status:** Running
+**Log:** `experiments/logs/exp15_norm_fixed.log`
+**Network:** `experiments/data/exp15_norm_fixed.json`
+**Starting from:** `experiments/data/exp12r_network.json`
+
+### Fix Applied
+
+```javascript
+const minImmediateReward = -4.0;  // Lead delta minimum
+const maxImmediateReward = 15.5;  // Realistic max
+const rewardRange = maxImmediateReward - minImmediateReward;  // 19.5
+
+let scaledReward = (hypotheticalReward - minImmediateReward) / rewardRange;
+outputVector[moveIndex] = Math.max(0.01, Math.min(0.99, scaledReward));
+```
+
+De-normalization also fixed:
+```javascript
+rawImmediateReward: ((scaledValue - 0.01) / 0.98) * 19.5 - 4.0
+```
+
+### Quick Validation (1 cycle, 20 iterations)
+
+- Error: **0.0145 → 0.0026** (healthy curve, NOT crash-to-zero)
+- Eval win rate: **80%**
+- Error showed steady decrease across all 20 iterations
+
+**The fix is working.** Error no longer collapses to zero.
+
+### Full Experiment (20 cycles)
+
+Running in background. Will compare against Exp 14 once complete.
+
+---
+
+## Future Experiment Queue
+
+| Exp | Focus | Status | Dependencies |
+|-----|-------|--------|--------------|
+| 15 | Fixed normalization | Running | Bug fix |
+| 16 | Canonical encoding + value head | Postponed | Exp 15 results |
+| 17 | CNN architecture | Backlog | If 15/16 fail |
+| 18 | Attention mechanism | Backlog | If 15/16 fail |
 

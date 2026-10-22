@@ -18,6 +18,8 @@
  *   --self-play-mode M  Self-play mode: 'random' or 'network' (default: random)
  *   --start-from FILE  Load pre-trained network (default: trainedAI_network.json, use 'fresh' for random init)
  *   --output FILE      Save trained network (default: trainedAI_network_v2.json)
+ *   --audit            Enable game auditing (random sampling for bug detection)
+ *   --audit-rate F     Audit sample rate 0.0-1.0 (default: 0.05 = 5% of games)
  */
 
 /**
@@ -146,6 +148,7 @@ function computeBoardDiversity(finalBoards) {
 import { GridManager } from '../core/GridManager.js';
 import { GameSession } from '../core/GameSession.js';
 import { RandomPlayer } from '../players/RandomPlayer.js';
+import { GameAuditor } from './GameAuditor.js';
 import { AIPlayer } from '../players/AIPlayer.js';
 import { GameLogger } from '../data/GameLogger.js';
 import { ReplayBuffer } from '../data/ReplayBuffer.js';
@@ -184,6 +187,8 @@ function parseArgs() {
     clusterGamma: 0.99, // discount factor
     gradientIsolation: false, // Exp 13a: only train on chosen move, anchor unchosen to current prediction
     trainOnOpponentMoves: false, // Exp 12s: learn from opponent's winning moves
+    audit: false, // Enable game auditing for bug detection
+    auditRate: 0.05, // Fraction of games to audit (default 5%)
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -191,11 +196,11 @@ function parseArgs() {
     if (arg.startsWith('--')) {
       const key = arg.slice(2).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
       const val = args[++i];
-      if (key === 'learningRate' || key === 'exploration' || key === 'replayRatio' || key === 'heuristicRatio' || key === 'randomRatio' || key === 'clusterRewardFactor' || key === 'clusterLambda' || key === 'clusterGamma') {
+      if (key === 'learningRate' || key === 'exploration' || key === 'replayRatio' || key === 'heuristicRatio' || key === 'randomRatio' || key === 'clusterRewardFactor' || key === 'clusterLambda' || key === 'clusterGamma' || key === 'auditRate') {
         opts[key] = parseFloat(val);
       } else if (key === 'startFrom' || key === 'output' || key === 'selfPlayMode' || key === 'log' || key === 'explorationMode' || key === 'opponentMix') {
         opts[key] = val;
-      } else if (key === 'enableClusterReward' || key === 'gradientIsolation' || key === 'trainOnOpponentMoves') {
+      } else if (key === 'enableClusterReward' || key === 'gradientIsolation' || key === 'trainOnOpponentMoves' || key === 'audit') {
         opts[key] = val === 'true';
       } else if (key === 'replaySize' || key === 'trainOnOpponentMoves') {
         // trainOnOpponentMoves is boolean, handled above
@@ -223,7 +228,8 @@ async function _runGameVsOpponent(aiPlayer, opponent, gridManager, gradientIsola
   gridManager.currentPlayer = 1;
   gridManager.reset();
   
-  const gameHistory = [];
+  const gameHistory = [];      // Full move log for auditing (ALL moves)
+  const trainingHistory = [];   // Training data (AI moves + optionally opponent moves)
   let movesCount = 0;
   let firstMove = null;
   
@@ -244,13 +250,15 @@ async function _runGameVsOpponent(aiPlayer, opponent, gridManager, gradientIsola
       
       const actualMoveIndex = (move.y * gridManager.cols + move.x) * 4 + move.rotation;
       
-      gameHistory.push({
+      // Record for training
+      trainingHistory.push({
         player,
         move,
         state,
         immediateRewardVector,
         rawImmediateReward,
         actualMoveIndex,
+        claimed: 0, // Will be updated after placement
       });
       
       if (!firstMove) firstMove = move;
@@ -273,28 +281,54 @@ async function _runGameVsOpponent(aiPlayer, opponent, gridManager, gradientIsola
         const rawImmediateReward = immediateRewardVector.reduce((sum, v) => sum + v, 0) / immediateRewardVector.length;
         const actualMoveIndex = (move.y * gridManager.cols + move.x) * 4 + move.rotation;
         
-        gameHistory.push({
+        trainingHistory.push({
           player: 2,
           move,
           state,
           immediateRewardVector,
           rawImmediateReward,
           actualMoveIndex,
+          claimed: 0, // Will be updated after placement
         });
       }
     }
     
-    // Debug: log move before placing
-    // console.log(`P${currentPlayer} move:`, move);
+    // Record ALL moves for audit replay
+    gameHistory.push({
+      player: currentPlayer,
+      move,
+      claimed: 0, // Will be updated after placement
+    });
+    
     const success = gridManager.placeTriangle(move.x, move.y, move.rotation, currentPlayer);
     if (!success) {
       console.error(`Failed to place triangle at (${move.x}, ${move.y}, r${move.rotation}) for player ${currentPlayer}`);
     }
-    if (success) gridManager.claimEnclosedTriangles(currentPlayer);
+    let claimed = 0;
+    if (success) {
+      claimed = gridManager.claimEnclosedTriangles(currentPlayer);
+      // Handle extra turns (same logic as AIPlayer.runSelfPlayGame)
+      gridManager.extraTurns += Math.floor((1 + claimed) / 2);
+    }
+    
+    // Update claimed in history entries
+    const lastGameEntry = gameHistory[gameHistory.length - 1];
+    lastGameEntry.claimed = claimed;
+    
+    const lastTrainingEntry = trainingHistory[trainingHistory.length - 1];
+    if (lastTrainingEntry && lastTrainingEntry.player === currentPlayer) {
+      lastTrainingEntry.claimed = claimed;
+    }
+    
     movesCount++;
     
-    // Switch to other player for next turn
-    gridManager.currentPlayer = currentPlayer === 1 ? 2 : 1;
+    // Switch to other player for next turn (respecting extra turns)
+    if (gridManager.extraTurns > 0) {
+      gridManager.extraTurns--;
+      // Same player continues
+    } else {
+      gridManager.currentPlayer = currentPlayer === 1 ? 2 : 1;
+    }
   }
   
   // Determine winner
@@ -310,7 +344,7 @@ async function _runGameVsOpponent(aiPlayer, opponent, gridManager, gradientIsola
   
   // Generate training data from AI's moves only
   const finalRewardWeight = 1.0;
-  const totalMoves = gameHistory.length;
+  const totalMoves = trainingHistory.length;
   
   // TD(λ) cluster reward setup - both players when trainOnOpponent
   const p1LargestCluster = gridManager.getLargestContiguousCluster(1);
@@ -333,7 +367,7 @@ async function _runGameVsOpponent(aiPlayer, opponent, gridManager, gradientIsola
   let trainingSamplesAdded = 0;
   
   for (let t = totalMoves - 1; t >= 0; t--) {
-    const step = gameHistory[t];
+    const step = trainingHistory[t];
     const stepsFromEnd = totalMoves - 1 - t;
     
     const rewardForPlayer = winner === step.player ? 1.0 : (winner === 0 ? 0.0 : -1.0);
@@ -400,7 +434,7 @@ async function _runGameVsOpponent(aiPlayer, opponent, gridManager, gradientIsola
     trainingSamplesAdded++;
   }
   
-  return { winner, p1Score, p2Score, moves: movesCount, firstMove, trainingSamplesAdded };
+  return { winner, p1Score, p2Score, moves: movesCount, firstMove, trainingSamplesAdded, gameHistory };
 }
 
 /**
@@ -488,6 +522,9 @@ async function main() {
   console.log(`  Replay buffer:   ${opts.replaySize}`);
   console.log(`  Start from:     ${opts.startFrom}`);
   console.log(`  Output:         ${opts.output}`);
+  if (opts.audit) {
+    console.log(`  Audit mode:     ENABLED (rate=${(opts.auditRate * 100).toFixed(0)}%)`);
+  }
   console.log('='.repeat(50) + '\n');
 
   // Set up log file
@@ -554,6 +591,16 @@ async function main() {
 
   const dataDir = join(projectRoot, 'experiments', 'data');
   mkdirSync(dataDir, { recursive: true });
+
+  // Initialize game auditor if enabled
+  const auditor = new GameAuditor({
+    enabled: opts.audit,
+    sampleRate: opts.auditRate,
+    verbose: opts.audit
+  });
+  if (opts.audit) {
+    logStream.write(`  🔍 Game auditing: ENABLED (rate=${(opts.auditRate * 100).toFixed(0)}%)`);
+  }
 
   // Experience replay buffer
   const replayBuffer = new ReplayBuffer(opts.replaySize);
@@ -627,6 +674,11 @@ async function main() {
       selfPlayScores[1].push(result.p1Score || 0);
       selfPlayScores[2].push(result.p2Score || 0);
       samplesGenerated += result.trainingSamplesAdded || result.moves;
+
+      // Audit this game if sampled
+      if (auditor.shouldAudit() && result.gameHistory) {
+        auditor.auditSelfPlayGame(result.gameHistory, gridManager, opponentType);
+      }
 
       // Track first move for diversity
       if (result.firstMove) {
@@ -735,6 +787,21 @@ async function main() {
     const session = new GameSession();
     session.setPlayers(evalAI, new RandomPlayer(2));
     const evalResults = await session.runGames(opts.evalGames);
+
+    // Audit sampled eval games
+    if (opts.audit) {
+      for (const gameResult of evalResults.games) {
+        if (auditor.shouldAudit() && gameResult.moveHistory && gameResult.moveHistory.length > 0) {
+          // Convert GameSession moveHistory to auditor format
+          const auditHistory = gameResult.moveHistory.map(m => ({
+            player: m.player,
+            move: { x: m.x, y: m.y, rotation: m.rotation },
+            claimed: m.claims,
+          }));
+          auditor.auditSelfPlayGame(auditHistory, new GridManager(10, 10), 'eval-vs-random');
+        }
+      }
+    }
 
     const evalDuration = Date.now() - evalStart;
     const aiWinRate = evalResults.wins.ai / opts.evalGames;
@@ -862,6 +929,11 @@ async function main() {
   logStream.write(`  Total time:        ${(totalDuration / 1000).toFixed(1)}s`);
   logStream.write(`  Cycles completed:  ${trainingLog.cycles.length}`);
   logStream.write('='.repeat(50) + '\n');
+
+  // Print audit summary if enabled
+  if (opts.audit) {
+    auditor.printSummary();
+  }
 }
 
 main().catch(e => {

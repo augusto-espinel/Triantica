@@ -343,12 +343,10 @@ export class AIPlayer extends PlayerInterface {
     // Claim: 0-5 triangles typical, max 5 → max bonus 1.5
     // Cluster: 1-100 triangles typical, max ~100 → max bonus 10.0
     // Lead delta: -20 to +20 typical per move → max bonus ±4.0
-    // Total realistic max immediate: ~15.5 (not 61.5!)
-    const maxClaimBonus = 1.5;
-    const maxClusterBonus = 10.0;  // Realistic: 100 triangles × 0.1
-    const maxLeadBonus = 4.0;       // Realistic: 20 lead delta × 0.2
-    const maxImmediateReward = maxClaimBonus + maxClusterBonus + maxLeadBonus;
-    const rewardRange = maxImmediateReward;
+    // Total realistic range: -4.0 to +15.5
+    const minImmediateReward = -4.0;  // Lead delta can go negative
+    const maxImmediateReward = 15.5;  // Realistic max
+    const rewardRange = maxImmediateReward - minImmediateReward;  // 19.5
 
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
@@ -384,8 +382,8 @@ export class AIPlayer extends PlayerInterface {
             const hypotheticalReward = hypoClaimReward + hypoClusterReward + hypoLeadReward;
 
             let scaledReward = rewardRange !== 0
-              ? hypotheticalReward / rewardRange
-              : 0.01;
+              ? (hypotheticalReward - minImmediateReward) / rewardRange
+              : 0.5;
             outputVector[moveIndex] = Math.max(0.01, Math.min(0.99, scaledReward));
           }
         }
@@ -585,7 +583,8 @@ export class AIPlayer extends PlayerInterface {
         claimed,
         immediateRewardVector,
         // Store raw immediate reward for TD(λ) combination with win/cluster rewards
-        rawImmediateReward: immediateRewardVector[actualMoveIndex] * 15.5, // De-normalize
+        // De-normalize: [0.01, 0.99] → [-4.0, 15.5]
+        rawImmediateReward: ((immediateRewardVector[actualMoveIndex] - 0.01) / 0.98) * 19.5 - 4.0,
         actualMoveIndex,
       });
 
@@ -641,11 +640,12 @@ export class AIPlayer extends PlayerInterface {
     const totalMoves = gameHistory.length;
 
     // Updated normalization bounds
-    // Without cluster reward: immediate (0-15.5) + win/loss (±1.0) = range ~17.5
-    // With cluster reward: immediate (0-15.5) + win/loss (±1.0) + cluster (0-10.0) = range ~27.5
-    const minImmediateReward = 0;
+    // Immediate reward: -4.0 to +15.5 (lead delta can be negative)
+    // Win/loss: ±1.0
+    // Combined range: -5.0 to +16.5 = 21.5
+    const minImmediateReward = -4.0;
     const maxImmediateReward = 15.5;  // Realistic max
-    const minCombinedReward = minImmediateReward - (1.0 * finalRewardWeight) - (this.enableClusterReward ? 0 : 0);
+    const minCombinedReward = minImmediateReward - (1.0 * finalRewardWeight);
     const maxCombinedReward = maxImmediateReward + (1.0 * finalRewardWeight) + (this.enableClusterReward ? 10.0 : 0);
     const combinedRewardRange = maxCombinedReward - minCombinedReward;
 
@@ -754,7 +754,7 @@ export class AIPlayer extends PlayerInterface {
       this.trainingData.push({ input: step.state, output: finalOutputVector });
     }
 
-    return { winner, p1Score, p2Score, moves: movesCount, firstMove, trainingSamplesAdded: totalMoves };
+    return { winner, p1Score, p2Score, moves: movesCount, firstMove, trainingSamplesAdded: totalMoves, gameHistory };
   }
 
   /**
