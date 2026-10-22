@@ -1204,7 +1204,20 @@ triggerAIMove() {
 
           // Place the triangle after another small delay for visual pacing
           this.time.delayedCall(150, () => {
-              const success = this.gridManager.placeTriangle(move.x, move.y); // [cite: 114, 215]
+              let success = this.gridManager.placeTriangle(move.x, move.y); // [cite: 114, 215]
+              
+              // FIX: Retry with random valid move if prediction failed
+              if (!success) {
+                console.warn(`AI: Predicted move invalid, retrying with random valid move`);
+                const retryMoves = this.gridManager.getValidMoves();
+                if (retryMoves.length > 0) {
+                  move = retryMoves[Math.floor(Math.random() * retryMoves.length)];
+                  this.gridManager.selectedRotation = move.rotation;
+                  success = this.gridManager.placeTriangle(move.x, move.y);
+                  console.log(`AI retry: (${move.x},${move.y}) r${move.rotation} = ${success}`);
+                }
+              }
+              
               if (success) {
                   const enclosed = this.gridManager.claimEnclosedTriangles(); // [cite: 139, 217]
                   if (enclosed > 0) {
@@ -1307,8 +1320,22 @@ triggerAIMove() {
           this.debugText.setText(`P${currentPlayerNum} calling placeTriangle...`);
           // FIX: Re-set selectedRotation right before placing (prevents race condition)
           this.gridManager.selectedRotation = move.rotation;
-          const success = this.gridManager.placeTriangle(move.x, move.y);
+          let success = this.gridManager.placeTriangle(move.x, move.y);
           this.debugText.setText(`P${currentPlayerNum} placeTriangle=${success}`);
+          
+          // FIX: Retry with random valid move if first attempt failed
+          if (!success) {
+            console.warn(`${playerType}: Move (${move.x},${move.y}) r${move.rotation} invalid, retrying...`);
+            const retryMoves = this.gridManager.getValidMoves();
+            console.log(`${playerType}: ${retryMoves?.length || 0} valid moves available`);
+            if (retryMoves && retryMoves.length > 0) {
+              move = retryMoves[Math.floor(Math.random() * retryMoves.length)];
+              this.gridManager.selectedRotation = move.rotation;
+              success = this.gridManager.placeTriangle(move.x, move.y);
+              console.log(`${playerType} retry: (${move.x},${move.y}) r${move.rotation} = ${success}`);
+            }
+          }
+          
           if (success) {
             const enclosed = this.gridManager.claimEnclosedTriangles();
             if (enclosed > 0) {

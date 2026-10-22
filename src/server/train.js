@@ -300,10 +300,30 @@ async function _runGameVsOpponent(aiPlayer, opponent, gridManager, gradientIsola
       claimed: 0, // Will be updated after placement
     });
     
-    const success = gridManager.placeTriangle(move.x, move.y, move.rotation, currentPlayer);
+    let success = gridManager.placeTriangle(move.x, move.y, move.rotation, currentPlayer);
+    
+    // FIX: Retry with random valid move if first attempt failed
     if (!success) {
-      console.error(`Failed to place triangle at (${move.x}, ${move.y}, r${move.rotation}) for player ${currentPlayer}`);
+      console.warn(`train.js: Move invalid, retrying with random valid move`);
+      const retryMoves = gridManager.getValidMoves();
+      if (retryMoves.length > 0) {
+        move = retryMoves[Math.floor(Math.random() * retryMoves.length)];
+        success = gridManager.placeTriangle(move.x, move.y, move.rotation, currentPlayer);
+        if (success) {
+          // Update gameHistory with the retry move
+          gameHistory[gameHistory.length - 1].move = move;
+          // Update trainingHistory if present
+          if (trainingHistory.length > 0 && trainingHistory[trainingHistory.length - 1].player === currentPlayer) {
+            trainingHistory[trainingHistory.length - 1].move = move;
+          }
+        }
+      }
     }
+    
+    if (!success) {
+      console.error(`Failed to place triangle even after retry at (${move.x}, ${move.y}, r${move.rotation}) for player ${currentPlayer}`);
+    }
+    
     let claimed = 0;
     if (success) {
       claimed = gridManager.claimEnclosedTriangles(currentPlayer);

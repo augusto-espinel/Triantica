@@ -566,8 +566,23 @@ export class AIPlayer extends PlayerInterface {
       const actualMoveIndex = (move.y * gridManager.cols + move.x) * 4 + move.rotation;
 
       // Execute move
-      const success = gridManager.placeTriangle(move.x, move.y, move.rotation, currentPlayerNum);
-      if (!success) break;
+      let success = gridManager.placeTriangle(move.x, move.y, move.rotation, currentPlayerNum);
+      
+      // FIX: Retry with random valid move if prediction failed
+      if (!success) {
+        console.warn(`AIPlayer: Predicted move invalid, retrying with random valid move`);
+        const retryMoves = gridManager.getValidMoves();
+        if (retryMoves.length > 0) {
+          move = retryMoves[Math.floor(Math.random() * retryMoves.length)];
+          success = gridManager.placeTriangle(move.x, move.y, move.rotation, currentPlayerNum);
+          if (success) {
+            // Update actualMoveIndex for the retry move
+            actualMoveIndex = (move.y * gridManager.cols + move.x) * 4 + move.rotation;
+          }
+        }
+      }
+      
+      if (!success) break; // Only break if retry also failed
       
       // Track first move for diversity metric
       if (movesCount === 0) {
