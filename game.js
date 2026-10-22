@@ -113,7 +113,11 @@ class GridManager {
     this.selectedRotation = (this.selectedRotation + direction + 4) % 4;
   }
   
-  placeTriangle(x, y) {
+  placeTriangle(x, y, rotation = null, player = null) {
+    // Accept optional rotation and player args for compatibility with core GridManager
+    const rot = rotation !== null ? rotation : this.selectedRotation;
+    const pl = player !== null ? player : this.currentPlayer;
+    
     const cell = this.grid[y][x];
     let hasOverlap = false;
     
@@ -122,21 +126,21 @@ class GridManager {
 
     if (cell.triangles.length > 0)  {
       // Check if new triangle overlaps existing ones
-      const newTriangleGroup = this.getDiagonalGroup(this.selectedRotation);
+      const newTriangleGroup = this.getDiagonalGroup(rot);
       hasOverlap = !(this.getDiagonalGroup(cell.triangles[0].rotation) === newTriangleGroup) || 
-      cell.triangles[0].rotation === this.selectedRotation;
+      cell.triangles[0].rotation === rot;
     } 
 
     // Check adjacency rule and overlaps
     if (!this.isValidPlacement(x, y) || hasOverlap) return false;
 
     cell.triangles.push({
-      player: this.currentPlayer,
-      rotation: this.selectedRotation
+      player: pl,
+      rotation: rot
     });
 
     // --- Update Cluster Information ---
-    this.updateClustersForNewTriangle(x, y, this.selectedRotation, this.currentPlayer);
+    this.updateClustersForNewTriangle(x, y, rot, pl);
 
     return true;
   }
@@ -447,6 +451,32 @@ class GridManager {
       case 'top': return 'bottom';
       case 'bottom': return 'top';
     }
+  }
+
+  // Clone method needed for HeuristicPlayer simulations
+  clone() {
+    const cloned = new GridManager(this.rows, this.cols);
+    
+    // Deep copy grid
+    cloned.grid = this.grid.map(row => 
+      row.map(cell => ({
+        triangles: cell.triangles.map(t => ({ ...t }))
+      }))
+    );
+    
+    // Copy state
+    cloned.currentPlayer = this.currentPlayer;
+    cloned.selectedRotation = this.selectedRotation;
+    cloned.extraTurns = this.extraTurns;
+    
+    // Copy cluster data (shallow copy for performance in UI)
+    cloned.clusterMap = new Map(this.clusterMap);
+    cloned.clusters = Object.fromEntries(
+      Object.entries(this.clusters).map(([k, v]) => [k, { ...v }])
+    );
+    cloned.nextClusterId = this.nextClusterId;
+    
+    return cloned;
   }
 }
 
@@ -1164,7 +1194,7 @@ triggerAIMove() {
       }
 
       if (move && typeof move.x !== 'undefined' && typeof move.y !== 'undefined' && typeof move.rotation !== 'undefined') {
-          console.log(`AI Player <span class="math-inline">\{currentPlayerNum\} chose\: \(</span>{move.x}, ${move.y}), Rot: ${move.rotation}`); // [cite: 42]
+          console.log(`AI Player ${currentPlayerNum} chose: (${move.x}, ${move.y}), Rot: ${move.rotation}`);
           // Apply the move
           this.gridManager.selectedRotation = move.rotation;
           // Optional: Move cursor for visual feedback
@@ -1229,22 +1259,25 @@ triggerAIMove() {
     console.log(`[triggerNonHumanMove] ${playerType} Player ${currentPlayerNum} is thinking...`);
     this.debugText.setText(`P${currentPlayerNum} (${playerType}) thinking...`);
 
-    // Use setTimeout instead of Phaser delayedCall to debug
-    setTimeout(() => {
+    // Use Phaser's delayedCall for timing consistency
+    this.time.delayedCall(200, () => {
       try {
         this.debugText.setText(`P${currentPlayerNum} TIMEOUT FIRED`);
         
+        // FIX: Compute valid moves INSIDE the timeout, right before use
+        const validMoves = this.gridManager.getValidMoves();
+        
         if (playerType === 'random') {
           // Random player: select random valid move
-          this.debugText.setText(`P${currentPlayerNum} calling getValidMoves...`);
-          const validMoves = this.gridManager.getValidMoves();
           this.debugText.setText(`P${currentPlayerNum} random: ${validMoves?.length || 'NULL'} valid moves`);
-        if (validMoves.length > 0) {
-          move = validMoves[Math.floor(Math.random() * validMoves.length)];
-        } else {
-          this.debugText.setText(`ERROR: No valid moves for random!`);
-        }
-      } else if (playerType === 'heuristic') {
+          if (validMoves && validMoves.length > 0) {
+            move = validMoves[Math.floor(Math.random() * validMoves.length)];
+          } else {
+            this.debugText.setText(`ERROR: No valid moves for random!`);
+            console.error(`[random] No valid moves available!`);
+            return; // Can't make a move
+          }
+        } else if (playerType === 'heuristic') {
         // Heuristic player: use greedy heuristic
         // Create a temporary HeuristicPlayer instance
         try {
@@ -1270,8 +1303,10 @@ triggerAIMove() {
 
         this.debugText.setText(`P${currentPlayerNum} placing at (${move.x},${move.y})...`);
         
-        setTimeout(() => {
+        this.time.delayedCall(100, () => {
           this.debugText.setText(`P${currentPlayerNum} calling placeTriangle...`);
+          // FIX: Re-set selectedRotation right before placing (prevents race condition)
+          this.gridManager.selectedRotation = move.rotation;
           const success = this.gridManager.placeTriangle(move.x, move.y);
           this.debugText.setText(`P${currentPlayerNum} placeTriangle=${success}`);
           if (success) {
@@ -1294,7 +1329,7 @@ triggerAIMove() {
             this.gridManager.extraTurns = 0;
             this.handleTurnSwitch();
           }
-        }, 100);
+        }, [], this);
       } else {
         console.error(`${playerType} Player ${currentPlayerNum} failed to produce a valid move.`);
         this.debugText.setText(`ERROR: ${playerType} failed to move!`);
@@ -1309,7 +1344,7 @@ triggerAIMove() {
       this.debugText.setText(`ERROR in timeout: ${err.message}`);
       console.error('Error in triggerNonHumanMove timeout:', err);
     }
-    }, 200);
+    }, [], this);
   }
 
   drawTriangle(x, y, rotation, player) {
