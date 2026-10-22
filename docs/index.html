@@ -81,18 +81,15 @@
           <h3 style="margin-top:12px">Bugs Fixed</h3><ul class="bug-list" id="bug-list"></ul>
         </div>
       </div>
-      <div class="detail-grid full"><div class="section"><h3>Win Rate vs Random</h3><div class="chart-container"><canvas id="chart-winrate"></canvas></div></div></div>
+      <div class="detail-grid full"><div class="section"><h3>Training Win Rates (vs All Opponents)</h3><div class="chart-container tall"><canvas id="chart-train-wins"></canvas></div></div></div>
+      <div class="detail-grid full"><div class="section"><h3>Evaluation Win Rates (vs All Opponents)</h3><div class="chart-container tall"><canvas id="chart-eval-wins"></canvas></div></div></div>
       <div class="detail-grid">
         <div class="section"><h3>Training Error</h3><div class="chart-container"><canvas id="chart-error"></canvas></div></div>
         <div class="section"><h3>Error Reduction</h3><div class="chart-container"><canvas id="chart-error-curve"></canvas></div></div>
       </div>
       <div class="detail-grid">
         <div class="section"><h3>Diversity</h3><div class="chart-container"><canvas id="chart-diversity"></canvas></div></div>
-        <div class="section"><h3>Self-Play Wins</h3><div class="chart-container"><canvas id="chart-opponents"></canvas></div></div>
-      </div>
-      <div class="detail-grid">
         <div class="section"><h3>Score Gap</h3><div class="chart-container"><canvas id="chart-scores"></canvas></div></div>
-        <div class="section"><h3>vs Heuristic</h3><div class="chart-container"><canvas id="chart-heuristic"></canvas></div></div>
       </div>
     </div>
     <div id="view-compare" class="detail-panel">
@@ -184,12 +181,14 @@ function renderDetailMetrics(exp){
   const sp=last.selfPlay||{};
   const ev=last.evaluation||{};
   const sc=ev.scores||{};
+  // Calculate win rates from selfPlay
+  const calcWR=(opp)=>{const w=sp.winsByOpponent?.[opp]||{};const t=(w['1']||0)+(w['2']||0)+(w['draws']||0);return t>0?((w['1']||0)/t*100).toFixed(0):0;};
   document.getElementById('detail-metrics').innerHTML='<div class="metrics-row">'+
-    '<div class="mini-metric"><div class="label">Init Err</div><div class="value">'+(tr.initialError*1000).toFixed(1)+'m</div></div>'+
-    '<div class="mini-metric"><div class="label">Final Err</div><div class="value">'+(tr.finalError*1000).toFixed(1)+'m</div></div>'+
-    '<div class="mini-metric"><div class="label">Reduced</div><div class="value good">'+((tr.errorReductionHalf||0)*100).toFixed(0)+'%</div></div>'+
+    '<div class="mini-metric"><div class="label">vs Random</div><div class="value good">'+calcWR('random')+'%</div></div>'+
+    '<div class="mini-metric"><div class="label">vs Heuristic</div><div class="value bad">'+calcWR('heuristic')+'%</div></div>'+
+    '<div class="mini-metric"><div class="label">vs Network</div><div class="value">'+calcWR('network')+'%</div></div>'+
+    '<div class="mini-metric"><div class="label">Err Reduced</div><div class="value good">'+((tr.errorReductionHalf||0)*100).toFixed(0)+'%</div></div>'+
     '<div class="mini-metric"><div class="label">Open Div</div><div class="value">'+(sp.openingDiversity||0).toFixed(2)+'</div></div>'+
-    '<div class="mini-metric"><div class="label">Board Div</div><div class="value">'+(sp.boardDiversity||0).toFixed(2)+'</div></div>'+
     '<div class="mini-metric"><div class="label">Score Gap</div><div class="value '+(sc.gap>=0?'good':'bad')+'">'+(sc.gap||0)+'</div></div>'+
   '</div>';
 }
@@ -199,24 +198,41 @@ function renderDetailCharts(exp){
   const opts={responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#c9d1d9'}}},scales:{x:{ticks:{color:'#8b949e'},grid:{color:'#21262d'}},y:{ticks:{color:'#8b949e'},grid:{color:'#21262d'}}}};
   if(data?.cycles?.length){
     const lbl=data.cycles.map(c=>'C'+c.cycle);
-    const win=data.cycles.map(c=>c.evaluation?.aiWinRate?(c.evaluation.aiWinRate*100):null);
-    charts.winrate=new Chart(document.getElementById('chart-winrate'),{type:'line',data:{labels:lbl,datasets:[{label:'Win Rate',data:win,borderColor:'#3fb950',backgroundColor:'rgba(63,185,80,0.1)',fill:true,tension:0.3}]},options:{...opts,scales:{...opts.scales,y:{...opts.scales.y,min:60,max:100}}}});
+    // Training win rates chart - P1 win % vs each opponent type from selfPlay
+    const calcWR=(c,opp)=>{const w=c.selfPlay?.winsByOpponent?.[opp]||{};const t=(w['1']||0)+(w['2']||0)+(w['draws']||0);return t>0?(w['1']||0)/t*100:null;};
+    charts.trainWins=new Chart(document.getElementById('chart-train-wins'),{type:'line',data:{labels:lbl,datasets:[
+      {label:'vs Random',data:data.cycles.map(c=>calcWR(c,'random')),borderColor:'#3fb950',backgroundColor:'transparent',tension:0.3},
+      {label:'vs Heuristic',data:data.cycles.map(c=>calcWR(c,'heuristic')),borderColor:'#f85149',backgroundColor:'transparent',tension:0.3},
+      {label:'vs Network',data:data.cycles.map(c=>calcWR(c,'network')),borderColor:'#bc8cff',backgroundColor:'transparent',tension:0.3}
+    ]},options:{...opts,scales:{...opts.scales,y:{...opts.scales.y,min:0,max:110}}}});
+    // Evaluation win rates chart - structured for future expansion
+    const evData=data.cycles.map(c=>{const ev=c.evaluation||{};return{opponent:ev.opponent||'random',winRate:ev.aiWinRate?(ev.aiWinRate*100):null};});
+    const evOpps=[...new Set(evData.map(d=>d.opponent))];
+    charts.evalWins=new Chart(document.getElementById('chart-eval-wins'),{type:'line',data:{labels:lbl,datasets:evOpps.map((opp,i)=>({
+      label:'vs '+opp.charAt(0).toUpperCase()+opp.slice(1),
+      data:evData.map(d=>d.opponent===opp?d.winRate:null),
+      borderColor:PALETTE[i],
+      backgroundColor:'transparent',
+      tension:0.3
+    }))},options:{...opts,scales:{...opts.scales,y:{...opts.scales.y,min:60,max:100}}}});
+    // Training error
     const ini=data.cycles.map(c=>c.training?.initialError);
     const fin=data.cycles.map(c=>c.training?.finalError);
     charts.error=new Chart(document.getElementById('chart-error'),{type:'bar',data:{labels:lbl,datasets:[{label:'Initial',data:ini,backgroundColor:'rgba(210,153,34,0.6)'},{label:'Final',data:fin,backgroundColor:'rgba(63,185,80,0.6)'}]},options:opts});
+    // Error curve
     const last=data.cycles[data.cycles.length-1]?.training||{};
     const snaps=last.errorSnapshots||[];
-    charts.errorcurve=new Chart(document.getElementById('chart-error-curve'),{type:'line',data:{labels:snaps.map(s=>'I'+s.iteration),datasets:[{label:'Error',data:snaps.map(s=>s.error),borderColor:'#bc8cff',tension:0.3}]},options:opts});
+    if(snaps.length){
+      charts.errorcurve=new Chart(document.getElementById('chart-error-curve'),{type:'line',data:{labels:snaps.map(s=>'I'+s.iteration),datasets:[{label:'Error',data:snaps.map(s=>s.error),borderColor:'#bc8cff',tension:0.3}]},options:opts});
+    }
+    // Diversity
     const od=data.cycles.map(c=>c.selfPlay?.openingDiversity||0);
     const bd=data.cycles.map(c=>c.selfPlay?.boardDiversity||0);
     charts.diversity=new Chart(document.getElementById('chart-diversity'),{type:'line',data:{labels:lbl,datasets:[{label:'Opening',data:od,borderColor:'#58a6ff',tension:0.3},{label:'Board',data:bd,borderColor:'#3fb950',tension:0.3}]},options:opts});
-    const opp=['network','heuristic','random'];
-    const oppDs=opp.map((t,i)=>({label:'vs '+t,data:data.cycles.map(c=>c.selfPlay?.winsByOpponent?.[t]?.[1]||0),backgroundColor:PALETTE[i]}));
-    charts.opponents=new Chart(document.getElementById('chart-opponents'),{type:'bar',data:{labels:lbl,datasets:oppDs},options:opts});
+    // Score gap
     const gaps=data.cycles.map(c=>c.evaluation?.scores?.gap||0);
     charts.scores=new Chart(document.getElementById('chart-scores'),{type:'line',data:{labels:lbl,datasets:[{label:'Gap',data:gaps,borderColor:'#db6d28',backgroundColor:'rgba(219,109,40,0.1)',fill:true,tension:0.3}]},options:opts});
   }
-  charts.heuristic=new Chart(document.getElementById('chart-heuristic'),{type:'bar',data:{labels:['vs Heuristic'],datasets:[{label:'Win Rate',data:[exp.result.vsHeuristic],backgroundColor:'rgba(248,81,73,0.6)',borderColor:'#f85149'}]},options:{...opts,scales:{...opts.scales,y:{...opts.scales.y,min:0,max:50}}}});
 }
 function renderCompareSelector(){
   document.getElementById('compare-selector').innerHTML=experiments.map(exp=>'<label class="exp-checkbox"><input type="checkbox" onchange="toggleCompare(\''+exp.id+'\')"> '+exp.name+'</label>').join('');
