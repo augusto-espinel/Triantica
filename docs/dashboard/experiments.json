@@ -34,7 +34,7 @@
     "name": "Exp 16 — Opening Diversity",
     "date": "2026-10-22",
     "logFile": "training-1792677421783.log",
-    "dataFile": "training-1792677421783.json",
+    "dataFile": null,
     "summary": "Tested opening diversity (50% random first 3 moves). Does not solve Heuristic problem alone. Error drifted upward.",
     "parameters": {
       "cycles": 5,
