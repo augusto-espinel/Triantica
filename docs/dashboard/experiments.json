@@ -1,79 +1,11 @@
 [
   {
-    "id": "exp12",
-    "name": "Exp 12 — Curriculum Learning",
-    "date": "2026-10-20",
-    "logFile": "training-1792619296837.json",
-    "summary": "Mixed opponent training with HeuristicPlayer. Critical bug fix: _runGameVsOpponent() never switched currentPlayer.",
-    "parameters": {
-      "cycles": 20,
-      "games": 100,
-      "evalGames": 100,
-      "iterations": 100,
-      "learningRate": 0.01,
-      "exploration": 0.2,
-      "opponentMix": "mixed",
-      "heuristicRatio": 0.4,
-      "randomRatio": 0.2,
-      "enableClusterReward": false,
-      "gradientIsolation": false
-    },
-    "changes": "First mixed-opponent training. Bug: player never switched after moves.",
-    "bugsFixed": ["Player switching in _runGameVsOpponent"],
-    "result": { "startWinRate": 49.0, "endWinRate": 56.0, "improvement": 7.0, "peakWinRate": 57.5 }
-  },
-  {
-    "id": "exp12b",
-    "name": "Exp 12b — Curriculum Continuation",
-    "date": "2026-10-20",
-    "logFile": null,
-    "summary": "Continuation of Exp 12 checkpoint — same config, 20 more cycles. No sustained improvement.",
-    "parameters": {
-      "cycles": 20,
-      "games": 100,
-      "evalGames": 100,
-      "iterations": 100,
-      "learningRate": 0.01,
-      "exploration": 0.2,
-      "opponentMix": "mixed",
-      "heuristicRatio": 0.4,
-      "randomRatio": 0.2,
-      "enableClusterReward": false,
-      "gradientIsolation": false
-    },
-    "changes": "Pure continuation from Exp 12 checkpoint.",
-    "bugsFixed": [],
-    "result": { "startWinRate": 51.0, "endWinRate": 47.5, "improvement": -3.5, "peakWinRate": 56.0 }
-  },
-  {
-    "id": "exp12r",
-    "name": "Exp 12 Replicated (Fixed Eval)",
-    "date": "2026-10-21",
-    "logFile": null,
-    "summary": "Re-ran Exp 12 with eval win rate tracking bug fixed. Discovered real win rate was ~78% vs Random, not 50%.",
-    "parameters": {
-      "cycles": 20,
-      "games": 100,
-      "evalGames": 100,
-      "iterations": 100,
-      "learningRate": 0.01,
-      "exploration": 0.2,
-      "opponentMix": "mixed",
-      "heuristicRatio": 0.4,
-      "randomRatio": 0.2,
-      "enableClusterReward": false,
-      "gradientIsolation": false
-    },
-    "changes": "Fixed eval win rate tracking (player swap bug). Real vs-Random rate ~78%.",
-    "bugsFixed": ["Eval win rate measurement (GameSession.runGames swap)"],
-    "result": { "startWinRate": 74.5, "endWinRate": 70.5, "improvement": -4.0, "peakWinRate": 81.5 }
-  },
-  {
     "id": "exp15",
-    "name": "Exp 15 — Fixed Normalization + 30 Iters",
+    "name": "Exp 15 — Fixed Normalization",
     "date": "2026-10-22",
     "logFile": null,
-    "summary": "Fixed immediate reward normalization bug. Negative rewards were clamped to +0.155, destroying gradient. +10.5pp improvement.",
+    "dataFile": null,
+    "summary": "Fixed immediate reward normalization bug. Negative rewards were clamped to +0.155, destroying gradient. Reduced iterations to 30 to prevent overfitting.",
     "parameters": {
       "cycles": 10,
       "games": 50,
@@ -84,12 +16,18 @@
       "opponentMix": "mixed",
       "heuristicRatio": 0.4,
       "randomRatio": 0.2,
-      "enableClusterReward": false,
-      "gradientIsolation": false
+      "enableClusterReward": false
     },
-    "changes": "1) Fixed calculateImmediateRewardVector normalization (negative rewards). 2) Reduced iterations from 100→30 to prevent overfitting. 3) Increased LR to 0.1.",
+    "changes": "1) Fixed calculateImmediateRewardVector normalization. 2) Reduced iterations 100→30. 3) Increased LR 0.01→0.1.",
     "bugsFixed": ["Immediate reward normalization (clamping negative rewards)"],
-    "result": { "startWinRate": 78.0, "endWinRate": 88.1, "improvement": 10.1, "peakWinRate": 95.0 }
+    "result": { 
+      "startWinRate": 78.0, 
+      "endWinRate": 88.1, 
+      "improvement": 10.1, 
+      "peakWinRate": 95.0,
+      "vsHeuristic": 0,
+      "heuristicGames": 200
+    }
   },
   {
     "id": "exp16",
@@ -97,7 +35,7 @@
     "date": "2026-10-22",
     "logFile": "training-1792677421783.log",
     "dataFile": "training-1792677421783.json",
-    "summary": "Tested opening diversity (50% random first 3 moves). Does not solve Heuristic problem alone.",
+    "summary": "Tested opening diversity (50% random first 3 moves). Does not solve Heuristic problem alone. Error drifted upward.",
     "parameters": {
       "cycles": 5,
       "games": 100,
@@ -109,12 +47,18 @@
       "heuristicRatio": 0.4,
       "randomRatio": 0.2,
       "enableClusterReward": false,
-      "gradientIsolation": false,
       "openingDiversity": true
     },
     "changes": "Added opening diversity: 50% random for first 3 moves during eval.",
     "bugsFixed": [],
-    "result": { "startWinRate": 77.0, "endWinRate": 78.0, "improvement": 1.0, "peakWinRate": 82.0 }
+    "result": { 
+      "startWinRate": 77.0, 
+      "endWinRate": 78.0, 
+      "improvement": 1.0, 
+      "peakWinRate": 82.0,
+      "vsHeuristic": 0,
+      "heuristicGames": 250
+    }
   },
   {
     "id": "exp17",
@@ -136,16 +80,22 @@
       "enableClusterReward": true,
       "clusterRewardFactor": 0.1,
       "clusterLambda": 0.9,
-      "clusterGamma": 0.99,
-      "gradientIsolation": false
+      "clusterGamma": 0.99
     },
     "changes": "Enabled --enable-cluster-reward with factor=0.1, λ=0.9, γ=0.99.",
     "bugsFixed": [],
-    "result": { "startWinRate": 86.0, "endWinRate": 87.0, "improvement": 1.0, "peakWinRate": 87.0 }
+    "result": { 
+      "startWinRate": 86.0, 
+      "endWinRate": 87.0, 
+      "improvement": 1.0, 
+      "peakWinRate": 87.0,
+      "vsHeuristic": 0,
+      "heuristicGames": 200
+    }
   },
   {
     "id": "exp17b",
-    "name": "Exp 17b — Cluster Reward + Fixed Normalization",
+    "name": "Exp 17b — Cluster + Fixed Norm",
     "date": "2026-10-22",
     "logFile": "training-1792693850941.log",
     "dataFile": "training-1792695004072.json",
@@ -163,11 +113,17 @@
       "enableClusterReward": true,
       "clusterRewardFactor": 0.1,
       "clusterLambda": 0.9,
-      "clusterGamma": 0.99,
-      "gradientIsolation": false
+      "clusterGamma": 0.99
     },
     "changes": "Fixed minCombinedReward: was -1.0, now -5.0. Negative combined rewards no longer clamped.",
     "bugsFixed": ["Training normalization (minCombinedReward = -1.0 should be -5.0)"],
-    "result": { "startWinRate": 81.0, "endWinRate": 88.0, "improvement": 7.0, "peakWinRate": 88.0 }
+    "result": { 
+      "startWinRate": 81.0, 
+      "endWinRate": 88.0, 
+      "improvement": 7.0, 
+      "peakWinRate": 88.0,
+      "vsHeuristic": 0,
+      "heuristicGames": 190
+    }
   }
 ]
