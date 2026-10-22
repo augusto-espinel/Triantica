@@ -495,6 +495,7 @@ class GameScene extends Phaser.Scene {
       this.gameMode = 'HvH'; // Default, or set based on selection ('HvH', 'HvAI', 'AvA')
       this.players = { 1: { type: 'human' }, 2: { type: 'human' } }; // Player setup
       this.aiInstances = { 1: null, 2: null }; // To hold AI instances
+      this.totalMovesPlayed = 0; // Track move count for opening diversity
   }
 
   preload() {
@@ -1081,6 +1082,7 @@ class GameScene extends Phaser.Scene {
 
   resetGame() {
     this.gridManager.reset();
+    this.totalMovesPlayed = 0;
     this.redrawTriangles();
     this.updateScore();
     this.updateCursor();
@@ -1169,29 +1171,48 @@ triggerAIMove() {
   // Use a short delay to simulate thinking and prevent visual glitches
   this.time.delayedCall(300, () => { // Delay can be adjusted
 
-    if ( Math.random() >= aiInstance.immediacyFactor) {
-      console.log(`AI Player ${currentPlayerNum} is making a trained move...`);
-      move = aiInstance.predictMove();
-    } else {
-        // Exploit: Choose move with highest immediate reward
-        console.log(`AI Player ${currentPlayerNum} is making a heuristic move...`);
-        let bestMoveIndex = -1;
-        let maxImmediateReward = -Infinity;
-        for (let i = 0; i < immediateRewardVector.length; i++) {
-            // Check legality implicitly (reward > default low value, e.g., 0.01)
-            if (immediateRewardVector[i] > 0.01 && immediateRewardVector[i] > maxImmediateReward) {
-                maxImmediateReward = immediateRewardVector[i];
-                bestMoveIndex = i;
-            }
+    // === Training-aligned move selection (80% network, 10% random, 10% greedy) ===
+    // Opening diversity: 50% random for first 3 moves
+    const isOpeningPhase = this.totalMovesPlayed < 3;
+    const openingRandomFactor = isOpeningPhase ? 0.50 : 0;
+    
+    const rand = Math.random();
+    if (rand < openingRandomFactor) {
+      // Opening diversity: random move
+      console.log(`AI Player ${currentPlayerNum} opening random move...`);
+      const validMoves = this.gridManager.getValidMoves();
+      move = validMoves.length > 0 ? validMoves[Math.floor(Math.random() * validMoves.length)] : null;
+    } else if (rand < 0.10 + openingRandomFactor) {
+      // Random exploration (10%)
+      console.log(`AI Player ${currentPlayerNum} exploring randomly...`);
+      const validMoves = this.gridManager.getValidMoves();
+      move = validMoves.length > 0 ? validMoves[Math.floor(Math.random() * validMoves.length)] : null;
+    } else if (rand < 0.20 + openingRandomFactor) {
+      // Greedy immediate reward (10%)
+      console.log(`AI Player ${currentPlayerNum} greedy heuristic move...`);
+      let bestMoveIndex = -1;
+      let maxImmediateReward = -Infinity;
+      for (let i = 0; i < immediateRewardVector.length; i++) {
+        if (immediateRewardVector[i] > 0.01 && immediateRewardVector[i] > maxImmediateReward) {
+          maxImmediateReward = immediateRewardVector[i];
+          bestMoveIndex = i;
         }
-        if (bestMoveIndex !== -1) {
-            const rotation = bestMoveIndex % 4;
-            const cellIndex = Math.floor(bestMoveIndex / 4);
-            const x = cellIndex % this.gridManager.cols; // Use currentManager dims
-            const y = Math.floor(cellIndex / this.gridManager.cols);
-            move = { x, y, rotation };
-        } else { move = aiInstance.getRandomValidMove(); } // Fallback
       }
+      if (bestMoveIndex !== -1) {
+        const rotation = bestMoveIndex % 4;
+        const cellIndex = Math.floor(bestMoveIndex / 4);
+        const x = cellIndex % this.gridManager.cols;
+        const y = Math.floor(cellIndex / this.gridManager.cols);
+        move = { x, y, rotation };
+      } else {
+        const validMoves = this.gridManager.getValidMoves();
+        move = validMoves.length > 0 ? validMoves[Math.floor(Math.random() * validMoves.length)] : null;
+      }
+    } else {
+      // Network prediction (80%)
+      console.log(`AI Player ${currentPlayerNum} network prediction...`);
+      move = aiInstance.predictMove();
+    }
 
       if (move && typeof move.x !== 'undefined' && typeof move.y !== 'undefined' && typeof move.rotation !== 'undefined') {
           console.log(`AI Player ${currentPlayerNum} chose: (${move.x}, ${move.y}), Rot: ${move.rotation}`);
@@ -1219,6 +1240,7 @@ triggerAIMove() {
               }
               
               if (success) {
+                  this.totalMovesPlayed++;
                   const enclosed = this.gridManager.claimEnclosedTriangles(); // [cite: 139, 217]
                   if (enclosed > 0) {
                     this.gridManager.extraTurns += 1;
