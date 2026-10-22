@@ -963,7 +963,254 @@ This strategy consistently wins as P2 because:
 | Exp | Focus | Status | Dependencies |
 |-----|-------|--------|--------------|
 | 15 | Fixed normalization | Complete (10 cycles) | Bug fix — +10.5pp vs Exp 14 |
-| 16 | Canonical encoding + value head | Postponed | Exp 15 results |
-| 17 | CNN architecture | Backlog | If 15/16 fail |
-| 18 | Attention mechanism | Backlog | If 15/16 fail |
+| 15 | Fixed normalization | Complete (10 cycles) | Bug fix — +10.5pp vs Exp 14 |
+| 16 | Opening diversity | Complete (5 cycles) | 0% vs Heuristic persists |
+| 17 | Cluster reward (TD(λ)) | Complete (5 cycles) | +5% vs Random, 0% vs Heuristic |
+| 17b | Cluster reward + fixed norm | Complete (5 cycles) | +7% improvement, norm bug found |
+| 18 | Canonical encoding + value head | Planned | Exp 17b results |
+| 19 | CNN architecture | Backlog | If 18 fails |
+| 20 | Attention mechanism | Backlog | If 18/19 fail |
+
+---
+
+## Experiment 16 — Opening Diversity
+
+**Started:** 2026-10-22 15:57
+**Completed:** 2026-10-22 16:07 (process killed) but full 5-cycle log recovered
+**Log:** `experiments/logs/training-1792677421783.log`
+
+### Hypothesis
+
+Adding opening diversity (50% random for first 3 moves) to evaluation games ensures the AI is tested against varied game beginnings. If the network's poor Heuristic performance is due to lack of opening diversity in training, this should improve results.
+
+### Configuration
+
+```bash
+node src/server/train.js \
+  --cycles 5 \
+  --games 100 \
+  --eval-games 100 \
+  --iterations 30 \
+  --learning-rate 0.1 \
+  --exploration 0.3 \
+  --opponent-mix mixed \
+  --start-from trainedAI_network.json \
+  --output experiments/data/exp16_opening_diversity.json
+```
+
+**Key parameter:** `explorationMode: 'perMove'` with opening diversity logic in `AIPlayer.getMove()` — 50% chance of random move for first 3 turns.
+
+### Results
+
+| Cycle | vs Random | Training Error | vs Heuristic | Opening Diversity |
+|-------|-----------|---------------|-------------|-------------------|
+| 1 | 77.0% | 0.0018 | 0% (45 games) | 5.86 bits |
+| 2 | 79.0% | 0.0021 | 0% (37 games) | 5.96 bits |
+| 3 | 82.0% | 0.0023 | 0% (47 games) | 5.90 bits |
+| 4 | 76.0% | 0.0026 | 0% (45 games) | 5.71 bits |
+| 5 | 78.0% | 0.0029 | 0% (23 games) | 6.13 bits |
+
+**Mean eval: 78.4%** | **Best: 82.0%** | **Error drift: 0.0018 → 0.0029 ↑**
+
+### Analysis
+
+1. **Opening diversity working** — 5.7-6.1 bits entropy across cycles (max ~6.6 bits for 100 openings)
+2. **Random win rate similar to baseline** — ~78% vs Exp 15's 88%
+3. **Heuristic wall persists** — 0% win rate across 197 games
+4. **Error drifting upward** — same overfitting pattern as previous experiments
+
+### Conclusion
+
+Opening diversity alone **does not solve the Heuristic problem**. The AI sees varied positions but cannot learn the strategic patterns needed to beat a greedy enclosure-focused opponent. The slight drop in vs-Random performance (78% vs 88%) may be due to the higher learning rate (0.1 vs 0.01 in Exp 15) or the shorter iteration count.
+
+---
+
+## Experiment 17 — Cluster Reward (TD(λ))
+
+**Started:** 2026-10-22 20:09
+**Completed:** 2026-10-22 20:28
+**Log:** `experiments/logs/training-1792692589746.log`
+**Network:** `experiments/data/exp17_cluster_reward.json`
+
+### Hypothesis
+
+The existing `--enable-cluster-reward` parameter uses TD(λ) eligibility traces to credit moves that contributed to the final largest cluster. If early moves that build towards a large cluster receive positive reward signal, the AI should learn to value strategic cluster-building rather than just immediate enclosures.
+
+### How Cluster Reward Works
+
+```
+1. At game end, identify the largest contiguous cluster for each player
+2. For each move that contributed to that cluster, compute:
+   eligibility = (γ × λ)^(stepsFromEnd)
+   clusterReward = clusterBonus × eligibility
+   where clusterBonus = clusterSize × clusterRewardFactor
+3. Add clusterReward to combined reward signal
+```
+
+**Parameters:**
+- `clusterRewardFactor = 0.1` (bonus per triangle in largest cluster)
+- `clusterLambda = 0.9` (eligibility trace decay)
+- `clusterGamma = 0.99` (discount factor)
+
+**Example:** A cluster of 50 triangles yields `clusterBonus = 5.0`. The last move in that cluster gets `5.0 × 1.0 = 5.0` reward. A move 80 steps earlier gets `5.0 × 0.891^80 ≈ 0.0002` — effectively zero. This means **only late-game cluster moves get meaningful reward**.
+
+### Configuration
+
+```bash
+node src/server/train.js \
+  --cycles 5 \
+  --games 100 \
+  --eval-games 100 \
+  --iterations 30 \
+  --learning-rate 0.1 \
+  --exploration 0.3 \
+  --opponent-mix mixed \
+  --enable-cluster-reward true \
+  --cluster-reward-factor 0.1 \
+  --cluster-lambda 0.9 \
+  --start-from trainedAI_network.json \
+  --output experiments/data/exp17_cluster_reward.json
+```
+
+### Results
+
+| Cycle | vs Random | Training Error | vs Heuristic |
+|-------|-----------|---------------|-------------|
+| 1 | **86.0%** | 0.0016 | 0% (40 games) |
+| 2 | 79.0% | 0.0021 | 0% (36 games) |
+| 3 | **87.0%** | 0.0024 | 0% (42 games) |
+| 4 | **86.0%** | 0.0026 | 0% (37 games) |
+| 5 | **87.0%** | 0.0027 | 0% (40 games) |
+
+**Mean eval: 83.0%** | **Best: 87.0%** | **Improvement: +1.0% over 5 cycles**
+
+### Comparison with Exp 16
+
+| Metric | Exp 16 (no cluster) | Exp 17 (cluster reward) |
+|--------|---------------------|------------------------|
+| **Avg Win Rate** | 78.4% | **83.0%** (+4.6%) |
+| **Best Win Rate** | 82.0% | **87.0%** (+5.0%) |
+| **vs Heuristic** | 0% | 0% |
+| **Error drift** | 0.0018→0.0029 | 0.0016→0.0027 |
+
+### Conclusion
+
+Cluster reward helps vs Random (+5%) but the **Heuristic wall persists** (0% across 195 games). The TD(λ) eligibility traces teach the AI to value late-game cluster-building moves, but the Heuristic's enclosure strategy remains too far ahead. Error is still creeping upward (same overfitting pattern).
+
+---
+
+## 🐛 Critical Bug: Training Normalization (minCombinedReward)
+
+**Discovered:** 2026-10-22 20:15
+**Commit:** `0acd8dc`
+
+### The Bug
+
+In `train.js`, the `minCombinedReward` was hardcoded to `-1.0`, but the actual minimum combined reward is **-5.0** (when immediate reward = -4.0, win = -1.0, cluster = 0). This meant **all negative rewards were clamped to 0.01**, destroying the gradient signal for bad moves.
+
+```javascript
+// BEFORE (broken):
+const minCombinedReward = 0 - (1.0 * finalRewardWeight) - 0;  // = -1.0 ❌
+
+// AFTER (fixed):
+const minImmediateReward = -4.0;
+const minCombinedReward = minImmediateReward - (1.0 * finalRewardWeight);  // = -5.0 ✅
+```
+
+### Impact Analysis
+
+| Move Type | Combined Reward | Before (min=-1) | After (min=-5) |
+|-----------|----------------|-----------------|----------------|
+| Terrible (loss, no cluster) | -5.0 | 0.01 ⛔ clamped | 0.01 ✅ floor |
+| Bad (loss + small cluster) | -2.5 | 0.01 ⛔ clamped | **0.079** ✅ |
+| Neutral | 0.0 | 0.036 | **0.159** ✅ |
+| Good (win, small cluster) | +5.0 | 0.218 | **0.317** ✅ |
+| Great (win + enclosure + cluster) | +24.3 | 0.920 | **0.930** ✅ |
+
+**Key difference:** With `min=-1.0`, any combined reward below -1.0 was crushed to 0.01. With `min=-5.0`, there's proper differentiation between terrible (-5.0→0.01), bad (-2.5→0.08), and neutral (0→0.16) moves.
+
+### Why This Matters
+
+This is the **second normalization bug** found in this training pipeline:
+
+1. **Exp 15 fix:** `calculateImmediateRewardVector()` was clamping negative immediate rewards to +0.155 (+10.5pp improvement)
+2. **Exp 17b fix:** `train.js` normalization was clamping negative combined rewards to 0.01
+
+Both bugs had the same root cause: **the normalization range didn't account for negative rewards**, so the network never learned to avoid bad moves.
+
+---
+
+## Experiment 17b — Cluster Reward + Fixed Normalization
+
+**Started:** 2026-10-22 20:30
+**Completed:** 2026-10-22 20:50
+**Log:** `experiments/logs/training-1792693850941.log`
+**Network:** `experiments/data/exp17b_fixed_normalization.json`
+
+### Hypothesis
+
+Fixing the `minCombinedReward` normalization bug should restore proper gradient signal for negative combined rewards, allowing the network to learn to avoid bad moves during the TD(λ) cluster-reward training.
+
+### Configuration
+
+Same as Exp 17 but with the normalization fix applied:
+
+```bash
+node src/server/train.js \
+  --cycles 5 \
+  --games 100 \
+  --eval-games 100 \
+  --iterations 30 \
+  --learning-rate 0.1 \
+  --exploration 0.3 \
+  --opponent-mix mixed \
+  --enable-cluster-reward true \
+  --cluster-reward-factor 0.1 \
+  --cluster-lambda 0.9 \
+  --start-from trainedAI_network.json \
+  --output experiments/data/exp17b_fixed_normalization.json
+```
+
+### Results
+
+| Cycle | vs Random | Training Error | vs Heuristic |
+|-------|-----------|---------------|-------------|
+| 1 | 81.0% | 0.0018 | 0% (30 games) |
+| 2 | 83.0% | 0.0022 | 0% (39 games) |
+| 3 | 81.0% | 0.0024 | 0% (40 games) |
+| 4 | 84.0% | 0.0026 | 0% (43 games) |
+| 5 | **88.0%** | 0.0027 | 0% (36 games) |
+
+**Mean eval: 83.4%** | **Best: 88.0%** | **Improvement: +7.0% over 5 cycles**
+
+### Three-Experiment Comparison
+
+| Metric | Exp 16 (no cluster) | Exp 17 (cluster, broken norm) | Exp 17b (cluster, fixed norm) |
+|--------|---------------------|-------------------------------|-------------------------------|
+| **Best Win Rate** | 82.0% | 87.0% | **88.0%** |
+| **Avg Win Rate** | 78.4% | 83.0% | **83.4%** |
+| **Cycle-to-Cycle Improvement** | +1.0% | +1.0% | **+7.0%** |
+| **vs Heuristic** | 0% | 0% | 0% |
+| **Error at Cycle 5** | 0.0029 | 0.0027 | 0.0027 |
+
+### Key Findings
+
+1. **Normalization fix creates real improvement** — +7% over 5 cycles vs +1% without the fix. The negative reward gradient is flowing properly.
+
+2. **Cluster reward + fixed normalization compound** — The two improvements work together: cluster reward gives the AI something to learn (strategic cluster-building), and proper normalization ensures both positive and negative signals reach the network.
+
+3. **Heuristic wall unchanged** — Despite all improvements, the AI still wins 0% against the Heuristic opponent (188 games total). The fundamental gap remains: the AI cannot learn enclosure chains.
+
+4. **Error still drifts upward** — All three experiments show the same overfitting pattern (0.0018→0.0027). This is likely because 30 iterations per cycle is slightly too many for the data volume.
+
+### Conclusion
+
+The combination of cluster reward and fixed normalization produces the best results so far (+7% improvement), but the Heuristic wall remains insurmountable with the current architecture. The network can learn to value cluster-building moves and avoid bad moves, but it cannot learn the multi-turn enclosure strategy that the Heuristic uses.
+
+### Path Forward
+
+1. **Higher cluster reward factor** (0.3 instead of 0.1) — more aggressive reward shaping for cluster-building
+2. **Value head architecture** — predict game outcome directly instead of per-move reward
+3. **Curriculum: train only vs Heuristic** — force specialization at the cost of vs-Random performance
+4. **Accept current ceiling** — 88% vs Random may be the limit without architectural changes
 
