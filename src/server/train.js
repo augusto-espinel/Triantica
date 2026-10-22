@@ -379,8 +379,9 @@ async function _runGameVsOpponent(aiPlayer, opponent, gridManager, gradientIsola
   const p2ClusterBonus = p2LargestCluster.length * aiPlayer.clusterRewardFactor;
   
   // Normalization
+  const minImmediateReward = -4.0;
   const maxImmediateReward = 15.5;
-  const minCombinedReward = 0 - (1.0 * finalRewardWeight) - (aiPlayer.enableClusterReward ? 0 : 0);
+  const minCombinedReward = minImmediateReward - (1.0 * finalRewardWeight) - (aiPlayer.enableClusterReward ? 0 : 0);
   const maxCombinedReward = maxImmediateReward + (1.0 * finalRewardWeight) + (aiPlayer.enableClusterReward ? 10.0 : 0);
   const combinedRewardRange = maxCombinedReward - minCombinedReward;
   
