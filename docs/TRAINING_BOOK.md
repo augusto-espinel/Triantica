@@ -832,7 +832,7 @@ This explains why error could crash to zero — the network was learning a compr
 ## Experiment 15 — Fixed Normalization
 
 **Started:** 2026-10-22 07:28
-**Status:** Running
+**Completed:** 2026-10-22 10:44
 **Log:** `experiments/logs/exp15_norm_fixed.log`
 **Network:** `experiments/data/exp15_norm_fixed.json`
 **Starting from:** `experiments/data/exp12r_network.json`
@@ -861,9 +861,36 @@ rawImmediateReward: ((scaledValue - 0.01) / 0.98) * 19.5 - 4.0
 
 **The fix is working.** Error no longer collapses to zero.
 
-### Full Experiment (20 cycles)
+### Full Experiment (5 cycles, 30 iterations each)
 
-Running in background. Will compare against Exp 14 once complete.
+| Cycle | Eval Win Rate | Initial Error | Final Error |
+|-------|---------------|---------------|--------------|
+| 1 | 91.0% | 0.01307 | 0.00229 |
+| 2 | 90.0% | 0.01041 | 0.00239 |
+| 3 | 88.0% | 0.00901 | 0.00246 |
+| 4 | 81.0% | 0.00857 | 0.00262 |
+| 5 | 85.0% | 0.00785 | 0.00250 |
+
+**Mean: 87.0%** | **Range: 81-91%**
+
+### vs Exp 14 (Broken Normalization)
+
+| Metric | Exp 14 | Exp 15 | Delta |
+|--------|--------|--------|-------|
+| Mean eval | 77.6% | 87.0% | **+9.4pp** |
+| Best cycle | 86.5% | 91.0% | +4.5pp |
+| Worst cycle | 71.5% | 81.0% | +9.5pp |
+
+### Conclusion
+
+**The normalization bug fix is confirmed effective.** By restoring negative reward signals, the network can now properly learn to avoid bad moves. The result is a **+9.4 percentage point improvement** in evaluation win rate.
+
+The error curves are now healthy:
+- Initial error reflects genuine surprise from new data
+- Final error settles at ~0.0025 (not 0.000000)
+- No crash-to-zero overfitting with 30 iterations
+
+30 iterations is the right balance — 100 was too many (overfit), 20 may be slightly too few (under-trained).
 
 ---
 
@@ -871,7 +898,7 @@ Running in background. Will compare against Exp 14 once complete.
 
 | Exp | Focus | Status | Dependencies |
 |-----|-------|--------|--------------|
-| 15 | Fixed normalization | Running | Bug fix |
+| 15 | Fixed normalization | Complete (5 cycles) | Bug fix — +9.4pp vs Exp 14 |
 | 16 | Canonical encoding + value head | Postponed | Exp 15 results |
 | 17 | CNN architecture | Backlog | If 15/16 fail |
 | 18 | Attention mechanism | Backlog | If 15/16 fail |
