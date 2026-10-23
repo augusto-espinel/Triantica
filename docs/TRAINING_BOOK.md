@@ -1523,3 +1523,40 @@ Since both training signal modifications (exp21 distillation, exp22 cluster rewa
 1. **Value Head** — predict position value, not just immediate reward
 2. **Canonical Board Encoding** — rotation/reflection invariance (8× data efficiency)
 3. **Deeper Network** — [256, 128] for strategic depth
+
+---
+
+## Milestone: Pre-Architecture Baseline (2026-10-23)
+
+### Summary of All Experiments Before Architectural Changes
+
+| Exp | Key Change | vs Random | vs Heuristic | Error | Verdict |
+|-----|-----------|-----------|--------------|-------|---------|
+| 12 | First mixed opponent | 57% | 0% | — | ❌ Bug: player switching |
+| 12b | Continuation | 56% | 0% | — | ❌ No improvement |
+| 12r | Fixed eval tracking | 78% | 0% | — | ⚠️ Real baseline |
+| 15 | Normalization fix | 80% | 0% | — | ⚠️ Still had norm bug |
+| 16 | Gradient isolation | 82% | 0% | — | ⚠️ Still had norm bug |
+| 17 | Cluster reward TD(λ) | 87% | 0% | — | ⚠️ Masked by bugs |
+| 17b | Norm fix (combined) | 88% | 0% | — | ⚠️ Perspective bug active |
+| 19 | Perspective bug fix | 88% | 0% | 0.0030 | ✅ First clean run |
+| 20 | Pure network self-play | **91%** | 0% | 0.0030 | ✅ **Best result** |
+| 21 | Distillation (opponent moves) | 73% | 0% | 0.0036 | ❌ -18pp regression |
+| 22 | Cluster reward (clean) | 84% | 0% | 0.0035 | ⚠️ -7pp, volatile |
+
+### Key Conclusions
+
+1. **Heuristic wall at 0% is structural** — no training signal modification has budged it
+2. **Exp20 (91% vs Random) is the best pre-architecture baseline** — deployed as default game AI
+3. **Training signal modifications hurt** — both distillation (exp21) and cluster reward (exp22) degraded performance
+4. **Architecture is the bottleneck** — a single-hidden-layer feedforward net (401→[200]→400) cannot:
+   - Represent spatial relationships on a toroidal 10×10 grid
+   - Look ahead beyond immediate reward
+   - Extract strategic value from the heuristic opponent's play
+
+### Next Phase: Architectural Improvements
+
+1. **Value Head** — Actor-Critic framework with position value prediction
+2. **Canonical Board Encoding** — Rotation/reflection invariant (8× data efficiency)
+3. **Deeper Network** — [256, 128] hidden layers for strategic depth
+4. **Residual Connections** — Skip connections to preserve gradient flow

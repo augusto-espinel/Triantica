@@ -270,5 +270,42 @@
       "improvement": 11.0,
       "peakWinRate": 92.0
     }
+  },
+  {
+    "id": "exp21",
+    "name": "Exp 21 \u2014 Extended Mixed Training (15+10 cycles)",
+    "date": "2026-10-23",
+    "logFile": "training-1792762854675.json",
+    "dataFile": "exp21_learn_from_master.json",
+    "summary": "Two-phase extended training: 15 cycles from exp20_mixed (73%\u219269%), then 10 cycles from checkpoint-5 (78%\u219270%). Extended training with heuristic-heavy mix causes regression.",
+    "parameters": {
+      "cycles": 25,
+      "games": 100,
+      "evalGames": 100,
+      "iterations": 30,
+      "learningRate": 0.05,
+      "exploration": 0.3,
+      "opponentMix": "mixed",
+      "selfPlayMode": "network",
+      "heuristicRatio": 0.6,
+      "randomRatio": 0.1,
+      "networkRatio": 0.3,
+      "enableClusterReward": false,
+      "gradientIsolation": false,
+      "trainOnOpponentMoves": false,
+      "startFrom": "data/exp20_mixed.json"
+    },
+    "changes": "Extended training with reduced learning rate (0.05 vs 0.1). Mixed opponents: 60% heuristic, 30% network, 10% random. trainOnOpponentMoves NOT enabled despite naming.",
+    "bugsFixed": [],
+    "result": {
+      "startWinRate": 73.0,
+      "endWinRate": 70.0,
+      "improvement": -3.0,
+      "peakWinRate": 78.0,
+      "vsHeuristic": 0.0,
+      "totalHeuristicGames": 1110,
+      "phase1": {"start": 73.0, "end": 69.0, "cycles": 15},
+      "phase2": {"start": 78.0, "end": 70.0, "cycles": 10}
+    }
   }
 ]

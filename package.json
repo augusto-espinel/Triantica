@@ -19,7 +19,7 @@
     "phaser": "^3.60.0"
   },
   "devDependencies": {
-    "puppeteer": "^25.15.0",
+    "puppeteer": "^25.16.0",
     "vite": "^4.4.0"
   }
 }
