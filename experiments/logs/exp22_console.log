@@ -1,0 +1,482 @@
+
+🏋️  Triantica AI Training Pipeline
+==================================================
+  Cycles:         20
+  Games/cycle:    100
+  Eval games:     100
+  Train iters:    30
+  Learning rate:  0.1
+  Exploration:    0.3
+  Expl. mode:     perMove
+  Self-play mode: network
+  Opponent mix:   network
+  Cluster reward: ON (TD(λ))
+  Gradient isolation: OFF
+  Replay ratio:   0.5
+  Replay buffer:   50000
+  Start from:     data/exp20_mixed.json
+  Output:         data/exp22_cluster_clean.json
+==================================================
+
+🏋️  Triantica AI Training Pipeline
+Started: 2026-10-23T14:52:58.834Z
+Log: experiments/logs/exp22.log
+📂 Loaded pre-trained network from data/exp20_mixed.json
+🧠 AI initialized (network loaded: true)
+
+🗃️  Replay buffer: maxSize=50000, replayRatio=0.5
+🔄 Cycle 1/20
+----------------------------------------
+🎮 Running 100 self-play games (network mode)...
+10/100 games done
+20/100 games done
+30/100 games done
+40/100 games done
+50/100 games done
+60/100 games done
+70/100 games done
+80/100 games done
+90/100 games done
+100/100 games done
+✅ Self-play complete: 100 games, 15187 samples, 25583ms
+📚 Training network (30 iterations, lr=0.1, 22780 samples [7593 replay + 15187 new])...
+✅ Training complete: error=0.002447 (was 0.010683, Δ=0.008236) | 97% error drop by half iters, 466245ms
+📉 Error curve: 0:0.0107 → 3:0.0037 → 6:0.0031 → 9:0.0029 → 12:0.0028 → 15:0.0027 → 18:0.0026 → 21:0.0026 → 24:0.0025 → 27:0.0025 → 30:0.0024
+📊 Evaluating vs Random (100 games)...
+📈 AI Win Rate: 85.0% (85W / 13L / 2D)
+Scores: AI med=25 (σ2=303), Random med=24 (σ2=255), gap=+1
+Avg moves: 163.6, Duration: 5463ms
+📋 Cycle 1 Summary | Self-play: P1=48 P2=49 D=3 | P1 med=59 (σ2=431, 22-113) | P2 med=53 (σ2=458, 16-110) | Train: 0.010683 → 0.002447 (7593 replay + 15187 new) | Eval: 85.0% (AI med=25, Rand med=24, gap=+1) | Diversity: Open=6.40 Board=1.95 | Buf: 15187 | 497s
+🔄 Cycle 2/20
+----------------------------------------
+🎮 Running 100 self-play games (network mode)...
+10/100 games done
+20/100 games done
+30/100 games done
+40/100 games done
+50/100 games done
+60/100 games done
+70/100 games done
+80/100 games done
+90/100 games done
+100/100 games done
+✅ Self-play complete: 100 games, 15409 samples, 27525ms
+📚 Training network (30 iterations, lr=0.1, 23113 samples [7704 replay + 15409 new])...
+✅ Training complete: error=0.003079 (was 0.010412, Δ=0.007333) | 97% error drop by half iters, 457915ms
+📉 Error curve: 0:0.0104 → 3:0.0043 → 6:0.0038 → 9:0.0036 → 12:0.0034 → 15:0.0033 → 18:0.0033 → 21:0.0032 → 24:0.0032 → 27:0.0031 → 30:0.0031
+📊 Evaluating vs Random (100 games)...
+📈 AI Win Rate: 86.0% (86W / 14L / 0D)
+Scores: AI med=24 (σ2=336), Random med=23 (σ2=347), gap=+1
+Avg moves: 163.2, Duration: 5260ms
+📋 Cycle 2 Summary | Self-play: P1=48 P2=50 D=2 | P1 med=57 (σ2=413, 17-102) | P2 med=58 (σ2=445, 18-110) | Train: 0.010412 → 0.003079 (7704 replay + 15409 new) | Eval: 86.0% (AI med=24, Rand med=23, gap=+1) | Diversity: Open=6.40 Board=1.94 | Buf: 30596 | 491s
+🔄 Cycle 3/20
+----------------------------------------
+🎮 Running 100 self-play games (network mode)...
+10/100 games done
+20/100 games done
+30/100 games done
+40/100 games done
+50/100 games done
+60/100 games done
+70/100 games done
+80/100 games done
+90/100 games done
+100/100 games done
+✅ Self-play complete: 100 games, 15312 samples, 25996ms
+📚 Training network (30 iterations, lr=0.1, 22968 samples [7656 replay + 15312 new])...
+✅ Training complete: error=0.003362 (was 0.009401, Δ=0.006039) | 96% error drop by half iters, 448617ms
+📉 Error curve: 0:0.0094 → 3:0.0045 → 6:0.0040 → 9:0.0038 → 12:0.0037 → 15:0.0036 → 18:0.0035 → 21:0.0035 → 24:0.0034 → 27:0.0034 → 30:0.0034
+📊 Evaluating vs Random (100 games)...
+📈 AI Win Rate: 85.0% (85W / 13L / 2D)
+Scores: AI med=25 (σ2=324), Random med=27 (σ2=275), gap=+-2
+Avg moves: 162.9, Duration: 5245ms
+📋 Cycle 3 Summary | Self-play: P1=50 P2=49 D=1 | P1 med=60 (σ2=455, 18-109) | P2 med=58 (σ2=420, 14-102) | Train: 0.009401 → 0.003362 (7656 replay + 15312 new) | Eval: 85.0% (AI med=25, Rand med=27, gap=+-2) | Diversity: Open=6.40 Board=1.94 | Buf: 45908 | 480s
+🔄 Cycle 4/20
+----------------------------------------
+🎮 Running 100 self-play games (network mode)...
+10/100 games done
+20/100 games done
+30/100 games done
+40/100 games done
+50/100 games done
+60/100 games done
+70/100 games done
+80/100 games done
+90/100 games done
+100/100 games done
+✅ Self-play complete: 100 games, 15250 samples, 26015ms
+📚 Training network (30 iterations, lr=0.1, 22875 samples [7625 replay + 15250 new])...
+✅ Training complete: error=0.003493 (was 0.009460, Δ=0.005967) | 96% error drop by half iters, 446785ms
+📉 Error curve: 0:0.0095 → 3:0.0046 → 6:0.0041 → 9:0.0039 → 12:0.0038 → 15:0.0037 → 18:0.0037 → 21:0.0036 → 24:0.0035 → 27:0.0035 → 30:0.0035
+📊 Evaluating vs Random (100 games)...
+📈 AI Win Rate: 88.0% (88W / 11L / 1D)
+Scores: AI med=25 (σ2=297), Random med=25 (σ2=256), gap=+0
+Avg moves: 162.7, Duration: 5251ms
+📋 Cycle 4 Summary | Self-play: P1=50 P2=50 D=0 | P1 med=57 (σ2=529, 19-114) | P2 med=62 (σ2=425, 18-99) | Train: 0.009460 → 0.003493 (7625 replay + 15250 new) | Eval: 88.0% (AI med=25, Rand med=25, gap=+0) | Diversity: Open=6.38 Board=1.94 | Buf: 50000 | 478s
+🔄 Cycle 5/20
+----------------------------------------
+🎮 Running 100 self-play games (network mode)...
+10/100 games done
+20/100 games done
+30/100 games done
+40/100 games done
+50/100 games done
+60/100 games done
+70/100 games done
+80/100 games done
+90/100 games done
+100/100 games done
+✅ Self-play complete: 100 games, 15245 samples, 25151ms
+📚 Training network (30 iterations, lr=0.1, 22867 samples [7622 replay + 15245 new])...
+✅ Training complete: error=0.003386 (was 0.009215, Δ=0.005829) | 96% error drop by half iters, 446611ms
+📉 Error curve: 0:0.0092 → 3:0.0045 → 6:0.0040 → 9:0.0039 → 12:0.0037 → 15:0.0036 → 18:0.0036 → 21:0.0035 → 24:0.0035 → 27:0.0034 → 30:0.0034
+📊 Evaluating vs Random (100 games)...
+📈 AI Win Rate: 82.0% (82W / 15L / 3D)
+Scores: AI med=25 (σ2=385), Random med=22 (σ2=331), gap=+3
+Avg moves: 163.3, Duration: 5230ms
+📋 Cycle 5 Summary | Self-play: P1=51 P2=47 D=2 | P1 med=59 (σ2=467, 24-107) | P2 med=57 (σ2=467, 20-105) | Train: 0.009215 → 0.003386 (7622 replay + 15245 new) | Eval: 82.0% (AI med=25, Rand med=22, gap=+3) | Diversity: Open=6.44 Board=1.94 | Buf: 50000 | 477s
+💾 Checkpoint saved: /Users/aespinel/.openclaw/workspace/triantica/docs/data/checkpoint-cycle-5.json
+🔄 Cycle 6/20
+----------------------------------------
+🎮 Running 100 self-play games (network mode)...
+10/100 games done
+20/100 games done
+30/100 games done
+40/100 games done
+50/100 games done
+60/100 games done
+70/100 games done
+80/100 games done
+90/100 games done
+100/100 games done
+✅ Self-play complete: 100 games, 15257 samples, 26626ms
+📚 Training network (30 iterations, lr=0.1, 22885 samples [7628 replay + 15257 new])...
+✅ Training complete: error=0.003489 (was 0.009759, Δ=0.006271) | 96% error drop by half iters, 453461ms
+📉 Error curve: 0:0.0098 → 3:0.0046 → 6:0.0042 → 9:0.0040 → 12:0.0038 → 15:0.0037 → 18:0.0037 → 21:0.0036 → 24:0.0036 → 27:0.0035 → 30:0.0035
+📊 Evaluating vs Random (100 games)...
+📈 AI Win Rate: 86.0% (86W / 14L / 0D)
+Scores: AI med=26 (σ2=398), Random med=24 (σ2=228), gap=+2
+Avg moves: 163.1, Duration: 5230ms
+📋 Cycle 6 Summary | Self-play: P1=51 P2=47 D=2 | P1 med=61 (σ2=433, 20-105) | P2 med=62 (σ2=411, 15-106) | Train: 0.009759 → 0.003489 (7628 replay + 15257 new) | Eval: 86.0% (AI med=26, Rand med=24, gap=+2) | Diversity: Open=6.38 Board=1.94 | Buf: 50000 | 485s
+🔄 Cycle 7/20
+----------------------------------------
+🎮 Running 100 self-play games (network mode)...
+10/100 games done
+20/100 games done
+30/100 games done
+40/100 games done
+50/100 games done
+60/100 games done
+70/100 games done
+80/100 games done
+90/100 games done
+100/100 games done
+✅ Self-play complete: 100 games, 15254 samples, 26164ms
+📚 Training network (30 iterations, lr=0.1, 22881 samples [7627 replay + 15254 new])...
+✅ Training complete: error=0.003489 (was 0.009422, Δ=0.005933) | 96% error drop by half iters, 446943ms
+📉 Error curve: 0:0.0094 → 3:0.0046 → 6:0.0041 → 9:0.0039 → 12:0.0038 → 15:0.0037 → 18:0.0037 → 21:0.0036 → 24:0.0036 → 27:0.0035 → 30:0.0035
+📊 Evaluating vs Random (100 games)...
+📈 AI Win Rate: 87.0% (87W / 12L / 1D)
+Scores: AI med=26 (σ2=349), Random med=25 (σ2=282), gap=+1
+Avg moves: 163.1, Duration: 5228ms
+📋 Cycle 7 Summary | Self-play: P1=55 P2=44 D=1 | P1 med=59 (σ2=475, 13-106) | P2 med=58 (σ2=477, 15-107) | Train: 0.009422 → 0.003489 (7627 replay + 15254 new) | Eval: 87.0% (AI med=26, Rand med=25, gap=+1) | Diversity: Open=6.52 Board=1.94 | Buf: 50000 | 478s
+🔄 Cycle 8/20
+----------------------------------------
+🎮 Running 100 self-play games (network mode)...
+10/100 games done
+20/100 games done
+30/100 games done
+40/100 games done
+50/100 games done
+60/100 games done
+70/100 games done
+80/100 games done
+90/100 games done
+100/100 games done
+✅ Self-play complete: 100 games, 15329 samples, 25898ms
+📚 Training network (30 iterations, lr=0.1, 22993 samples [7664 replay + 15329 new])...
+✅ Training complete: error=0.003400 (was 0.009261, Δ=0.005861) | 96% error drop by half iters, 449210ms
+📉 Error curve: 0:0.0093 → 3:0.0045 → 6:0.0040 → 9:0.0038 → 12:0.0037 → 15:0.0036 → 18:0.0036 → 21:0.0035 → 24:0.0035 → 27:0.0034 → 30:0.0034
+📊 Evaluating vs Random (100 games)...
+📈 AI Win Rate: 83.0% (83W / 17L / 0D)
+Scores: AI med=26 (σ2=359), Random med=25 (σ2=296), gap=+1
+Avg moves: 163.9, Duration: 5241ms
+📋 Cycle 8 Summary | Self-play: P1=61 P2=39 D=0 | P1 med=61 (σ2=446, 18-106) | P2 med=56 (σ2=452, 15-110) | Train: 0.009261 → 0.003400 (7664 replay + 15329 new) | Eval: 83.0% (AI med=26, Rand med=25, gap=+1) | Diversity: Open=6.46 Board=1.95 | Buf: 50000 | 480s
+🔄 Cycle 9/20
+----------------------------------------
+🎮 Running 100 self-play games (network mode)...
+10/100 games done
+20/100 games done
+30/100 games done
+40/100 games done
+50/100 games done
+60/100 games done
+70/100 games done
+80/100 games done
+90/100 games done
+100/100 games done
+✅ Self-play complete: 100 games, 15344 samples, 26603ms
+📚 Training network (30 iterations, lr=0.1, 23016 samples [7672 replay + 15344 new])...
+✅ Training complete: error=0.003415 (was 0.009516, Δ=0.006101) | 96% error drop by half iters, 449728ms
+📉 Error curve: 0:0.0095 → 3:0.0045 → 6:0.0041 → 9:0.0039 → 12:0.0037 → 15:0.0037 → 18:0.0036 → 21:0.0035 → 24:0.0035 → 27:0.0034 → 30:0.0034
+📊 Evaluating vs Random (100 games)...
+📈 AI Win Rate: 80.0% (80W / 19L / 1D)
+Scores: AI med=24 (σ2=449), Random med=23 (σ2=299), gap=+1
+Avg moves: 162.8, Duration: 5234ms
+📋 Cycle 9 Summary | Self-play: P1=49 P2=51 D=0 | P1 med=63 (σ2=496, 14-111) | P2 med=60 (σ2=350, 19-101) | Train: 0.009516 → 0.003415 (7672 replay + 15344 new) | Eval: 80.0% (AI med=24, Rand med=23, gap=+1) | Diversity: Open=6.44 Board=1.94 | Buf: 50000 | 482s
+🔄 Cycle 10/20
+----------------------------------------
+🎮 Running 100 self-play games (network mode)...
+10/100 games done
+20/100 games done
+30/100 games done
+40/100 games done
+50/100 games done
+60/100 games done
+70/100 games done
+80/100 games done
+90/100 games done
+100/100 games done
+✅ Self-play complete: 100 games, 15339 samples, 26408ms
+📚 Training network (30 iterations, lr=0.1, 23008 samples [7669 replay + 15339 new])...
+✅ Training complete: error=0.003409 (was 0.009258, Δ=0.005849) | 96% error drop by half iters, 449720ms
+📉 Error curve: 0:0.0093 → 3:0.0045 → 6:0.0040 → 9:0.0038 → 12:0.0037 → 15:0.0037 → 18:0.0036 → 21:0.0035 → 24:0.0035 → 27:0.0034 → 30:0.0034
+📊 Evaluating vs Random (100 games)...
+📈 AI Win Rate: 89.0% (89W / 9L / 2D)
+Scores: AI med=24 (σ2=298), Random med=23 (σ2=434), gap=+1
+Avg moves: 162.9, Duration: 5222ms
+📋 Cycle 10 Summary | Self-play: P1=61 P2=38 D=1 | P1 med=63 (σ2=413, 16-107) | P2 med=55 (σ2=491, 15-103) | Train: 0.009258 → 0.003409 (7669 replay + 15339 new) | Eval: 89.0% (AI med=24, Rand med=23, gap=+1) | Diversity: Open=6.44 Board=1.95 | Buf: 50000 | 481s
+💾 Checkpoint saved: /Users/aespinel/.openclaw/workspace/triantica/docs/data/checkpoint-cycle-10.json
+🔄 Cycle 11/20
+----------------------------------------
+🎮 Running 100 self-play games (network mode)...
+10/100 games done
+20/100 games done
+30/100 games done
+40/100 games done
+50/100 games done
+60/100 games done
+70/100 games done
+80/100 games done
+90/100 games done
+100/100 games done
+✅ Self-play complete: 100 games, 15182 samples, 26285ms
+📚 Training network (30 iterations, lr=0.1, 22773 samples [7591 replay + 15182 new])...
+✅ Training complete: error=0.003427 (was 0.009410, Δ=0.005983) | 96% error drop by half iters, 444888ms
+📉 Error curve: 0:0.0094 → 3:0.0045 → 6:0.0041 → 9:0.0039 → 12:0.0038 → 15:0.0037 → 18:0.0036 → 21:0.0036 → 24:0.0035 → 27:0.0035 → 30:0.0034
+📊 Evaluating vs Random (100 games)...
+📈 AI Win Rate: 84.0% (84W / 15L / 1D)
+Scores: AI med=23 (σ2=236), Random med=24 (σ2=450), gap=+-1
+Avg moves: 163.1, Duration: 5226ms
+📋 Cycle 11 Summary | Self-play: P1=44 P2=56 D=0 | P1 med=60 (σ2=302, 16-115) | P2 med=60 (σ2=457, 20-101) | Train: 0.009410 → 0.003427 (7591 replay + 15182 new) | Eval: 84.0% (AI med=23, Rand med=24, gap=+-1) | Diversity: Open=6.40 Board=1.95 | Buf: 50000 | 476s
+🔄 Cycle 12/20
+----------------------------------------
+🎮 Running 100 self-play games (network mode)...
+10/100 games done
+20/100 games done
+30/100 games done
+40/100 games done
+50/100 games done
+60/100 games done
+70/100 games done
+80/100 games done
+90/100 games done
+100/100 games done
+✅ Self-play complete: 100 games, 15221 samples, 26519ms
+📚 Training network (30 iterations, lr=0.1, 22831 samples [7610 replay + 15221 new])...
+✅ Training complete: error=0.003449 (was 0.009339, Δ=0.005890) | 97% error drop by half iters, 445944ms
+📉 Error curve: 0:0.0093 → 3:0.0045 → 6:0.0040 → 9:0.0039 → 12:0.0037 → 15:0.0036 → 18:0.0036 → 21:0.0035 → 24:0.0035 → 27:0.0035 → 30:0.0034
+📊 Evaluating vs Random (100 games)...
+📈 AI Win Rate: 81.0% (81W / 18L / 1D)
+Scores: AI med=24 (σ2=303), Random med=23 (σ2=391), gap=+1
+Avg moves: 163.1, Duration: 5228ms
+📋 Cycle 12 Summary | Self-play: P1=52 P2=47 D=1 | P1 med=63 (σ2=429, 20-114) | P2 med=57 (σ2=370, 20-98) | Train: 0.009339 → 0.003449 (7610 replay + 15221 new) | Eval: 81.0% (AI med=24, Rand med=23, gap=+1) | Diversity: Open=6.44 Board=1.95 | Buf: 50000 | 478s
+🔄 Cycle 13/20
+----------------------------------------
+🎮 Running 100 self-play games (network mode)...
+10/100 games done
+20/100 games done
+30/100 games done
+40/100 games done
+50/100 games done
+60/100 games done
+70/100 games done
+80/100 games done
+90/100 games done
+100/100 games done
+✅ Self-play complete: 100 games, 15247 samples, 26592ms
+📚 Training network (30 iterations, lr=0.1, 22870 samples [7623 replay + 15247 new])...
+✅ Training complete: error=0.003479 (was 0.009608, Δ=0.006129) | 96% error drop by half iters, 447791ms
+📉 Error curve: 0:0.0096 → 3:0.0046 → 6:0.0041 → 9:0.0039 → 12:0.0038 → 15:0.0037 → 18:0.0037 → 21:0.0036 → 24:0.0036 → 27:0.0035 → 30:0.0035
+📊 Evaluating vs Random (100 games)...
+📈 AI Win Rate: 86.0% (86W / 13L / 1D)
+Scores: AI med=23 (σ2=336), Random med=25 (σ2=363), gap=+-2
+Avg moves: 163.4, Duration: 5326ms
+📋 Cycle 13 Summary | Self-play: P1=61 P2=37 D=2 | P1 med=65 (σ2=426, 22-114) | P2 med=53 (σ2=424, 12-107) | Train: 0.009608 → 0.003479 (7623 replay + 15247 new) | Eval: 86.0% (AI med=23, Rand med=25, gap=+-2) | Diversity: Open=6.44 Board=1.95 | Buf: 50000 | 480s
+🔄 Cycle 14/20
+----------------------------------------
+🎮 Running 100 self-play games (network mode)...
+10/100 games done
+20/100 games done
+30/100 games done
+40/100 games done
+50/100 games done
+60/100 games done
+70/100 games done
+80/100 games done
+90/100 games done
+100/100 games done
+✅ Self-play complete: 100 games, 15283 samples, 26570ms
+📚 Training network (30 iterations, lr=0.1, 22924 samples [7641 replay + 15283 new])...
+✅ Training complete: error=0.003458 (was 0.009477, Δ=0.006019) | 96% error drop by half iters, 447802ms
+📉 Error curve: 0:0.0095 → 3:0.0045 → 6:0.0041 → 9:0.0039 → 12:0.0038 → 15:0.0037 → 18:0.0036 → 21:0.0036 → 24:0.0035 → 27:0.0035 → 30:0.0035
+📊 Evaluating vs Random (100 games)...
+📈 AI Win Rate: 77.0% (77W / 22L / 1D)
+Scores: AI med=27 (σ2=249), Random med=27 (σ2=194), gap=+1
+Avg moves: 163.9, Duration: 5227ms
+📋 Cycle 14 Summary | Self-play: P1=55 P2=45 D=0 | P1 med=57 (σ2=459, 18-114) | P2 med=55 (σ2=449, 18-100) | Train: 0.009477 → 0.003458 (7641 replay + 15283 new) | Eval: 77.0% (AI med=27, Rand med=27, gap=+1) | Diversity: Open=6.52 Board=1.94 | Buf: 50000 | 480s
+🔄 Cycle 15/20
+----------------------------------------
+🎮 Running 100 self-play games (network mode)...
+10/100 games done
+20/100 games done
+30/100 games done
+40/100 games done
+50/100 games done
+60/100 games done
+70/100 games done
+80/100 games done
+90/100 games done
+100/100 games done
+✅ Self-play complete: 100 games, 15208 samples, 26624ms
+📚 Training network (30 iterations, lr=0.1, 22812 samples [7604 replay + 15208 new])...
+✅ Training complete: error=0.003536 (was 0.009616, Δ=0.006080) | 96% error drop by half iters, 445512ms
+📉 Error curve: 0:0.0096 → 3:0.0046 → 6:0.0042 → 9:0.0040 → 12:0.0038 → 15:0.0038 → 18:0.0037 → 21:0.0036 → 24:0.0036 → 27:0.0036 → 30:0.0035
+📊 Evaluating vs Random (100 games)...
+📈 AI Win Rate: 91.0% (91W / 9L / 0D)
+Scores: AI med=24 (σ2=288), Random med=26 (σ2=432), gap=+-2
+Avg moves: 163.2, Duration: 5254ms
+📋 Cycle 15 Summary | Self-play: P1=49 P2=51 D=0 | P1 med=57 (σ2=544, 14-119) | P2 med=59 (σ2=464, 17-104) | Train: 0.009616 → 0.003536 (7604 replay + 15208 new) | Eval: 91.0% (AI med=24, Rand med=26, gap=+-2) | Diversity: Open=6.38 Board=1.94 | Buf: 50000 | 477s
+💾 Checkpoint saved: /Users/aespinel/.openclaw/workspace/triantica/docs/data/checkpoint-cycle-15.json
+🔄 Cycle 16/20
+----------------------------------------
+🎮 Running 100 self-play games (network mode)...
+10/100 games done
+20/100 games done
+30/100 games done
+40/100 games done
+50/100 games done
+60/100 games done
+70/100 games done
+80/100 games done
+90/100 games done
+100/100 games done
+✅ Self-play complete: 100 games, 15201 samples, 26362ms
+📚 Training network (30 iterations, lr=0.1, 22801 samples [7600 replay + 15201 new])...
+✅ Training complete: error=0.003447 (was 0.009427, Δ=0.005980) | 96% error drop by half iters, 445275ms
+📉 Error curve: 0:0.0094 → 3:0.0045 → 6:0.0041 → 9:0.0039 → 12:0.0038 → 15:0.0037 → 18:0.0036 → 21:0.0036 → 24:0.0035 → 27:0.0035 → 30:0.0034
+📊 Evaluating vs Random (100 games)...
+📈 AI Win Rate: 75.0% (75W / 22L / 3D)
+Scores: AI med=25 (σ2=327), Random med=22 (σ2=248), gap=+3
+Avg moves: 162.9, Duration: 5215ms
+📋 Cycle 16 Summary | Self-play: P1=54 P2=46 D=0 | P1 med=57 (σ2=411, 21-105) | P2 med=61 (σ2=410, 21-104) | Train: 0.009427 → 0.003447 (7600 replay + 15201 new) | Eval: 75.0% (AI med=25, Rand med=22, gap=+3) | Diversity: Open=6.39 Board=1.95 | Buf: 50000 | 477s
+🔄 Cycle 17/20
+----------------------------------------
+🎮 Running 100 self-play games (network mode)...
+10/100 games done
+20/100 games done
+30/100 games done
+40/100 games done
+50/100 games done
+60/100 games done
+70/100 games done
+80/100 games done
+90/100 games done
+100/100 games done
+✅ Self-play complete: 100 games, 15262 samples, 26201ms
+📚 Training network (30 iterations, lr=0.1, 22893 samples [7631 replay + 15262 new])...
+✅ Training complete: error=0.003461 (was 0.009450, Δ=0.005989) | 96% error drop by half iters, 447216ms
+📉 Error curve: 0:0.0095 → 3:0.0046 → 6:0.0041 → 9:0.0039 → 12:0.0038 → 15:0.0037 → 18:0.0036 → 21:0.0036 → 24:0.0035 → 27:0.0035 → 30:0.0035
+📊 Evaluating vs Random (100 games)...
+📈 AI Win Rate: 90.0% (90W / 8L / 2D)
+Scores: AI med=23 (σ2=312), Random med=25 (σ2=365), gap=+-2
+Avg moves: 162.8, Duration: 5219ms
+📋 Cycle 17 Summary | Self-play: P1=58 P2=42 D=0 | P1 med=63 (σ2=483, 19-110) | P2 med=56 (σ2=422, 12-109) | Train: 0.009450 → 0.003461 (7631 replay + 15262 new) | Eval: 90.0% (AI med=23, Rand med=25, gap=+-2) | Diversity: Open=6.44 Board=1.94 | Buf: 50000 | 479s
+🔄 Cycle 18/20
+----------------------------------------
+🎮 Running 100 self-play games (network mode)...
+10/100 games done
+20/100 games done
+30/100 games done
+40/100 games done
+50/100 games done
+60/100 games done
+70/100 games done
+80/100 games done
+90/100 games done
+100/100 games done
+✅ Self-play complete: 100 games, 15193 samples, 26406ms
+📚 Training network (30 iterations, lr=0.1, 22789 samples [7596 replay + 15193 new])...
+✅ Training complete: error=0.003493 (was 0.009575, Δ=0.006081) | 96% error drop by half iters, 445071ms
+📉 Error curve: 0:0.0096 → 3:0.0046 → 6:0.0042 → 9:0.0040 → 12:0.0038 → 15:0.0037 → 18:0.0037 → 21:0.0036 → 24:0.0036 → 27:0.0035 → 30:0.0035
+📊 Evaluating vs Random (100 games)...
+📈 AI Win Rate: 79.0% (79W / 19L / 2D)
+Scores: AI med=26 (σ2=248), Random med=22 (σ2=320), gap=+4
+Avg moves: 163.5, Duration: 5262ms
+📋 Cycle 18 Summary | Self-play: P1=49 P2=50 D=1 | P1 med=59 (σ2=440, 19-111) | P2 med=61 (σ2=432, 13-96) | Train: 0.009575 → 0.003493 (7596 replay + 15193 new) | Eval: 79.0% (AI med=26, Rand med=22, gap=+4) | Diversity: Open=6.42 Board=1.95 | Buf: 50000 | 477s
+🔄 Cycle 19/20
+----------------------------------------
+🎮 Running 100 self-play games (network mode)...
+10/100 games done
+20/100 games done
+30/100 games done
+40/100 games done
+50/100 games done
+60/100 games done
+70/100 games done
+80/100 games done
+90/100 games done
+100/100 games done
+✅ Self-play complete: 100 games, 15227 samples, 26393ms
+📚 Training network (30 iterations, lr=0.1, 22840 samples [7613 replay + 15227 new])...
+✅ Training complete: error=0.003486 (was 0.009612, Δ=0.006126) | 96% error drop by half iters, 446160ms
+📉 Error curve: 0:0.0096 → 3:0.0046 → 6:0.0041 → 9:0.0039 → 12:0.0038 → 15:0.0037 → 18:0.0037 → 21:0.0036 → 24:0.0036 → 27:0.0035 → 30:0.0035
+📊 Evaluating vs Random (100 games)...
+📈 AI Win Rate: 83.0% (83W / 16L / 1D)
+Scores: AI med=26 (σ2=360), Random med=27 (σ2=276), gap=+-1
+Avg moves: 162.4, Duration: 5221ms
+📋 Cycle 19 Summary | Self-play: P1=45 P2=53 D=2 | P1 med=54 (σ2=451, 17-104) | P2 med=61 (σ2=425, 22-117) | Train: 0.009612 → 0.003486 (7613 replay + 15227 new) | Eval: 83.0% (AI med=26, Rand med=27, gap=+-1) | Diversity: Open=6.29 Board=1.94 | Buf: 50000 | 478s
+🔄 Cycle 20/20
+----------------------------------------
+🎮 Running 100 self-play games (network mode)...
+10/100 games done
+20/100 games done
+30/100 games done
+40/100 games done
+50/100 games done
+60/100 games done
+70/100 games done
+80/100 games done
+90/100 games done
+100/100 games done
+✅ Self-play complete: 100 games, 15279 samples, 26046ms
+📚 Training network (30 iterations, lr=0.1, 22918 samples [7639 replay + 15279 new])...
+✅ Training complete: error=0.003489 (was 0.009608, Δ=0.006119) | 96% error drop by half iters, 447594ms
+📉 Error curve: 0:0.0096 → 3:0.0046 → 6:0.0041 → 9:0.0040 → 12:0.0038 → 15:0.0037 → 18:0.0037 → 21:0.0036 → 24:0.0036 → 27:0.0035 → 30:0.0035
+📊 Evaluating vs Random (100 games)...
+📈 AI Win Rate: 83.0% (83W / 16L / 1D)
+Scores: AI med=29 (σ2=412), Random med=23 (σ2=236), gap=+6
+Avg moves: 163.0, Duration: 5229ms
+📋 Cycle 20 Summary | Self-play: P1=54 P2=45 D=1 | P1 med=58 (σ2=524, 15-101) | P2 med=58 (σ2=481, 17-106) | Train: 0.009608 → 0.003489 (7639 replay + 15279 new) | Eval: 83.0% (AI med=29, Rand med=23, gap=+6) | Diversity: Open=6.50 Board=1.94 | Buf: 50000 | 479s
+💾 Checkpoint saved: /Users/aespinel/.openclaw/workspace/triantica/docs/data/checkpoint-cycle-20.json
+💾 Final network saved to data/exp22_cluster_clean.json
+📋 Training metrics saved to /Users/aespinel/.openclaw/workspace/triantica/docs/data/training-1792776788544.json
+==================================================
+📊 Training Summary
+==================================================
+Starting win rate: 85.0%
+Final win rate:    83.0%
+Improvement:      -2.0%
+Total time:        9609.6s
+Cycles completed:  20
+==================================================

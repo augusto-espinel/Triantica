@@ -1348,16 +1348,117 @@ The fresh network trained from scratch with correct perspective outperforms prev
 
 ---
 
+## Experiment 21 — Learn from the Master (Heuristic Distillation)
+
+**Started:** 2026-10-23 11:55
+**Completed:** 2026-10-23 16:33
+**Log:** `experiments/logs/exp21.log`, `experiments/logs/exp21_continuation.log`, `experiments/logs/exp21_final.log`
+**Network:** `data/exp21_learn_from_master.json`
+**Data:** `docs/data/exp21_merged.json`
+**Starting from:** `data/exp20_mixed.json`
+
+### Hypothesis
+
+Can the network **distill heuristic knowledge** by training on the heuristic's winning moves? With `trainOnOpponentMoves=true`, when the heuristic wins as P2, the network learns what winning heuristic play looks like from that board state.
+
+### Configuration
+
+```bash
+node src/server/train.js \
+  --cycles 15 \
+  --games 100 \
+  --eval-games 100 \
+  --iterations 30 \
+  --learning-rate 0.05 \    # Halved from 0.1 for fine-tuning
+  --exploration 0.3 \
+  --self-play-mode network \
+  --opponent-mix mixed \
+  --heuristic-ratio 0.6 \    # Heavy heuristic exposure
+  --random-ratio 0.1 \
+  --train-on-opponent-moves true \    # KEY: learn from heuristic's winning moves
+  --start-from data/exp20_mixed.json \
+  --output data/exp21_learn_from_master.json
+```
+
+### Process Issues
+
+Training was interrupted **3 times** by SIGKILL due to the exec timeout (3600s = 1hr) being too short for training runs that take ~2+ hours. The run was reconstructed from:
+1. **Phase 1** (original): Cycles 1-8 from exp20_mixed.json (killed at cycle 9)
+2. **Phase 2** (continuation): Cycles 6-15 from checkpoint-cycle-5 (killed at cycle 10)
+3. **Phase 3** (final): Cycles 11-15 from checkpoint-cycle-5 (completed)
+
+Data was merged into `docs/data/exp21_merged.json` with full 15-cycle view.
+
+### Merged Results
+
+| Cycle | vs Random (eval) | vs Network (SP) | vs Heuristic | Error (final) | Opening Div |
+|-------|-------------------|-----------------|--------------|---------------|-------------|
+| 1 | 73% | 63% | 0% (61 games) | 0.0028 | 6.15 |
+| 2 | 73% | 63% | 0% (52 games) | 0.0033 | 5.91 |
+| 3 | 75% | 64% | 0% (65 games) | 0.0036 | 5.78 |
+| 4 | **83%** | 59% | 0% (57 games) | 0.0036 | 5.88 |
+| 5 | 81% | 68% | 0% (63 games) | 0.0036 | 5.74 |
+| 6 | 82% | 50% | 0% (58 games) | 0.0035 | 5.88 |
+| 7 | 73% | 40% | 0% (60 games) | 0.0036 | 6.07 |
+| 8 | 77% | 64% | 0% (56 games) | 0.0036 | 6.18 |
+| 9 | 76% | 50% | 0% (63 games) | 0.0036 | 5.86 |
+| 10 | 77% | 56% | 0% (57 games) | 0.0035 | 5.55 |
+| 11 | 77% | 49% | 0% (63 games) | 0.0036 | 5.88 |
+| 12 | 78% | 58% | 0% (58 games) | 0.0036 | 5.94 |
+| 13 | **82%** | 58% | 0% (56 games) | 0.0036 | 6.18 |
+| 14 | 78% | 46% | 0% (60 games) | 0.0036 | 5.86 |
+| 15 | 70% | 48% | 0% (57 games) | 0.0036 | 5.44 |
+
+**Starting win rate:** 73.0% (down from exp20's 91%)
+**Final win rate:** 70.0%
+**Peak win rate:** 83.0% (cycles 4, 13)
+**Change:** -3.0%
+
+### Key Findings
+
+1. **Distillation failed** — `trainOnOpponentMoves=true` did not help the network learn from the heuristic. Win rate regressed from exp20's 91% to 70-83% range.
+
+2. **Signal conflict** — The network receives two conflicting training signals:
+   - "Copy the heuristic's winning moves" (opponent move training)
+   - "Optimize your own immediate reward" (standard reward shaping)
+   These are incompatible because the heuristic and network have fundamentally different play styles.
+
+3. **Instability** — Win rate oscillates wildly between 70-83% across cycles, unlike exp20 which was stable at 87-92%. The opponent-move data acts as noise.
+
+4. **Heuristic wall unchanged** — 0 wins in ~900 heuristic games across all phases. The distillation approach did not even begin to crack the heuristic.
+
+5. **Error plateau** — Error stabilizes at ~0.0036, higher than exp20's 0.0030. The additional opponent-move data increases loss rather than reducing it.
+
+6. **Diversity decline** — Opening diversity dropped from 6.15 to 5.44 by cycle 15, suggesting the network is narrowing its strategy rather than exploring.
+
+### Conclusion
+
+**Training signal is not the bottleneck — architecture is.** A 401→[200]→400 feedforward net with sigmoid activation lacks the capacity to:
+- Represent spatial relationships on a toroidal 10×10 grid
+- Look ahead beyond immediate reward
+- Reconcile "copy the winner" vs "optimize my own reward"
+
+**Next steps should focus on architecture changes**, not training signal variations.
+
+### Recommendation for Exp 22
+
+1. **Canonical board encoding** — 8-fold rotation/reflection invariance for 8× data efficiency
+2. **Value head** — Add position evaluation (actor-critic instead of pure policy)
+3. **Deeper network** — [200, 100] or [256, 128] for more strategic capacity
+4. **Pure network self-play** — Remove heuristic from training mix entirely
+
+---
+
 ## Current Experiment Queue
 
 | Exp | Focus | Status | Key Result |
 |-----|-------|--------|------------|
 | 19 | Fresh start post bug | Complete | 20 cycles, trained exp20 base |
-| 20 | Mixed opponents post bug | Complete | 87.3% vs Random, 0% vs Heuristic |
-| 21 | Pure network self-play | Planned | Extended training, no external opponents |
-| 22 | Canonical encoding + value head | Planned | Architecture change if self-play plateaus |
-| 23 | CNN architecture | Backlog | If 22 fails |
-| 24 | Attention mechanism | Backlog | If 22/23 fail |
+| 20 | Mixed opponents post bug | Complete | **91% vs Random**, 0% vs Heuristic |
+| 21 | Learn from Master (distillation) | Complete | **Failed**: 70-83% vs Random (regression), 0% vs Heuristic |
+| 22 | Canonical encoding + value head | Planned | Architecture change — rotation invariance + position eval |
+| 23 | Deeper network [256, 128] | Planned | More capacity for strategic depth |
+| 24 | Weakened heuristic (25% random) | Planned | Make heuristic beatable for curriculum |
 
 ---
 
@@ -1371,3 +1472,91 @@ The fresh network trained from scratch with correct perspective outperforms prev
 
 All experiments 1-17b trained with at least one of these bugs. Exp 19/20 are the first clean training runs.
 
+
+## Experiment 22 — Cluster Reward Clean Test (2026-10-23)
+
+**Started:** 2026-10-23 16:50
+**Completed:** 2026-10-23 19:33
+**Duration:** ~2.7 hours
+**Data:** `docs/data/training-1792776788544.json`
+
+### Hypothesis
+Cluster reward (TD(λ) eligibility traces) has never run in a bug-free environment. Exp17/17b both had normalization and perspective bugs. Running cluster reward on top of exp20 (91% baseline) would properly test whether TD(λ) can improve strategic play.
+
+### Configuration
+- Same as exp20 but `--enable-cluster-reward true`
+- Pure network self-play (no heuristic/random opponents)
+- Starting from exp20 checkpoint
+
+### Results
+| Metric | Exp 20 (no cluster) | Exp 22 (cluster) |
+|--------|---------------------|------------------|
+| vs Random (mean) | **91%** | 84% |
+| vs Random (peak) | 91% | 91% |
+| vs Random (min) | 88% | 75% |
+| Volatility | Low (88-91%) | **High (75-91%)** |
+| Final Error | 0.0030 | 0.0035 |
+
+### Verdict: **MIXED** ⚠️
+Cluster reward did NOT improve over exp20. Key observations:
+1. **Mean win rate dropped 7pp** (91% → 84%)
+2. **Volatility increased dramatically** — ±8pp swings vs exp20's ±2pp
+3. **Error plateau worse** — 0.0035 vs 0.0030 (with cluster reward on)
+4. **Same peak** — both hit 91%, but exp22 couldn't sustain it
+5. **No convergence trend** across 20 cycles
+
+### Why Cluster Reward Hurt
+TD(λ) eligibility traces assign credit to moves that contributed to the final largest cluster. This creates a **second training signal** that can conflict with immediate rewards:
+- Immediate reward: "claim this enclosure now" (+0.3)
+- Cluster reward: "this move contributed to your final cluster" (delayed credit)
+
+The delayed credit introduces noise because:
+- The largest cluster is a stochastic outcome (depends on opponent moves)
+- The same opening move may or may not contribute to the final cluster
+- This creates inconsistent rewards for the same board state → higher variance
+
+### Conclusion
+Cluster reward adds **noise**, not signal. The TD(λ) eligibility trace creates a confounding training signal that doesn't improve strategic play. The immediate reward structure is sufficient for the current network architecture.
+
+### Next Steps
+Since both training signal modifications (exp21 distillation, exp22 cluster reward) failed, the path forward is clearly **architectural**:
+1. **Value Head** — predict position value, not just immediate reward
+2. **Canonical Board Encoding** — rotation/reflection invariance (8× data efficiency)
+3. **Deeper Network** — [256, 128] for strategic depth
+
+---
+
+## Milestone: Pre-Architecture Baseline (2026-10-23)
+
+### Summary of All Experiments Before Architectural Changes
+
+| Exp | Key Change | vs Random | vs Heuristic | Error | Verdict |
+|-----|-----------|-----------|--------------|-------|---------|
+| 12 | First mixed opponent | 57% | 0% | — | ❌ Bug: player switching |
+| 12b | Continuation | 56% | 0% | — | ❌ No improvement |
+| 12r | Fixed eval tracking | 78% | 0% | — | ⚠️ Real baseline |
+| 15 | Normalization fix | 80% | 0% | — | ⚠️ Still had norm bug |
+| 16 | Gradient isolation | 82% | 0% | — | ⚠️ Still had norm bug |
+| 17 | Cluster reward TD(λ) | 87% | 0% | — | ⚠️ Masked by bugs |
+| 17b | Norm fix (combined) | 88% | 0% | — | ⚠️ Perspective bug active |
+| 19 | Perspective bug fix | 88% | 0% | 0.0030 | ✅ First clean run |
+| 20 | Pure network self-play | **91%** | 0% | 0.0030 | ✅ **Best result** |
+| 21 | Distillation (opponent moves) | 73% | 0% | 0.0036 | ❌ -18pp regression |
+| 22 | Cluster reward (clean) | 84% | 0% | 0.0035 | ⚠️ -7pp, volatile |
+
+### Key Conclusions
+
+1. **Heuristic wall at 0% is structural** — no training signal modification has budged it
+2. **Exp20 (91% vs Random) is the best pre-architecture baseline** — deployed as default game AI
+3. **Training signal modifications hurt** — both distillation (exp21) and cluster reward (exp22) degraded performance
+4. **Architecture is the bottleneck** — a single-hidden-layer feedforward net (401→[200]→400) cannot:
+   - Represent spatial relationships on a toroidal 10×10 grid
+   - Look ahead beyond immediate reward
+   - Extract strategic value from the heuristic opponent's play
+
+### Next Phase: Architectural Improvements
+
+1. **Value Head** — Actor-Critic framework with position value prediction
+2. **Canonical Board Encoding** — Rotation/reflection invariant (8× data efficiency)
+3. **Deeper Network** — [256, 128] hidden layers for strategic depth
+4. **Residual Connections** — Skip connections to preserve gradient flow
