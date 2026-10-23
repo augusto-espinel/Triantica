@@ -4,7 +4,7 @@
     "name": "TF-B1 — Pure Self-Play (Audited)",
     "date": "2026-10-23",
     "logFile": "data/TF-B1_pure.json",
-    "dataFile": "data/TF-B1_pure.json",
+    "dataFile": "TF-B1_pure.json",
     "summary": "Fresh random network, 20 cycles pure network self-play with game auditing (5% sample rate). Establishes bug-free baseline. All 90 audited games passed.",
     "parameters": {
       "cycles": 20,
@@ -41,7 +41,7 @@
     "name": "TF-B2 — Mixed Opponents 70/30 (Audited)",
     "date": "2026-10-23",
     "logFile": "data/TF-B2_mixed.json",
-    "dataFile": "data/TF-B2_mixed.json",
+    "dataFile": "TF-B2_mixed.json",
     "summary": "Fresh network with mixed opponent training (70% network self-play, 30% vs Random) with auditing. Best final performance. All 107 audited games passed.",
     "parameters": {
       "cycles": 20,
@@ -80,7 +80,7 @@
     "name": "TF-B3 — Cluster Reward TD(λ) (Audited)",
     "date": "2026-10-23",
     "logFile": "data/TF-B3_cluster.json",
-    "dataFile": "data/TF-B3_cluster.json",
+    "dataFile": "TF-B3_cluster.json",
     "summary": "Fresh network with TD(λ) cluster contribution reward enabled and auditing. Similar performance to TF-B2. All 91 audited games passed.",
     "parameters": {
       "cycles": 20,
@@ -101,7 +101,7 @@
       "framework": "tensorflow.js",
       "backend": "tensorflow (Metal GPU)"
     },
-    "changes": "Enabled cluster reward with TD(λ): λ=0.9, γ=0.99, factor=0.1.",
+    "changes": "TD(λ) eligibility traces for cluster contribution reward.",
     "bugsFixed": [],
     "result": {
       "startWinRate": 34,
