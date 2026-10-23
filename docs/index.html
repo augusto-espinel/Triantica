@@ -100,6 +100,9 @@
         </div>
       </div>
       <div class="detail-grid full">
+        <div class="section"><h3>Opponent Mix Per Cycle</h3><div class="chart-container tall"><canvas id="chart-opponents"></canvas></div></div>
+      </div>
+      <div class="detail-grid full">
         <div class="section"><h3>Win Rate Over Cycles</h3><div class="chart-container"><canvas id="chart-winrate"></canvas></div></div>
       </div>
       <div class="detail-grid">
@@ -150,10 +153,15 @@
         const hCount = lastCycle?.selfPlay?.opponentTypeCounts?.heuristic || 0;
         const hRate = hWins && hCount ? Math.round((hWins['1'] / hCount) * 100) : null;
         const hBadge = hRate !== null ? `${hRate}% vs Heuristic` : '';
+        // Opponent mix badge
+        const oppCounts = lastCycle?.selfPlay?.opponentTypeCounts || {};
+        const oppTotal = Object.values(oppCounts).reduce((a,b)=>a+b, 0);
+        const oppMix = oppTotal > 0 ? Object.entries(oppCounts).map(([k,v]) => `${k[0].toUpperCase()}:${Math.round(v/oppTotal*100)}%`).join(' ') : '';
         return `<div class="exp-card" onclick="showDetail('${exp.id}')" id="card-${exp.id}">
           ${hBadge ? `<span class="heuristic-badge">${hBadge}</span>` : ''}
           <h3>${exp.name}</h3>
           <div class="date">${exp.date}</div>
+          ${oppMix ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px">${oppMix}</div>` : ''}
           <div class="win-rate ${wrClass}">${r.peakWinRate}%</div>
           <div class="delta ${deltaClass}">${r.improvement>=0?'+':''}${r.improvement}pp</div>
         </div>`;
@@ -256,6 +264,28 @@
         type: 'line',
         data: { labels, datasets: [{ label: 'Win Rate vs Heuristic (%)', data: heuristicWinRates, borderColor: '#f85149', backgroundColor: 'rgba(248,81,73,0.1)', fill: true, tension: 0.3 }] },
         options: { ...opts, scales: { ...opts.scales, y: { ...opts.scales.y, min: 0, max: 50 } } }
+      });
+      
+      // Opponent mix stacked bar chart
+      const oppTypes = ['network', 'heuristic', 'random'];
+      const oppColors = { network: '#d29922', heuristic: '#f85149', random: '#58a6ff' };
+      const oppLabels = { network: 'Network', heuristic: 'Heuristic', random: 'Random' };
+      const oppDatasets = oppTypes.map(type => ({
+        label: oppLabels[type],
+        data: data.cycles.map(c => c.selfPlay?.opponentTypeCounts?.[type] || 0),
+        backgroundColor: oppColors[type],
+        borderRadius: 2
+      }));
+      charts.opponents = new Chart(document.getElementById('chart-opponents'), {
+        type: 'bar',
+        data: { labels, datasets: oppDatasets },
+        options: {
+          ...opts,
+          scales: {
+            x: { ...opts.scales.x, stacked: true },
+            y: { ...opts.scales.y, stacked: true, title: { display: true, text: 'Games', color: '#8b949e' } }
+          }
+        }
       });
     }
     
