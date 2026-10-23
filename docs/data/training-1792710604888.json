@@ -1,0 +1,132 @@
+{
+  "startedAt": "2026-10-22T23:09:25.245Z",
+  "options": {
+    "cycles": 1,
+    "games": 20,
+    "evalGames": 20,
+    "iterations": 10,
+    "learningRate": 0.1,
+    "exploration": 0.3,
+    "selfPlayMode": "network",
+    "startFrom": null,
+    "output": "experiments/data/exp18_quick.json",
+    "saveEvery": 5
+  },
+  "cycles": [
+    {
+      "cycle": 1,
+      "selfPlay": {
+        "games": 20,
+        "wins": {
+          "1": 11,
+          "2": 9,
+          "draws": 0
+        },
+        "avgMoves": 168,
+        "scores": {
+          "p1": {
+            "median": 22,
+            "variance": 41.227500000000006,
+            "min": 13,
+            "max": 39
+          },
+          "p2": {
+            "median": 20,
+            "variance": 162.64750000000004,
+            "min": 10,
+            "max": 68
+          }
+        },
+        "openingDiversity": 4.321928094887363,
+        "boardDiversity": 1.8727533703666364,
+        "samplesGenerated": 3360,
+        "durationMs": 7202
+      },
+      "training": {
+        "iterations": 10,
+        "learningRate": 0.1,
+        "samplesUsed": 5040,
+        "replaySamplesUsed": 1680,
+        "newSamplesUsed": 3360,
+        "replayBufferSize": 3360,
+        "initialError": 0.21554675814690938,
+        "finalError": 0.0015944182027019355,
+        "errorSnapshots": [
+          {
+            "iteration": 0,
+            "error": 0.21554675814690938
+          },
+          {
+            "iteration": 1,
+            "error": 0.006827407657252072
+          },
+          {
+            "iteration": 2,
+            "error": 0.003818593261223476
+          },
+          {
+            "iteration": 3,
+            "error": 0.0029600089679628285
+          },
+          {
+            "iteration": 4,
+            "error": 0.0025161652758521626
+          },
+          {
+            "iteration": 5,
+            "error": 0.002234515437795914
+          },
+          {
+            "iteration": 6,
+            "error": 0.0020362146444883253
+          },
+          {
+            "iteration": 7,
+            "error": 0.001887158389673613
+          },
+          {
+            "iteration": 8,
+            "error": 0.001769797434848767
+          },
+          {
+            "iteration": 9,
+            "error": 0.001674250991071804
+          },
+          {
+            "iteration": 10,
+            "error": 0.0015944182027019355
+          }
+        ],
+        "errorReductionHalf": 0.9970082251249933,
+        "durationMs": 31368
+      },
+      "evaluation": {
+        "games": 20,
+        "opponent": "random",
+        "aiWins": 16,
+        "opponentWins": 4,
+        "draws": 0,
+        "scores": {
+          "ai": {
+            "median": 25,
+            "variance": 286.7900000000001
+          },
+          "opponent": {
+            "median": 25.5,
+            "variance": 130.51
+          },
+          "gap": -0.5
+        },
+        "avgScores": {
+          "1": 31.1,
+          "2": 28.7
+        },
+        "aiWinRate": 0.8,
+        "avgMoves": 167.25,
+        "durationMs": 1048
+      },
+      "totalDurationMs": 39622
+    }
+  ],
+  "completedAt": "2026-10-22T23:10:04.888Z"
+}

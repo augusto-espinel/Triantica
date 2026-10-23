@@ -610,7 +610,7 @@ async function main() {
     cycles: [],
   };
 
-  const dataDir = join(projectRoot, 'experiments', 'data');
+  const dataDir = join(projectRoot, 'docs', 'data');
   mkdirSync(dataDir, { recursive: true });
 
   // Initialize game auditor if enabled
