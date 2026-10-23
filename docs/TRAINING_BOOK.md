@@ -1348,16 +1348,117 @@ The fresh network trained from scratch with correct perspective outperforms prev
 
 ---
 
+## Experiment 21 — Learn from the Master (Heuristic Distillation)
+
+**Started:** 2026-10-23 11:55
+**Completed:** 2026-10-23 16:33
+**Log:** `experiments/logs/exp21.log`, `experiments/logs/exp21_continuation.log`, `experiments/logs/exp21_final.log`
+**Network:** `data/exp21_learn_from_master.json`
+**Data:** `docs/data/exp21_merged.json`
+**Starting from:** `data/exp20_mixed.json`
+
+### Hypothesis
+
+Can the network **distill heuristic knowledge** by training on the heuristic's winning moves? With `trainOnOpponentMoves=true`, when the heuristic wins as P2, the network learns what winning heuristic play looks like from that board state.
+
+### Configuration
+
+```bash
+node src/server/train.js \
+  --cycles 15 \
+  --games 100 \
+  --eval-games 100 \
+  --iterations 30 \
+  --learning-rate 0.05 \    # Halved from 0.1 for fine-tuning
+  --exploration 0.3 \
+  --self-play-mode network \
+  --opponent-mix mixed \
+  --heuristic-ratio 0.6 \    # Heavy heuristic exposure
+  --random-ratio 0.1 \
+  --train-on-opponent-moves true \    # KEY: learn from heuristic's winning moves
+  --start-from data/exp20_mixed.json \
+  --output data/exp21_learn_from_master.json
+```
+
+### Process Issues
+
+Training was interrupted **3 times** by SIGKILL due to the exec timeout (3600s = 1hr) being too short for training runs that take ~2+ hours. The run was reconstructed from:
+1. **Phase 1** (original): Cycles 1-8 from exp20_mixed.json (killed at cycle 9)
+2. **Phase 2** (continuation): Cycles 6-15 from checkpoint-cycle-5 (killed at cycle 10)
+3. **Phase 3** (final): Cycles 11-15 from checkpoint-cycle-5 (completed)
+
+Data was merged into `docs/data/exp21_merged.json` with full 15-cycle view.
+
+### Merged Results
+
+| Cycle | vs Random (eval) | vs Network (SP) | vs Heuristic | Error (final) | Opening Div |
+|-------|-------------------|-----------------|--------------|---------------|-------------|
+| 1 | 73% | 63% | 0% (61 games) | 0.0028 | 6.15 |
+| 2 | 73% | 63% | 0% (52 games) | 0.0033 | 5.91 |
+| 3 | 75% | 64% | 0% (65 games) | 0.0036 | 5.78 |
+| 4 | **83%** | 59% | 0% (57 games) | 0.0036 | 5.88 |
+| 5 | 81% | 68% | 0% (63 games) | 0.0036 | 5.74 |
+| 6 | 82% | 50% | 0% (58 games) | 0.0035 | 5.88 |
+| 7 | 73% | 40% | 0% (60 games) | 0.0036 | 6.07 |
+| 8 | 77% | 64% | 0% (56 games) | 0.0036 | 6.18 |
+| 9 | 76% | 50% | 0% (63 games) | 0.0036 | 5.86 |
+| 10 | 77% | 56% | 0% (57 games) | 0.0035 | 5.55 |
+| 11 | 77% | 49% | 0% (63 games) | 0.0036 | 5.88 |
+| 12 | 78% | 58% | 0% (58 games) | 0.0036 | 5.94 |
+| 13 | **82%** | 58% | 0% (56 games) | 0.0036 | 6.18 |
+| 14 | 78% | 46% | 0% (60 games) | 0.0036 | 5.86 |
+| 15 | 70% | 48% | 0% (57 games) | 0.0036 | 5.44 |
+
+**Starting win rate:** 73.0% (down from exp20's 91%)
+**Final win rate:** 70.0%
+**Peak win rate:** 83.0% (cycles 4, 13)
+**Change:** -3.0%
+
+### Key Findings
+
+1. **Distillation failed** — `trainOnOpponentMoves=true` did not help the network learn from the heuristic. Win rate regressed from exp20's 91% to 70-83% range.
+
+2. **Signal conflict** — The network receives two conflicting training signals:
+   - "Copy the heuristic's winning moves" (opponent move training)
+   - "Optimize your own immediate reward" (standard reward shaping)
+   These are incompatible because the heuristic and network have fundamentally different play styles.
+
+3. **Instability** — Win rate oscillates wildly between 70-83% across cycles, unlike exp20 which was stable at 87-92%. The opponent-move data acts as noise.
+
+4. **Heuristic wall unchanged** — 0 wins in ~900 heuristic games across all phases. The distillation approach did not even begin to crack the heuristic.
+
+5. **Error plateau** — Error stabilizes at ~0.0036, higher than exp20's 0.0030. The additional opponent-move data increases loss rather than reducing it.
+
+6. **Diversity decline** — Opening diversity dropped from 6.15 to 5.44 by cycle 15, suggesting the network is narrowing its strategy rather than exploring.
+
+### Conclusion
+
+**Training signal is not the bottleneck — architecture is.** A 401→[200]→400 feedforward net with sigmoid activation lacks the capacity to:
+- Represent spatial relationships on a toroidal 10×10 grid
+- Look ahead beyond immediate reward
+- Reconcile "copy the winner" vs "optimize my own reward"
+
+**Next steps should focus on architecture changes**, not training signal variations.
+
+### Recommendation for Exp 22
+
+1. **Canonical board encoding** — 8-fold rotation/reflection invariance for 8× data efficiency
+2. **Value head** — Add position evaluation (actor-critic instead of pure policy)
+3. **Deeper network** — [200, 100] or [256, 128] for more strategic capacity
+4. **Pure network self-play** — Remove heuristic from training mix entirely
+
+---
+
 ## Current Experiment Queue
 
 | Exp | Focus | Status | Key Result |
 |-----|-------|--------|------------|
 | 19 | Fresh start post bug | Complete | 20 cycles, trained exp20 base |
-| 20 | Mixed opponents post bug | Complete | 87.3% vs Random, 0% vs Heuristic |
-| 21 | Pure network self-play | Planned | Extended training, no external opponents |
-| 22 | Canonical encoding + value head | Planned | Architecture change if self-play plateaus |
-| 23 | CNN architecture | Backlog | If 22 fails |
-| 24 | Attention mechanism | Backlog | If 22/23 fail |
+| 20 | Mixed opponents post bug | Complete | **91% vs Random**, 0% vs Heuristic |
+| 21 | Learn from Master (distillation) | Complete | **Failed**: 70-83% vs Random (regression), 0% vs Heuristic |
+| 22 | Canonical encoding + value head | Planned | Architecture change — rotation invariance + position eval |
+| 23 | Deeper network [256, 128] | Planned | More capacity for strategic depth |
+| 24 | Weakened heuristic (25% random) | Planned | Make heuristic beatable for curriculum |
 
 ---
 
