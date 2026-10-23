@@ -1214,3 +1214,160 @@ The combination of cluster reward and fixed normalization produces the best resu
 3. **Curriculum: train only vs Heuristic** — force specialization at the cost of vs-Random performance
 4. **Accept current ceiling** — 88% vs Random may be the limit without architectural changes
 
+---
+
+## 🐛 CRITICAL: Self-Play Perspective Bug (2026-10-23)
+
+**Commit:** `518e1b9`
+
+### The Bug
+
+In network self-play, **both players used the network from Player 1's perspective**. When Player 2 was moving, the state vector was still encoded with P1's pieces as `+1` and P2's pieces as `-1`.
+
+The network was trained to predict **good moves for P1** (based on P1's win/loss signal). When P2 used it:
+
+```javascript
+// BEFORE (broken):
+const state = this.getStateVector(grid, cellIndex, rotation, 1); // Always P1 perspective!
+const scores = this.network.run(state);
+// Network predicts moves good for P1
+// P2 selects moves that help P1 win → P2 actively tries to lose!
+```
+
+### Evidence
+
+| Mode | P1 Win Rate | Interpretation |
+|------|-------------|----------------|
+| Network self-play (broken) | 100% | P2 always lost |
+| Network self-play (fixed) | ~50% | Fair game |
+| AI vs Random (as P2) | 20% | Terrible when using P1's policy |
+
+### The Fix
+
+Condition the state vector on `currentPlayer` so each player sees the board from their own perspective:
+
+```javascript
+// AFTER (fixed):
+const state = this.getStateVector(grid, cellIndex, rotation, currentPlayer);
+// Now P2 sees "my pieces = +1" just like P1 does
+```
+
+Now both players use the same network, but each sees their own pieces as `+1`. The network predicts good moves for **whoever is moving**.
+
+### Impact
+
+**ALL network self-play experiments (1-17b) trained with this bug.** The network never played a fair game against itself. Every self-play game was P1 winning by default because P2 was following P1's winning policy.
+
+This invalidates:
+- Exp 13 (pure network self-play) — P2 never had a chance
+- All curriculum experiments using network self-play component
+- Any "balanced" self-play results
+
+---
+
+## Experiment 19 — Fresh Start (Post Bug Fix)
+
+**Started:** 2026-10-23 01:00
+**Network:** `experiments/data/exp19_fresh.json`
+**Starting from:** Fresh random weights
+
+### Configuration
+
+```bash
+node src/server/train.js \
+  --cycles 20 \
+  --games 50 \
+  --eval-games 100 \
+  --iterations 200 \
+  --learning-rate 0.1 \
+  --exploration 0.3 \
+  --self-play-mode network \
+  --output experiments/data/exp19_fresh.json
+```
+
+**Key change:** Pure network self-play with corrected perspective, fresh weights, extended training.
+
+---
+
+## Experiment 20 — Mixed Opponents (Post Bug Fix)
+
+**Started:** 2026-10-23 01:40
+**Completed:** 2026-10-23 02:29
+**Log:** `experiments/data/training-1792722575589.json`
+**Starting from:** `exp19_fresh.json`
+
+### Configuration
+
+```bash
+node src/server/train.js \
+  --cycles 10 \
+  --games 100 \
+  --eval-games 100 \
+  --iterations 30 \
+  --learning-rate 0.1 \
+  --exploration 0.3 \
+  --self-play-mode network \
+  --start-from exp19_fresh.json \
+  --output exp20_mixed.json
+```
+
+### Results
+
+| Cycle | vs Random | Error | vs Heuristic | Network Self-Play (P1/P2/Draw) |
+|-------|-----------|-------|--------------|-------------------------------|
+| 1 | 80.0% | 0.00184 | 0% (43 games) | 24/20/2 |
+| 2 | 81.0% | 0.00237 | 0% (42 games) | 30/18/0 |
+| 3 | 89.0% | 0.00276 | 0% (50 games) | 16/25/0 |
+| 4 | 90.0% | 0.00279 | 0% (51 games) | 15/25/2 |
+| 5 | **92.0%** | 0.00289 | 0% (50 games) | 22/16/0 |
+| 6 | 91.0% | 0.00303 | 0% (46 games) | 23/22/1 |
+| 7 | 88.0% | 0.00283 | 0% (47 games) | 25/17/0 |
+| 8 | 86.0% | 0.00289 | 0% (51 games) | 20/17/0 |
+| 9 | 85.0% | 0.00287 | 0% (54 games) | 17/16/1 |
+| 10 | **91.0%** | 0.00299 | 0% (45 games) | 18/19/1 |
+
+**Mean vs Random: 87.3%** | **Best: 92.0%** | **vs Heuristic: 0% (476 games)**
+
+### Key Findings
+
+1. **Self-play is now balanced** — Network self-play shows ~50/50 splits (e.g., 24/20/2, 30/18, 16/25). No more 100% P1 wins.
+
+2. **vs Random improved** — 80% → 92% trajectory, best result yet from a fresh network with fixed perspective.
+
+3. **Heuristic wall persists** — 0% win rate across 476 games. The enclosure-focused heuristic remains insurmountable.
+
+4. **Healthy error curves** — Error stabilizes at ~0.0028-0.003, not crashing to zero. No overfitting.
+
+5. **Opening diversity maintained** — 6.0-6.3 bits entropy (max ~6.6 for 100 games).
+
+### Conclusion
+
+The self-play perspective fix is confirmed working. Network self-play is now a fair game where both players have equal chances. The AI achieves 87% vs Random (peak 92%), but the Heuristic opponent remains unbeatable.
+
+The fresh network trained from scratch with correct perspective outperforms previous experiments that inherited bug-tainted weights.
+
+---
+
+## Current Experiment Queue
+
+| Exp | Focus | Status | Key Result |
+|-----|-------|--------|------------|
+| 19 | Fresh start post bug | Complete | 20 cycles, trained exp20 base |
+| 20 | Mixed opponents post bug | Complete | 87.3% vs Random, 0% vs Heuristic |
+| 21 | Pure network self-play | Planned | Extended training, no external opponents |
+| 22 | Canonical encoding + value head | Planned | Architecture change if self-play plateaus |
+| 23 | CNN architecture | Backlog | If 22 fails |
+| 24 | Attention mechanism | Backlog | If 22/23 fail |
+
+---
+
+## Summary: Three Critical Bugs Fixed
+
+| Bug | Discovery | Impact | Fix |
+|-----|-----------|--------|-----|
+| Immediate reward normalization | Exp 15 (2026-10-22) | Negative rewards clamped to +0.155 | Changed min to -4.0 |
+| Combined reward normalization | Exp 17b (2026-10-22) | Negative combined rewards clamped to 0.01 | Changed min to -5.0 |
+| Self-play perspective | Exp 19 (2026-10-23) | P2 used P1's policy, always lost | Condition on currentPlayer |
+
+All experiments 1-17b trained with at least one of these bugs. Exp 19/20 are the first clean training runs.
+

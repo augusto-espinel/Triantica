@@ -169,5 +169,51 @@
     "changes": "Fixed minCombinedReward: was -1.0, now -5.0. Negative combined rewards no longer clamped.",
     "bugsFixed": ["Training normalization (minCombinedReward = -1.0 should be -5.0)"],
     "result": { "startWinRate": 81.0, "endWinRate": 88.0, "improvement": 7.0, "peakWinRate": 88.0 }
+  },
+  {
+    "id": "exp19",
+    "name": "Exp 19 — Fresh Start (Post Self-Play Bug Fix)",
+    "date": "2026-10-23",
+    "logFile": "training-1792714804973.json",
+    "dataFile": "exp19_fresh.json",
+    "summary": "Fresh random weights with corrected self-play perspective. 20 cycles pure network self-play.",
+    "parameters": {
+      "cycles": 20,
+      "games": 50,
+      "evalGames": 100,
+      "iterations": 200,
+      "learningRate": 0.1,
+      "exploration": 0.3,
+      "opponentMix": "network",
+      "enableClusterReward": false,
+      "gradientIsolation": false
+    },
+    "changes": "Fixed self-play: state vector now conditioned on currentPlayer. Fresh weights.",
+    "bugsFixed": ["Self-play perspective (both players used P1's policy)"],
+    "result": { "startWinRate": 50.0, "endWinRate": 80.0, "improvement": 30.0, "peakWinRate": 80.0 }
+  },
+  {
+    "id": "exp20",
+    "name": "Exp 20 — Mixed Opponents (Post Self-Play Bug Fix)",
+    "date": "2026-10-23",
+    "logFile": "training-1792722575589.json",
+    "dataFile": "exp20_mixed.json",
+    "summary": "10 cycles mixed opponents starting from exp19. 87.3% vs Random, 0% vs Heuristic. Self-play now balanced.",
+    "parameters": {
+      "cycles": 10,
+      "games": 100,
+      "evalGames": 100,
+      "iterations": 30,
+      "learningRate": 0.1,
+      "exploration": 0.3,
+      "opponentMix": "network",
+      "selfPlayMode": "network",
+      "enableClusterReward": false,
+      "gradientIsolation": false,
+      "startFrom": "exp19_fresh.json"
+    },
+    "changes": "Starting from exp19_fresh.json. Self-play now balanced (50/50 P1/P2 wins).",
+    "bugsFixed": [],
+    "result": { "startWinRate": 80.0, "endWinRate": 91.0, "improvement": 11.0, "peakWinRate": 92.0 }
   }
 ]
