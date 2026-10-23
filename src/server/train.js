@@ -851,14 +851,14 @@ async function main() {
       selfPlay: {
         games: opts.games,
         wins: selfPlayWins,
-        winsByOpponent: opts.opponentMix !== 'network' && opts.opponentMix !== 'random' ? winsByOpponent : undefined,
-        opponentTypeCounts: opts.opponentMix !== 'network' && opts.opponentMix !== 'random' ? opponentTypeCounts : undefined,
+        winsByOpponent,
+        opponentTypeCounts,
         avgMoves: selfPlayMoves / opts.games,
         scores: {
           p1: { median: p1Median, variance: p1Variance, min: p1Min, max: p1Max },
           p2: { median: p2Median, variance: p2Variance, min: p2Min, max: p2Max },
         },
-        scoresByOpponent: opts.opponentMix !== 'network' && opts.opponentMix !== 'random' ? {
+        scoresByOpponent: {
           network: {
             p1: { median: computeMedian(scoresByOpponent.network[1]), max: Math.max(...(scoresByOpponent.network[1].length ? scoresByOpponent.network[1] : [0])) },
             p2: { median: computeMedian(scoresByOpponent.network[2]), max: Math.max(...(scoresByOpponent.network[2].length ? scoresByOpponent.network[2] : [0])) },
@@ -871,7 +871,7 @@ async function main() {
             p1: { median: computeMedian(scoresByOpponent.random[1]), max: Math.max(...(scoresByOpponent.random[1].length ? scoresByOpponent.random[1] : [0])) },
             p2: { median: computeMedian(scoresByOpponent.random[2]), max: Math.max(...(scoresByOpponent.random[2].length ? scoresByOpponent.random[2] : [0])) },
           },
-        } : undefined,
+        },
         openingDiversity,
         boardDiversity,
         samplesGenerated,

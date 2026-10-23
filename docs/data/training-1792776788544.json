@@ -43,7 +43,61 @@
         "openingDiversity": 6.4038561897747375,
         "boardDiversity": 1.9520619994335835,
         "samplesGenerated": 15187,
-        "durationMs": 25583
+        "durationMs": 25583,
+        "winsByOpponent": {
+          "network": {
+            "1": 48,
+            "2": 49,
+            "draws": 3
+          },
+          "heuristic": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          },
+          "random": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          }
+        },
+        "opponentTypeCounts": {
+          "network": 100,
+          "heuristic": 0,
+          "random": 0
+        },
+        "scoresByOpponent": {
+          "network": {
+            "p1": {
+              "median": 59,
+              "max": 113
+            },
+            "p2": {
+              "median": 52.5,
+              "max": 110
+            }
+          },
+          "heuristic": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          },
+          "random": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          }
+        }
       },
       "training": {
         "iterations": 30,
@@ -157,7 +211,61 @@
         "openingDiversity": 6.396307314753102,
         "boardDiversity": 1.9406210366682404,
         "samplesGenerated": 15409,
-        "durationMs": 27525
+        "durationMs": 27525,
+        "winsByOpponent": {
+          "network": {
+            "1": 48,
+            "2": 50,
+            "draws": 2
+          },
+          "heuristic": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          },
+          "random": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          }
+        },
+        "opponentTypeCounts": {
+          "network": 100,
+          "heuristic": 0,
+          "random": 0
+        },
+        "scoresByOpponent": {
+          "network": {
+            "p1": {
+              "median": 56.5,
+              "max": 102
+            },
+            "p2": {
+              "median": 58,
+              "max": 110
+            }
+          },
+          "heuristic": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          },
+          "random": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          }
+        }
       },
       "training": {
         "iterations": 30,
@@ -271,7 +379,61 @@
         "openingDiversity": 6.4038561897747375,
         "boardDiversity": 1.938221153594585,
         "samplesGenerated": 15312,
-        "durationMs": 25996
+        "durationMs": 25996,
+        "winsByOpponent": {
+          "network": {
+            "1": 50,
+            "2": 49,
+            "draws": 1
+          },
+          "heuristic": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          },
+          "random": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          }
+        },
+        "opponentTypeCounts": {
+          "network": 100,
+          "heuristic": 0,
+          "random": 0
+        },
+        "scoresByOpponent": {
+          "network": {
+            "p1": {
+              "median": 60,
+              "max": 109
+            },
+            "p2": {
+              "median": 58,
+              "max": 102
+            }
+          },
+          "heuristic": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          },
+          "random": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          }
+        }
       },
       "training": {
         "iterations": 30,
@@ -385,7 +547,61 @@
         "openingDiversity": 6.376307314753102,
         "boardDiversity": 1.943351317798911,
         "samplesGenerated": 15250,
-        "durationMs": 26015
+        "durationMs": 26015,
+        "winsByOpponent": {
+          "network": {
+            "1": 50,
+            "2": 50,
+            "draws": 0
+          },
+          "heuristic": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          },
+          "random": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          }
+        },
+        "opponentTypeCounts": {
+          "network": 100,
+          "heuristic": 0,
+          "random": 0
+        },
+        "scoresByOpponent": {
+          "network": {
+            "p1": {
+              "median": 56.5,
+              "max": 114
+            },
+            "p2": {
+              "median": 62,
+              "max": 99
+            }
+          },
+          "heuristic": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          },
+          "random": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          }
+        }
       },
       "training": {
         "iterations": 30,
@@ -499,7 +715,61 @@
         "openingDiversity": 6.436307314753103,
         "boardDiversity": 1.9397080789438617,
         "samplesGenerated": 15245,
-        "durationMs": 25151
+        "durationMs": 25151,
+        "winsByOpponent": {
+          "network": {
+            "1": 51,
+            "2": 47,
+            "draws": 2
+          },
+          "heuristic": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          },
+          "random": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          }
+        },
+        "opponentTypeCounts": {
+          "network": 100,
+          "heuristic": 0,
+          "random": 0
+        },
+        "scoresByOpponent": {
+          "network": {
+            "p1": {
+              "median": 59,
+              "max": 107
+            },
+            "p2": {
+              "median": 57,
+              "max": 105
+            }
+          },
+          "heuristic": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          },
+          "random": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          }
+        }
       },
       "training": {
         "iterations": 30,
@@ -613,7 +883,61 @@
         "openingDiversity": 6.376307314753102,
         "boardDiversity": 1.9378308460546227,
         "samplesGenerated": 15257,
-        "durationMs": 26626
+        "durationMs": 26626,
+        "winsByOpponent": {
+          "network": {
+            "1": 51,
+            "2": 47,
+            "draws": 2
+          },
+          "heuristic": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          },
+          "random": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          }
+        },
+        "opponentTypeCounts": {
+          "network": 100,
+          "heuristic": 0,
+          "random": 0
+        },
+        "scoresByOpponent": {
+          "network": {
+            "p1": {
+              "median": 61,
+              "max": 105
+            },
+            "p2": {
+              "median": 61.5,
+              "max": 106
+            }
+          },
+          "heuristic": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          },
+          "random": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          }
+        }
       },
       "training": {
         "iterations": 30,
@@ -727,7 +1051,61 @@
         "openingDiversity": 6.5238561897747385,
         "boardDiversity": 1.943062577392887,
         "samplesGenerated": 15254,
-        "durationMs": 26164
+        "durationMs": 26164,
+        "winsByOpponent": {
+          "network": {
+            "1": 55,
+            "2": 44,
+            "draws": 1
+          },
+          "heuristic": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          },
+          "random": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          }
+        },
+        "opponentTypeCounts": {
+          "network": 100,
+          "heuristic": 0,
+          "random": 0
+        },
+        "scoresByOpponent": {
+          "network": {
+            "p1": {
+              "median": 59,
+              "max": 106
+            },
+            "p2": {
+              "median": 57.5,
+              "max": 107
+            }
+          },
+          "heuristic": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          },
+          "random": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          }
+        }
       },
       "training": {
         "iterations": 30,
@@ -841,7 +1219,61 @@
         "openingDiversity": 6.463856189774737,
         "boardDiversity": 1.947357353862473,
         "samplesGenerated": 15329,
-        "durationMs": 25898
+        "durationMs": 25898,
+        "winsByOpponent": {
+          "network": {
+            "1": 61,
+            "2": 39,
+            "draws": 0
+          },
+          "heuristic": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          },
+          "random": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          }
+        },
+        "opponentTypeCounts": {
+          "network": 100,
+          "heuristic": 0,
+          "random": 0
+        },
+        "scoresByOpponent": {
+          "network": {
+            "p1": {
+              "median": 61,
+              "max": 106
+            },
+            "p2": {
+              "median": 56,
+              "max": 110
+            }
+          },
+          "heuristic": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          },
+          "random": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          }
+        }
       },
       "training": {
         "iterations": 30,
@@ -955,7 +1387,61 @@
         "openingDiversity": 6.4438561897747375,
         "boardDiversity": 1.9449399093756115,
         "samplesGenerated": 15344,
-        "durationMs": 26603
+        "durationMs": 26603,
+        "winsByOpponent": {
+          "network": {
+            "1": 49,
+            "2": 51,
+            "draws": 0
+          },
+          "heuristic": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          },
+          "random": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          }
+        },
+        "opponentTypeCounts": {
+          "network": 100,
+          "heuristic": 0,
+          "random": 0
+        },
+        "scoresByOpponent": {
+          "network": {
+            "p1": {
+              "median": 63,
+              "max": 111
+            },
+            "p2": {
+              "median": 60,
+              "max": 101
+            }
+          },
+          "heuristic": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          },
+          "random": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          }
+        }
       },
       "training": {
         "iterations": 30,
@@ -1069,7 +1555,61 @@
         "openingDiversity": 6.436307314753103,
         "boardDiversity": 1.9461976047563476,
         "samplesGenerated": 15339,
-        "durationMs": 26408
+        "durationMs": 26408,
+        "winsByOpponent": {
+          "network": {
+            "1": 61,
+            "2": 38,
+            "draws": 1
+          },
+          "heuristic": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          },
+          "random": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          }
+        },
+        "opponentTypeCounts": {
+          "network": 100,
+          "heuristic": 0,
+          "random": 0
+        },
+        "scoresByOpponent": {
+          "network": {
+            "p1": {
+              "median": 63,
+              "max": 107
+            },
+            "p2": {
+              "median": 54.5,
+              "max": 103
+            }
+          },
+          "heuristic": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          },
+          "random": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          }
+        }
       },
       "training": {
         "iterations": 30,
@@ -1183,7 +1723,61 @@
         "openingDiversity": 6.396307314753103,
         "boardDiversity": 1.9452201661446518,
         "samplesGenerated": 15182,
-        "durationMs": 26285
+        "durationMs": 26285,
+        "winsByOpponent": {
+          "network": {
+            "1": 44,
+            "2": 56,
+            "draws": 0
+          },
+          "heuristic": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          },
+          "random": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          }
+        },
+        "opponentTypeCounts": {
+          "network": 100,
+          "heuristic": 0,
+          "random": 0
+        },
+        "scoresByOpponent": {
+          "network": {
+            "p1": {
+              "median": 60,
+              "max": 115
+            },
+            "p2": {
+              "median": 60,
+              "max": 101
+            }
+          },
+          "heuristic": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          },
+          "random": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          }
+        }
       },
       "training": {
         "iterations": 30,
@@ -1297,7 +1891,61 @@
         "openingDiversity": 6.436307314753103,
         "boardDiversity": 1.9503544166303484,
         "samplesGenerated": 15221,
-        "durationMs": 26519
+        "durationMs": 26519,
+        "winsByOpponent": {
+          "network": {
+            "1": 52,
+            "2": 47,
+            "draws": 1
+          },
+          "heuristic": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          },
+          "random": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          }
+        },
+        "opponentTypeCounts": {
+          "network": 100,
+          "heuristic": 0,
+          "random": 0
+        },
+        "scoresByOpponent": {
+          "network": {
+            "p1": {
+              "median": 62.5,
+              "max": 114
+            },
+            "p2": {
+              "median": 56.5,
+              "max": 98
+            }
+          },
+          "heuristic": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          },
+          "random": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          }
+        }
       },
       "training": {
         "iterations": 30,
@@ -1411,7 +2059,61 @@
         "openingDiversity": 6.436307314753103,
         "boardDiversity": 1.9457092511909815,
         "samplesGenerated": 15247,
-        "durationMs": 26592
+        "durationMs": 26592,
+        "winsByOpponent": {
+          "network": {
+            "1": 61,
+            "2": 37,
+            "draws": 2
+          },
+          "heuristic": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          },
+          "random": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          }
+        },
+        "opponentTypeCounts": {
+          "network": 100,
+          "heuristic": 0,
+          "random": 0
+        },
+        "scoresByOpponent": {
+          "network": {
+            "p1": {
+              "median": 64.5,
+              "max": 114
+            },
+            "p2": {
+              "median": 53,
+              "max": 107
+            }
+          },
+          "heuristic": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          },
+          "random": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          }
+        }
       },
       "training": {
         "iterations": 30,
@@ -1525,7 +2227,61 @@
         "openingDiversity": 6.516307314753104,
         "boardDiversity": 1.944584945122879,
         "samplesGenerated": 15283,
-        "durationMs": 26570
+        "durationMs": 26570,
+        "winsByOpponent": {
+          "network": {
+            "1": 55,
+            "2": 45,
+            "draws": 0
+          },
+          "heuristic": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          },
+          "random": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          }
+        },
+        "opponentTypeCounts": {
+          "network": 100,
+          "heuristic": 0,
+          "random": 0
+        },
+        "scoresByOpponent": {
+          "network": {
+            "p1": {
+              "median": 57,
+              "max": 114
+            },
+            "p2": {
+              "median": 54.5,
+              "max": 100
+            }
+          },
+          "heuristic": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          },
+          "random": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          }
+        }
       },
       "training": {
         "iterations": 30,
@@ -1639,7 +2395,61 @@
         "openingDiversity": 6.381209564709833,
         "boardDiversity": 1.9445839152691005,
         "samplesGenerated": 15208,
-        "durationMs": 26624
+        "durationMs": 26624,
+        "winsByOpponent": {
+          "network": {
+            "1": 49,
+            "2": 51,
+            "draws": 0
+          },
+          "heuristic": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          },
+          "random": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          }
+        },
+        "opponentTypeCounts": {
+          "network": 100,
+          "heuristic": 0,
+          "random": 0
+        },
+        "scoresByOpponent": {
+          "network": {
+            "p1": {
+              "median": 57,
+              "max": 119
+            },
+            "p2": {
+              "median": 58.5,
+              "max": 104
+            }
+          },
+          "heuristic": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          },
+          "random": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          }
+        }
       },
       "training": {
         "iterations": 30,
@@ -1753,7 +2563,61 @@
         "openingDiversity": 6.388758439731468,
         "boardDiversity": 1.9454669143914287,
         "samplesGenerated": 15201,
-        "durationMs": 26362
+        "durationMs": 26362,
+        "winsByOpponent": {
+          "network": {
+            "1": 54,
+            "2": 46,
+            "draws": 0
+          },
+          "heuristic": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          },
+          "random": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          }
+        },
+        "opponentTypeCounts": {
+          "network": 100,
+          "heuristic": 0,
+          "random": 0
+        },
+        "scoresByOpponent": {
+          "network": {
+            "p1": {
+              "median": 57,
+              "max": 105
+            },
+            "p2": {
+              "median": 60.5,
+              "max": 104
+            }
+          },
+          "heuristic": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          },
+          "random": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          }
+        }
       },
       "training": {
         "iterations": 30,
@@ -1867,7 +2731,61 @@
         "openingDiversity": 6.4438561897747375,
         "boardDiversity": 1.941741137193003,
         "samplesGenerated": 15262,
-        "durationMs": 26201
+        "durationMs": 26201,
+        "winsByOpponent": {
+          "network": {
+            "1": 58,
+            "2": 42,
+            "draws": 0
+          },
+          "heuristic": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          },
+          "random": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          }
+        },
+        "opponentTypeCounts": {
+          "network": 100,
+          "heuristic": 0,
+          "random": 0
+        },
+        "scoresByOpponent": {
+          "network": {
+            "p1": {
+              "median": 62.5,
+              "max": 110
+            },
+            "p2": {
+              "median": 56,
+              "max": 109
+            }
+          },
+          "heuristic": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          },
+          "random": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          }
+        }
       },
       "training": {
         "iterations": 30,
@@ -1981,7 +2899,61 @@
         "openingDiversity": 6.4163073147531025,
         "boardDiversity": 1.9480612045971262,
         "samplesGenerated": 15193,
-        "durationMs": 26406
+        "durationMs": 26406,
+        "winsByOpponent": {
+          "network": {
+            "1": 49,
+            "2": 50,
+            "draws": 1
+          },
+          "heuristic": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          },
+          "random": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          }
+        },
+        "opponentTypeCounts": {
+          "network": 100,
+          "heuristic": 0,
+          "random": 0
+        },
+        "scoresByOpponent": {
+          "network": {
+            "p1": {
+              "median": 58.5,
+              "max": 111
+            },
+            "p2": {
+              "median": 61,
+              "max": 96
+            }
+          },
+          "heuristic": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          },
+          "random": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          }
+        }
       },
       "training": {
         "iterations": 30,
@@ -2095,7 +3067,61 @@
         "openingDiversity": 6.288758439731467,
         "boardDiversity": 1.9429179988845338,
         "samplesGenerated": 15227,
-        "durationMs": 26393
+        "durationMs": 26393,
+        "winsByOpponent": {
+          "network": {
+            "1": 45,
+            "2": 53,
+            "draws": 2
+          },
+          "heuristic": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          },
+          "random": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          }
+        },
+        "opponentTypeCounts": {
+          "network": 100,
+          "heuristic": 0,
+          "random": 0
+        },
+        "scoresByOpponent": {
+          "network": {
+            "p1": {
+              "median": 53.5,
+              "max": 104
+            },
+            "p2": {
+              "median": 61,
+              "max": 117
+            }
+          },
+          "heuristic": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          },
+          "random": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          }
+        }
       },
       "training": {
         "iterations": 30,
@@ -2209,7 +3235,61 @@
         "openingDiversity": 6.503856189774738,
         "boardDiversity": 1.9386805622692689,
         "samplesGenerated": 15279,
-        "durationMs": 26046
+        "durationMs": 26046,
+        "winsByOpponent": {
+          "network": {
+            "1": 54,
+            "2": 45,
+            "draws": 1
+          },
+          "heuristic": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          },
+          "random": {
+            "1": 0,
+            "2": 0,
+            "draws": 0
+          }
+        },
+        "opponentTypeCounts": {
+          "network": 100,
+          "heuristic": 0,
+          "random": 0
+        },
+        "scoresByOpponent": {
+          "network": {
+            "p1": {
+              "median": 58,
+              "max": 101
+            },
+            "p2": {
+              "median": 58,
+              "max": 106
+            }
+          },
+          "heuristic": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          },
+          "random": {
+            "p1": {
+              "median": 0,
+              "max": 0
+            },
+            "p2": {
+              "median": 0,
+              "max": 0
+            }
+          }
+        }
       },
       "training": {
         "iterations": 30,
