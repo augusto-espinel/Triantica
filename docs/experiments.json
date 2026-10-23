@@ -308,7 +308,7 @@
     "id": "exp22",
     "name": "Exp 22 — Cluster Reward (Clean)",
     "date": "2026-10-23",
-    "dataFile": null,
+    "dataFile": "training-1792776788544.json",
     "summary": "Test cluster reward with TD(λ) eligibility traces in a bug-free environment. Previous attempts (exp17/17b) were masked by normalization and perspective bugs.",
     "parameters": {
       "cycles": 20,
@@ -327,6 +327,11 @@
     },
     "changes": "Same as exp20 (our best: 91% vs Random) but with --enable-cluster-reward=true. Pure network self-play, no heuristic opponent.",
     "bugsFixed": [],
-    "result": null
+    "result": {
+      "startWinRate": 85,
+      "endWinRate": 83,
+      "improvement": -2,
+      "peakWinRate": 91
+    }
   }
 ]
