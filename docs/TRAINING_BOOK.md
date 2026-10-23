@@ -1472,3 +1472,54 @@ Data was merged into `docs/data/exp21_merged.json` with full 15-cycle view.
 
 All experiments 1-17b trained with at least one of these bugs. Exp 19/20 are the first clean training runs.
 
+
+## Experiment 22 — Cluster Reward Clean Test (2026-10-23)
+
+**Started:** 2026-10-23 16:50
+**Completed:** 2026-10-23 19:33
+**Duration:** ~2.7 hours
+**Data:** `docs/data/training-1792776788544.json`
+
+### Hypothesis
+Cluster reward (TD(λ) eligibility traces) has never run in a bug-free environment. Exp17/17b both had normalization and perspective bugs. Running cluster reward on top of exp20 (91% baseline) would properly test whether TD(λ) can improve strategic play.
+
+### Configuration
+- Same as exp20 but `--enable-cluster-reward true`
+- Pure network self-play (no heuristic/random opponents)
+- Starting from exp20 checkpoint
+
+### Results
+| Metric | Exp 20 (no cluster) | Exp 22 (cluster) |
+|--------|---------------------|------------------|
+| vs Random (mean) | **91%** | 84% |
+| vs Random (peak) | 91% | 91% |
+| vs Random (min) | 88% | 75% |
+| Volatility | Low (88-91%) | **High (75-91%)** |
+| Final Error | 0.0030 | 0.0035 |
+
+### Verdict: **MIXED** ⚠️
+Cluster reward did NOT improve over exp20. Key observations:
+1. **Mean win rate dropped 7pp** (91% → 84%)
+2. **Volatility increased dramatically** — ±8pp swings vs exp20's ±2pp
+3. **Error plateau worse** — 0.0035 vs 0.0030 (with cluster reward on)
+4. **Same peak** — both hit 91%, but exp22 couldn't sustain it
+5. **No convergence trend** across 20 cycles
+
+### Why Cluster Reward Hurt
+TD(λ) eligibility traces assign credit to moves that contributed to the final largest cluster. This creates a **second training signal** that can conflict with immediate rewards:
+- Immediate reward: "claim this enclosure now" (+0.3)
+- Cluster reward: "this move contributed to your final cluster" (delayed credit)
+
+The delayed credit introduces noise because:
+- The largest cluster is a stochastic outcome (depends on opponent moves)
+- The same opening move may or may not contribute to the final cluster
+- This creates inconsistent rewards for the same board state → higher variance
+
+### Conclusion
+Cluster reward adds **noise**, not signal. The TD(λ) eligibility trace creates a confounding training signal that doesn't improve strategic play. The immediate reward structure is sufficient for the current network architecture.
+
+### Next Steps
+Since both training signal modifications (exp21 distillation, exp22 cluster reward) failed, the path forward is clearly **architectural**:
+1. **Value Head** — predict position value, not just immediate reward
+2. **Canonical Board Encoding** — rotation/reflection invariance (8× data efficiency)
+3. **Deeper Network** — [256, 128] for strategic depth
