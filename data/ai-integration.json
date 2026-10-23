@@ -1,0 +1,21 @@
+{
+  "aiVsRandom": {
+    "p1Wins": 28,
+    "p2Wins": 22,
+    "draws": 0,
+    "aiWinRate": 0.56
+  },
+  "randomVsAi": {
+    "p1Wins": 24,
+    "p2Wins": 23,
+    "draws": 3,
+    "aiWinRate": 0.46
+  },
+  "aiVsAi": {
+    "p1Wins": 6,
+    "p2Wins": 4,
+    "draws": 0
+  },
+  "overallAIWinRate": 0.51,
+  "networkLoaded": true
+}
