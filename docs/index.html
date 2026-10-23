@@ -206,18 +206,42 @@
       
       if (data?.cycles) {
         const labels = data.cycles.map(c => `C${c.cycle}`);
-        const winRates = data.cycles.map(c => c.evaluation?.aiWinRate ? (c.evaluation.aiWinRate * 100) : null);
-        const errors = data.cycles.map(c => c.training?.finalError);
+        
+        // Evaluation win rate (vs random, post-training)
+        const evalWinRates = data.cycles.map(c => c.evaluation?.aiWinRate ? (c.evaluation.aiWinRate * 100) : null);
+        
+        // Self-play win rates
+        const selfPlayVsRandom = data.cycles.map(c => {
+          const rw = c.selfPlay?.winsByOpponent?.random;
+          const rc = c.selfPlay?.opponentTypeCounts?.random || 0;
+          return (rw && rc) ? (rw['1'] / rc * 100) : null;
+        });
+        const selfPlayVsNetwork = data.cycles.map(c => {
+          const nw = c.selfPlay?.winsByOpponent?.network;
+          const nc = c.selfPlay?.opponentTypeCounts?.network || 0;
+          return (nw && nc) ? (nw['1'] / nc * 100) : null;
+        });
         
         charts.winrate = new Chart(document.getElementById('chart-winrate'), {
           type: 'line',
-          data: { labels, datasets: [{ label: 'Win Rate vs Random (%)', data: winRates, borderColor: '#3fb950', backgroundColor: 'rgba(63,185,80,0.1)', fill: true, tension: 0.3 }] },
-          options: { ...opts, scales: { ...opts.scales, y: { ...opts.scales.y, min: 60, max: 100 } } }
+          data: { labels, datasets: [
+            { label: 'vs Random (eval, %)', data: evalWinRates, borderColor: '#3fb950', backgroundColor: 'rgba(63,185,80,0.1)', fill: true, tension: 0.3 },
+            { label: 'vs Random (self-play, %)', data: selfPlayVsRandom, borderColor: '#58a6ff', backgroundColor: 'transparent', borderDash: [5,3], tension: 0.3 },
+            { label: 'vs Network (self-play, %)', data: selfPlayVsNetwork, borderColor: '#d29922', backgroundColor: 'transparent', borderDash: [5,3], tension: 0.3 }
+          ] },
+          options: { ...opts, scales: { ...opts.scales, y: { ...opts.scales.y, min: 0, max: 100 } } }
         });
+        
+        // Error: initial (start of cycle) and final (end of cycle)
+        const initialErrors = data.cycles.map(c => c.training?.initialError);
+        const finalErrors = data.cycles.map(c => c.training?.finalError);
         
         charts.error = new Chart(document.getElementById('chart-error'), {
           type: 'line',
-          data: { labels, datasets: [{ label: 'Final Training Error', data: errors, borderColor: '#bc8cff', backgroundColor: 'rgba(188,140,255,0.1)', fill: true, tension: 0.3 }] },
+          data: { labels, datasets: [
+            { label: 'Initial Error (cycle start)', data: initialErrors, borderColor: '#f85149', backgroundColor: 'transparent', borderDash: [5,3], tension: 0.3 },
+            { label: 'Final Error (cycle end)', data: finalErrors, borderColor: '#3fb950', backgroundColor: 'rgba(63,185,80,0.1)', fill: true, tension: 0.3 }
+          ] },
           options: opts
         });
       }
@@ -275,7 +299,7 @@
         const data = cycleData[exp.id];
         const winRates = data?.cycles?.map(c => c.evaluation?.aiWinRate ? (c.evaluation.aiWinRate * 100) : null) || [];
         return {
-          label: exp.name,
+          label: exp.name + ' (eval)',
           data: winRates,
           borderColor: PALETTE[i % PALETTE.length],
           backgroundColor: 'transparent',
@@ -283,29 +307,57 @@
         };
       });
       
+      // Also add self-play vs network as dashed lines
+      const spDatasets = exps.map((exp, i) => {
+        const data = cycleData[exp.id];
+        const rates = data?.cycles?.map(c => {
+          const nw = c.selfPlay?.winsByOpponent?.network;
+          const nc = c.selfPlay?.opponentTypeCounts?.network || 0;
+          return (nw && nc) ? (nw['1'] / nc * 100) : null;
+        }) || [];
+        const hasNetwork = rates.some(r => r !== null);
+        return {
+          label: exp.name + ' (vs net)',
+          data: hasNetwork ? rates : [],
+          borderColor: PALETTE[i % PALETTE.length],
+          backgroundColor: 'transparent',
+          borderDash: [5,3],
+          tension: 0.3
+        };
+      });
+      
       charts.compareWinrate = new Chart(document.getElementById('chart-compare-winrate'), {
         type: 'line',
-        data: { labels, datasets },
+        data: { labels, datasets: [...datasets, ...spDatasets] },
         options: {
           responsive: true, maintainAspectRatio: false,
           plugins: { legend: { labels: { color: '#c9d1d9' } } },
           scales: {
             x: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } },
-            y: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' }, min: 60, max: 100 }
+            y: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' }, min: 0, max: 100 }
           }
         }
       });
       
-      const errorDatasets = exps.map((exp, i) => {
+      const errorDatasets = exps.flatMap((exp, i) => {
         const data = cycleData[exp.id];
-        const errors = data?.cycles?.map(c => c.training?.finalError) || [];
-        return {
-          label: exp.name,
-          data: errors,
-          borderColor: PALETTE[i % PALETTE.length],
-          backgroundColor: 'transparent',
-          tension: 0.3
-        };
+        return [
+          {
+            label: exp.name + ' (initial)',
+            data: data?.cycles?.map(c => c.training?.initialError) || [],
+            borderColor: PALETTE[i % PALETTE.length],
+            backgroundColor: 'transparent',
+            borderDash: [5,3],
+            tension: 0.3
+          },
+          {
+            label: exp.name + ' (final)',
+            data: data?.cycles?.map(c => c.training?.finalError) || [],
+            borderColor: PALETTE[i % PALETTE.length],
+            backgroundColor: 'transparent',
+            tension: 0.3
+          }
+        ];
       });
       
       charts.compareError = new Chart(document.getElementById('chart-compare-error'), {
