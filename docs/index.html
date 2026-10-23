@@ -161,9 +161,9 @@
     
     function renderOverview() {
       document.getElementById('exp-cards').innerHTML = experiments.map(exp => {
-        const r = exp.result;
-        const wrClass = r.peakWinRate >= 85 ? 'good' : r.peakWinRate >= 70 ? 'mid' : 'bad';
-        const deltaClass = r.improvement >= 0 ? 'positive' : 'negative';
+        const r = exp.result || {};
+        const wrClass = (r.peakWinRate || 0) >= 85 ? 'good' : (r.peakWinRate || 0) >= 70 ? 'mid' : 'bad';
+        const deltaClass = (r.improvement || 0) >= 0 ? 'positive' : 'negative';
         const d = cycleData[exp.id];
         const lastCycle = d?.cycles?.slice(-1)[0];
         const hWins = lastCycle?.selfPlay?.winsByOpponent?.heuristic;
@@ -183,8 +183,8 @@
           <h3>${exp.name}</h3>
           <div class="date">${exp.date}</div>
           ${oppMix ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px">${oppMix}</div>` : ''}
-          <div class="win-rate ${wrClass}">${r.peakWinRate}%</div>
-          <div class="delta ${deltaClass}">${r.improvement>=0?'+':''}${r.improvement}pp</div>
+          <div class="win-rate ${wrClass}">${r.peakWinRate ?? '—'}%</div>
+          <div class="delta ${deltaClass}">${r.improvement != null ? (r.improvement>=0?'+':'')+r.improvement+'pp' : 'N/A'}</div>
         </div>`;
       }).join('');
     }
