@@ -125,13 +125,13 @@
     const PALETTE = ['#58a6ff','#3fb950','#f85149','#d29922','#bc8cff','#db6d28','#79c0ff','#56d364'];
     
     async function init() {
-      const resp = await fetch('experiments.json');
+      const resp = await fetch('experiments.json?_' + Date.now());
       experiments = await resp.json();
       
       for (const exp of experiments) {
         if (exp.dataFile) {
           try {
-            const r = await fetch(`data/${exp.dataFile}`);
+            const r = await fetch(`data/${exp.dataFile}?_` + Date.now());
             cycleData[exp.id] = await r.json();
           } catch(e) { console.warn(`No cycle data for ${exp.id}`); }
         }
@@ -212,8 +212,9 @@
                   y: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } } }
       };
       
+      const labels = data?.cycles ? data.cycles.map(c => `C${c.cycle}`) : [];
+      
       if (data?.cycles) {
-        const labels = data.cycles.map(c => `C${c.cycle}`);
         
         // Evaluation win rate (vs random, post-training)
         const evalWinRates = data.cycles.map(c => c.evaluation?.aiWinRate ? (c.evaluation.aiWinRate * 100) : null);
@@ -255,11 +256,11 @@
       }
       
       // Heuristic chart — extract self-play wins vs heuristic opponent per cycle
-      const heuristicWinRates = data.cycles.map(c => {
+      const heuristicWinRates = data?.cycles?.map(c => {
         const hw = c.selfPlay?.winsByOpponent?.heuristic;
         const hCount = c.selfPlay?.opponentTypeCounts?.heuristic || 1;
         return hw ? ((hw['1'] / hCount) * 100) : null;
-      });
+      }) || [];
       charts.heuristic = new Chart(document.getElementById('chart-heuristic'), {
         type: 'line',
         data: { labels, datasets: [{ label: 'Win Rate vs Heuristic (%)', data: heuristicWinRates, borderColor: '#f85149', backgroundColor: 'rgba(248,81,73,0.1)', fill: true, tension: 0.3 }] },
@@ -272,7 +273,7 @@
       const oppLabels = { network: 'Network', heuristic: 'Heuristic', random: 'Random' };
       const oppDatasets = oppTypes.map(type => ({
         label: oppLabels[type],
-        data: data.cycles.map(c => c.selfPlay?.opponentTypeCounts?.[type] || 0),
+        data: data?.cycles?.map(c => c.selfPlay?.opponentTypeCounts?.[type] || 0) || [],
         backgroundColor: oppColors[type],
         borderRadius: 2
       }));
