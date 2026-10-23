@@ -1,0 +1,96 @@
+{
+  "startedAt": "2026-10-21T03:04:50.353Z",
+  "options": {
+    "cycles": 1,
+    "games": 50,
+    "evalGames": 200,
+    "iterations": 1,
+    "learningRate": 0.001,
+    "exploration": 0.05,
+    "selfPlayMode": "network",
+    "startFrom": "experiments/data/exp12b_network.json",
+    "output": "experiments/data/exp13b_evaltest.json",
+    "saveEvery": 5
+  },
+  "cycles": [
+    {
+      "cycle": 1,
+      "selfPlay": {
+        "games": 50,
+        "wins": {
+          "1": 35,
+          "2": 15,
+          "draws": 0
+        },
+        "avgMoves": 166.88,
+        "scores": {
+          "p1": {
+            "median": 50,
+            "variance": 308.09,
+            "min": 19,
+            "max": 92
+          },
+          "p2": {
+            "median": 34,
+            "variance": 249.47999999999996,
+            "min": 14,
+            "max": 71
+          }
+        },
+        "openingDiversity": 0.28229218908241477,
+        "boardDiversity": 1.8305338525669541,
+        "samplesGenerated": 4186,
+        "durationMs": 8755
+      },
+      "training": {
+        "iterations": 1,
+        "learningRate": 0.001,
+        "samplesUsed": 6279,
+        "replaySamplesUsed": 2093,
+        "newSamplesUsed": 4186,
+        "replayBufferSize": 4186,
+        "initialError": 0.001965986687356201,
+        "finalError": 0.001744481349484974,
+        "errorSnapshots": [
+          {
+            "iteration": 0,
+            "error": 0.001965986687356201
+          },
+          {
+            "iteration": 1,
+            "error": 0.001744481349484974
+          }
+        ],
+        "errorReductionHalf": null,
+        "durationMs": 5785
+      },
+      "evaluation": {
+        "games": 200,
+        "opponent": "random",
+        "aiWins": 150,
+        "opponentWins": 47,
+        "draws": 3,
+        "scores": {
+          "ai": {
+            "median": 38,
+            "variance": 502.26977499999964
+          },
+          "opponent": {
+            "median": 37,
+            "variance": 390.60360000000003
+          },
+          "gap": 1
+        },
+        "avgScores": {
+          "1": 43.515,
+          "2": 41.92
+        },
+        "aiWinRate": 0.75,
+        "avgMoves": 167.255,
+        "durationMs": 10374
+      },
+      "totalDurationMs": 24920
+    }
+  ],
+  "completedAt": "2026-10-21T03:05:15.294Z"
+}
