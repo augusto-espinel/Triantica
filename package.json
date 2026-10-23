@@ -14,6 +14,8 @@
     "test:ai": "node tests/test_ai_integration.js"
   },
   "dependencies": {
+    "@tensorflow/tfjs": "^4.22.0",
+    "@tensorflow/tfjs-node": "^4.22.0",
     "brain.js": "^2.0.0-beta.23",
     "express": "^4.18.2",
     "phaser": "^3.60.0"
