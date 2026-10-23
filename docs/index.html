@@ -295,29 +295,52 @@
         }
       });
       
-      // Scores per cycle vs each opponent type
-      const scoreTypes = ['network', 'heuristic', 'random'];
-      const scoreColors = { network: '#d29922', heuristic: '#f85149', random: '#58a6ff' };
-      const medianScores = scoreTypes.flatMap(type => [
-        {
-          label: `${type[0].toUpperCase()}${type.slice(1)} (P1 med)`,
-          data: data.cycles.map(c => c.selfPlay?.scoresByOpponent?.[type]?.p1?.median ?? null),
-          borderColor: scoreColors[type],
-          backgroundColor: 'transparent',
-          tension: 0.3
-        },
-        {
-          label: `${type[0].toUpperCase()}${type.slice(1)} (P1 max)`,
-          data: data.cycles.map(c => c.selfPlay?.scoresByOpponent?.[type]?.p1?.max ?? null),
-          borderColor: scoreColors[type],
-          backgroundColor: 'transparent',
-          borderDash: [3,3],
-          tension: 0.3
-        }
-      ]);
+      // Scores per cycle - use scoresByOpponent if available, else fall back to aggregate scores
+      const hasScoresByOpp = data?.cycles?.[0]?.selfPlay?.scoresByOpponent;
+      let scoreDatasets;
+      if (hasScoresByOpp) {
+        const scoreTypes = ['network', 'heuristic', 'random'];
+        const scoreColors = { network: '#d29922', heuristic: '#f85149', random: '#58a6ff' };
+        scoreDatasets = scoreTypes.flatMap(type => [
+          {
+            label: `${type[0].toUpperCase()}${type.slice(1)} (P1 med)`,
+            data: data.cycles.map(c => c.selfPlay?.scoresByOpponent?.[type]?.p1?.median ?? null),
+            borderColor: scoreColors[type],
+            backgroundColor: 'transparent',
+            tension: 0.3
+          },
+          {
+            label: `${type[0].toUpperCase()}${type.slice(1)} (P1 max)`,
+            data: data.cycles.map(c => c.selfPlay?.scoresByOpponent?.[type]?.p1?.max ?? null),
+            borderColor: scoreColors[type],
+            backgroundColor: 'transparent',
+            borderDash: [3,3],
+            tension: 0.3
+          }
+        ]);
+      } else {
+        // Fallback: aggregate P1 scores
+        scoreDatasets = [
+          {
+            label: 'P1 Median',
+            data: data?.cycles?.map(c => c.selfPlay?.scores?.p1?.median ?? null) || [],
+            borderColor: '#3fb950',
+            backgroundColor: 'transparent',
+            tension: 0.3
+          },
+          {
+            label: 'P1 Max',
+            data: data?.cycles?.map(c => c.selfPlay?.scores?.p1?.max ?? null) || [],
+            borderColor: '#3fb950',
+            backgroundColor: 'transparent',
+            borderDash: [3,3],
+            tension: 0.3
+          }
+        ];
+      }
       charts.scores = new Chart(document.getElementById('chart-scores'), {
         type: 'line',
-        data: { labels, datasets: medianScores },
+        data: { labels, datasets: scoreDatasets },
         options: { ...opts, plugins: { ...opts.plugins, legend: { labels: { color: '#c9d1d9' } } } }
       });
       
