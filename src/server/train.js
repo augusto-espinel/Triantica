@@ -603,6 +603,9 @@ async function main() {
       learningRate: opts.learningRate,
       exploration: opts.exploration,
       selfPlayMode: opts.selfPlayMode,
+      opponentMix: opts.opponentMix,
+      heuristicRatio: opts.heuristicRatio,
+      randomRatio: opts.randomRatio,
       startFrom: opts.startFrom === 'fresh' || opts.startFrom === 'none' ? null : opts.startFrom,
       output: opts.output,
       saveEvery: opts.saveEvery,
@@ -655,6 +658,7 @@ async function main() {
     let finalBoards = []; // Array of { cell: { player, rotation } }
     let opponentTypeCounts = { network: 0, heuristic: 0, random: 0 };
     let winsByOpponent = { network: { 1: 0, 2: 0, draws: 0 }, heuristic: { 1: 0, 2: 0, draws: 0 }, random: { 1: 0, 2: 0, draws: 0 } };
+    let scoresByOpponent = { network: { 1: [], 2: [] }, heuristic: { 1: [], 2: [] }, random: { 1: [], 2: [] } };
 
     for (let g = 0; g < opts.games; g++) {
       // Determine opponent type for this game
@@ -694,6 +698,8 @@ async function main() {
       selfPlayMoves += result.moves;
       selfPlayScores[1].push(result.p1Score || 0);
       selfPlayScores[2].push(result.p2Score || 0);
+      scoresByOpponent[opponentType][1].push(result.p1Score || 0);
+      scoresByOpponent[opponentType][2].push(result.p2Score || 0);
       samplesGenerated += result.trainingSamplesAdded || result.moves;
 
       // Audit this game if sampled
@@ -852,6 +858,20 @@ async function main() {
           p1: { median: p1Median, variance: p1Variance, min: p1Min, max: p1Max },
           p2: { median: p2Median, variance: p2Variance, min: p2Min, max: p2Max },
         },
+        scoresByOpponent: opts.opponentMix !== 'network' && opts.opponentMix !== 'random' ? {
+          network: {
+            p1: { median: computeMedian(scoresByOpponent.network[1]), max: Math.max(...(scoresByOpponent.network[1].length ? scoresByOpponent.network[1] : [0])) },
+            p2: { median: computeMedian(scoresByOpponent.network[2]), max: Math.max(...(scoresByOpponent.network[2].length ? scoresByOpponent.network[2] : [0])) },
+          },
+          heuristic: {
+            p1: { median: computeMedian(scoresByOpponent.heuristic[1]), max: Math.max(...(scoresByOpponent.heuristic[1].length ? scoresByOpponent.heuristic[1] : [0])) },
+            p2: { median: computeMedian(scoresByOpponent.heuristic[2]), max: Math.max(...(scoresByOpponent.heuristic[2].length ? scoresByOpponent.heuristic[2] : [0])) },
+          },
+          random: {
+            p1: { median: computeMedian(scoresByOpponent.random[1]), max: Math.max(...(scoresByOpponent.random[1].length ? scoresByOpponent.random[1] : [0])) },
+            p2: { median: computeMedian(scoresByOpponent.random[2]), max: Math.max(...(scoresByOpponent.random[2].length ? scoresByOpponent.random[2] : [0])) },
+          },
+        } : undefined,
         openingDiversity,
         boardDiversity,
         samplesGenerated,
