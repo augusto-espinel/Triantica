@@ -1,0 +1,861 @@
+{
+  "startedAt": "2026-10-23T13:56:59.987Z",
+  "options": {
+    "cycles": 5,
+    "games": 100,
+    "evalGames": 100,
+    "iterations": 30,
+    "learningRate": 0.05,
+    "exploration": 0.3,
+    "selfPlayMode": "network",
+    "opponentMix": "mixed",
+    "heuristicRatio": 0.6,
+    "randomRatio": 0.1,
+    "startFrom": "docs/data/checkpoint-cycle-5.json",
+    "output": "data/exp21_learn_from_master.json",
+    "saveEvery": 5
+  },
+  "cycles": [
+    {
+      "cycle": 1,
+      "selfPlay": {
+        "games": 100,
+        "wins": {
+          "1": 27,
+          "2": 73,
+          "draws": 0
+        },
+        "winsByOpponent": {
+          "network": {
+            "1": 21,
+            "2": 8,
+            "draws": 0
+          },
+          "heuristic": {
+            "1": 0,
+            "2": 62,
+            "draws": 0
+          },
+          "random": {
+            "1": 6,
+            "2": 3,
+            "draws": 0
+          }
+        },
+        "opponentTypeCounts": {
+          "network": 29,
+          "heuristic": 62,
+          "random": 9
+        },
+        "avgMoves": 144.26,
+        "scores": {
+          "p1": {
+            "median": 19,
+            "variance": 786.3323999999997,
+            "min": 2,
+            "max": 107
+          },
+          "p2": {
+            "median": 147,
+            "variance": 3225.4323999999997,
+            "min": 7,
+            "max": 180
+          }
+        },
+        "scoresByOpponent": {
+          "network": {
+            "p1": {
+              "median": 62,
+              "max": 107
+            },
+            "p2": {
+              "median": 49,
+              "max": 85
+            }
+          },
+          "heuristic": {
+            "p1": {
+              "median": 11,
+              "max": 37
+            },
+            "p2": {
+              "median": 155,
+              "max": 180
+            }
+          },
+          "random": {
+            "p1": {
+              "median": 26,
+              "max": 44
+            },
+            "p2": {
+              "median": 21,
+              "max": 35
+            }
+          }
+        },
+        "openingDiversity": 6.103318711724634,
+        "boardDiversity": 1.7038848194697318,
+        "samplesGenerated": 13708,
+        "durationMs": 24906
+      },
+      "training": {
+        "iterations": 30,
+        "learningRate": 0.05,
+        "samplesUsed": 20562,
+        "replaySamplesUsed": 6854,
+        "newSamplesUsed": 13708,
+        "replayBufferSize": 13708,
+        "initialError": 0.012879158978526197,
+        "finalError": 0.002647766677316559,
+        "errorSnapshots": [
+          {
+            "iteration": 0,
+            "error": 0.012879158978526197
+          },
+          {
+            "iteration": 3,
+            "error": 0.004631166358714257
+          },
+          {
+            "iteration": 6,
+            "error": 0.0037648741336279447
+          },
+          {
+            "iteration": 9,
+            "error": 0.0033905575051102763
+          },
+          {
+            "iteration": 12,
+            "error": 0.0031732934314706415
+          },
+          {
+            "iteration": 15,
+            "error": 0.0030255448239035155
+          },
+          {
+            "iteration": 18,
+            "error": 0.0029152862522670133
+          },
+          {
+            "iteration": 21,
+            "error": 0.0028287210006231905
+          },
+          {
+            "iteration": 24,
+            "error": 0.00275793872867415
+          },
+          {
+            "iteration": 27,
+            "error": 0.002698544868782892
+          },
+          {
+            "iteration": 30,
+            "error": 0.002647766677316559
+          }
+        ],
+        "errorReductionHalf": 0.9630765651960884,
+        "durationMs": 417618
+      },
+      "evaluation": {
+        "games": 100,
+        "opponent": "random",
+        "aiWins": 72,
+        "opponentWins": 27,
+        "draws": 1,
+        "scores": {
+          "ai": {
+            "median": 27,
+            "variance": 233.03840000000008
+          },
+          "opponent": {
+            "median": 24,
+            "variance": 185.1075
+          },
+          "gap": 3
+        },
+        "avgScores": {
+          "1": 29.96,
+          "2": 28.45
+        },
+        "aiWinRate": 0.72,
+        "avgMoves": 165.78,
+        "durationMs": 5456
+      },
+      "totalDurationMs": 447989
+    },
+    {
+      "cycle": 2,
+      "selfPlay": {
+        "games": 100,
+        "wins": {
+          "1": 22,
+          "2": 78,
+          "draws": 0
+        },
+        "winsByOpponent": {
+          "network": {
+            "1": 16,
+            "2": 16,
+            "draws": 0
+          },
+          "heuristic": {
+            "1": 0,
+            "2": 58,
+            "draws": 0
+          },
+          "random": {
+            "1": 6,
+            "2": 4,
+            "draws": 0
+          }
+        },
+        "opponentTypeCounts": {
+          "network": 32,
+          "heuristic": 58,
+          "random": 10
+        },
+        "avgMoves": 145,
+        "scores": {
+          "p1": {
+            "median": 20,
+            "variance": 650.0196000000001,
+            "min": 2,
+            "max": 106
+          },
+          "p2": {
+            "median": 145.5,
+            "variance": 3217.251599999999,
+            "min": 10,
+            "max": 177
+          }
+        },
+        "scoresByOpponent": {
+          "network": {
+            "p1": {
+              "median": 64.5,
+              "max": 106
+            },
+            "p2": {
+              "median": 61,
+              "max": 106
+            }
+          },
+          "heuristic": {
+            "p1": {
+              "median": 10,
+              "max": 36
+            },
+            "p2": {
+              "median": 158,
+              "max": 177
+            }
+          },
+          "random": {
+            "p1": {
+              "median": 24,
+              "max": 47
+            },
+            "p2": {
+              "median": 21.5,
+              "max": 38
+            }
+          }
+        },
+        "openingDiversity": 6.075769836702998,
+        "boardDiversity": 1.7118235305599179,
+        "samplesGenerated": 13693,
+        "durationMs": 25704
+      },
+      "training": {
+        "iterations": 30,
+        "learningRate": 0.05,
+        "samplesUsed": 20539,
+        "replaySamplesUsed": 6846,
+        "newSamplesUsed": 13693,
+        "replayBufferSize": 27401,
+        "initialError": 0.012665739233418334,
+        "finalError": 0.0033373125681216737,
+        "errorSnapshots": [
+          {
+            "iteration": 0,
+            "error": 0.012665739233418334
+          },
+          {
+            "iteration": 3,
+            "error": 0.005268200949558006
+          },
+          {
+            "iteration": 6,
+            "error": 0.004417312660733111
+          },
+          {
+            "iteration": 9,
+            "error": 0.00406264476736952
+          },
+          {
+            "iteration": 12,
+            "error": 0.003852387552547637
+          },
+          {
+            "iteration": 15,
+            "error": 0.0037093619146847862
+          },
+          {
+            "iteration": 18,
+            "error": 0.0036021461976796097
+          },
+          {
+            "iteration": 21,
+            "error": 0.003517021337637726
+          },
+          {
+            "iteration": 24,
+            "error": 0.0034472470526125598
+          },
+          {
+            "iteration": 27,
+            "error": 0.0033880948146508866
+          },
+          {
+            "iteration": 30,
+            "error": 0.0033373125681216737
+          }
+        ],
+        "errorReductionHalf": 0.9601166027335349,
+        "durationMs": 415188
+      },
+      "evaluation": {
+        "games": 100,
+        "opponent": "random",
+        "aiWins": 76,
+        "opponentWins": 22,
+        "draws": 2,
+        "scores": {
+          "ai": {
+            "median": 23,
+            "variance": 285.5664
+          },
+          "opponent": {
+            "median": 24,
+            "variance": 276.3
+          },
+          "gap": -1
+        },
+        "avgScores": {
+          "1": 28.56,
+          "2": 29
+        },
+        "aiWinRate": 0.76,
+        "avgMoves": 165.52,
+        "durationMs": 5247
+      },
+      "totalDurationMs": 446146
+    },
+    {
+      "cycle": 3,
+      "selfPlay": {
+        "games": 100,
+        "wins": {
+          "1": 26,
+          "2": 74,
+          "draws": 0
+        },
+        "winsByOpponent": {
+          "network": {
+            "1": 16,
+            "2": 8,
+            "draws": 0
+          },
+          "heuristic": {
+            "1": 0,
+            "2": 62,
+            "draws": 0
+          },
+          "random": {
+            "1": 10,
+            "2": 4,
+            "draws": 0
+          }
+        },
+        "opponentTypeCounts": {
+          "network": 24,
+          "heuristic": 62,
+          "random": 14
+        },
+        "avgMoves": 145.85,
+        "scores": {
+          "p1": {
+            "median": 20,
+            "variance": 656.3800000000006,
+            "min": 2,
+            "max": 99
+          },
+          "p2": {
+            "median": 142.5,
+            "variance": 3310.436399999999,
+            "min": 8,
+            "max": 178
+          }
+        },
+        "scoresByOpponent": {
+          "network": {
+            "p1": {
+              "median": 62,
+              "max": 99
+            },
+            "p2": {
+              "median": 49,
+              "max": 85
+            }
+          },
+          "heuristic": {
+            "p1": {
+              "median": 11,
+              "max": 53
+            },
+            "p2": {
+              "median": 153.5,
+              "max": 178
+            }
+          },
+          "random": {
+            "p1": {
+              "median": 32.5,
+              "max": 84
+            },
+            "p2": {
+              "median": 18.5,
+              "max": 26
+            }
+          }
+        },
+        "openingDiversity": 5.639470570797261,
+        "boardDiversity": 1.7155344401349217,
+        "samplesGenerated": 13470,
+        "durationMs": 25757
+      },
+      "training": {
+        "iterations": 30,
+        "learningRate": 0.05,
+        "samplesUsed": 20205,
+        "replaySamplesUsed": 6735,
+        "newSamplesUsed": 13470,
+        "replayBufferSize": 40871,
+        "initialError": 0.011711162809916261,
+        "finalError": 0.0036736947828351274,
+        "errorSnapshots": [
+          {
+            "iteration": 0,
+            "error": 0.011711162809916261
+          },
+          {
+            "iteration": 3,
+            "error": 0.0055024795680933035
+          },
+          {
+            "iteration": 6,
+            "error": 0.004730675475527782
+          },
+          {
+            "iteration": 9,
+            "error": 0.004397619371149376
+          },
+          {
+            "iteration": 12,
+            "error": 0.004194636028567162
+          },
+          {
+            "iteration": 15,
+            "error": 0.004051677354435668
+          },
+          {
+            "iteration": 18,
+            "error": 0.003943055693821743
+          },
+          {
+            "iteration": 21,
+            "error": 0.003857174989823766
+          },
+          {
+            "iteration": 24,
+            "error": 0.003786072737855997
+          },
+          {
+            "iteration": 27,
+            "error": 0.003725755578856073
+          },
+          {
+            "iteration": 30,
+            "error": 0.0036736947828351274
+          }
+        ],
+        "errorReductionHalf": 0.9529724323223455,
+        "durationMs": 394642
+      },
+      "evaluation": {
+        "games": 100,
+        "opponent": "random",
+        "aiWins": 74,
+        "opponentWins": 24,
+        "draws": 2,
+        "scores": {
+          "ai": {
+            "median": 25,
+            "variance": 230.0531
+          },
+          "opponent": {
+            "median": 24,
+            "variance": 184.7256
+          },
+          "gap": 1
+        },
+        "avgScores": {
+          "1": 29.13,
+          "2": 27.12
+        },
+        "aiWinRate": 0.74,
+        "avgMoves": 165.87,
+        "durationMs": 5237
+      },
+      "totalDurationMs": 425644
+    },
+    {
+      "cycle": 4,
+      "selfPlay": {
+        "games": 100,
+        "wins": {
+          "1": 19,
+          "2": 79,
+          "draws": 2
+        },
+        "winsByOpponent": {
+          "network": {
+            "1": 12,
+            "2": 12,
+            "draws": 2
+          },
+          "heuristic": {
+            "1": 0,
+            "2": 64,
+            "draws": 0
+          },
+          "random": {
+            "1": 7,
+            "2": 3,
+            "draws": 0
+          }
+        },
+        "opponentTypeCounts": {
+          "network": 26,
+          "heuristic": 64,
+          "random": 10
+        },
+        "avgMoves": 143.25,
+        "scores": {
+          "p1": {
+            "median": 15.5,
+            "variance": 613.4091000000001,
+            "min": 2,
+            "max": 113
+          },
+          "p2": {
+            "median": 150,
+            "variance": 3054.9275,
+            "min": 10,
+            "max": 184
+          }
+        },
+        "scoresByOpponent": {
+          "network": {
+            "p1": {
+              "median": 54,
+              "max": 113
+            },
+            "p2": {
+              "median": 57,
+              "max": 100
+            }
+          },
+          "heuristic": {
+            "p1": {
+              "median": 9,
+              "max": 57
+            },
+            "p2": {
+              "median": 157,
+              "max": 184
+            }
+          },
+          "random": {
+            "p1": {
+              "median": 41.5,
+              "max": 66
+            },
+            "p2": {
+              "median": 23.5,
+              "max": 34
+            }
+          }
+        },
+        "openingDiversity": 5.868987506762178,
+        "boardDiversity": 1.6699744765609763,
+        "samplesGenerated": 13504,
+        "durationMs": 24160
+      },
+      "training": {
+        "iterations": 30,
+        "learningRate": 0.05,
+        "samplesUsed": 20256,
+        "replaySamplesUsed": 6752,
+        "newSamplesUsed": 13504,
+        "replayBufferSize": 50000,
+        "initialError": 0.010648943777610994,
+        "finalError": 0.003606206308180276,
+        "errorSnapshots": [
+          {
+            "iteration": 0,
+            "error": 0.010648943777610994
+          },
+          {
+            "iteration": 3,
+            "error": 0.00527406774640623
+          },
+          {
+            "iteration": 6,
+            "error": 0.004576028586669533
+          },
+          {
+            "iteration": 9,
+            "error": 0.004271928746272806
+          },
+          {
+            "iteration": 12,
+            "error": 0.00408412156139665
+          },
+          {
+            "iteration": 15,
+            "error": 0.003952336622627281
+          },
+          {
+            "iteration": 18,
+            "error": 0.003852747602545652
+          },
+          {
+            "iteration": 21,
+            "error": 0.003773132888281218
+          },
+          {
+            "iteration": 24,
+            "error": 0.003708490936818179
+          },
+          {
+            "iteration": 27,
+            "error": 0.0036535474576417037
+          },
+          {
+            "iteration": 30,
+            "error": 0.003606206308180276
+          }
+        ],
+        "errorReductionHalf": 0.9508528727715042,
+        "durationMs": 395653
+      },
+      "evaluation": {
+        "games": 100,
+        "opponent": "random",
+        "aiWins": 63,
+        "opponentWins": 32,
+        "draws": 5,
+        "scores": {
+          "ai": {
+            "median": 23,
+            "variance": 189.4224000000001
+          },
+          "opponent": {
+            "median": 25.5,
+            "variance": 157.6779
+          },
+          "gap": -2.5
+        },
+        "avgScores": {
+          "1": 26.76,
+          "2": 27.89
+        },
+        "aiWinRate": 0.63,
+        "avgMoves": 164.93,
+        "durationMs": 5222
+      },
+      "totalDurationMs": 425045
+    },
+    {
+      "cycle": 5,
+      "selfPlay": {
+        "games": 100,
+        "wins": {
+          "1": 22,
+          "2": 76,
+          "draws": 2
+        },
+        "winsByOpponent": {
+          "network": {
+            "1": 15,
+            "2": 15,
+            "draws": 1
+          },
+          "heuristic": {
+            "1": 0,
+            "2": 60,
+            "draws": 0
+          },
+          "random": {
+            "1": 7,
+            "2": 1,
+            "draws": 1
+          }
+        },
+        "opponentTypeCounts": {
+          "network": 31,
+          "heuristic": 60,
+          "random": 9
+        },
+        "avgMoves": 145.3,
+        "scores": {
+          "p1": {
+            "median": 20.5,
+            "variance": 585.1971000000002,
+            "min": 3,
+            "max": 103
+          },
+          "p2": {
+            "median": 142,
+            "variance": 2939.4370999999983,
+            "min": 10,
+            "max": 174
+          }
+        },
+        "scoresByOpponent": {
+          "network": {
+            "p1": {
+              "median": 55,
+              "max": 103
+            },
+            "p2": {
+              "median": 56,
+              "max": 92
+            }
+          },
+          "heuristic": {
+            "p1": {
+              "median": 12,
+              "max": 45
+            },
+            "p2": {
+              "median": 156,
+              "max": 174
+            }
+          },
+          "random": {
+            "p1": {
+              "median": 29,
+              "max": 47
+            },
+            "p2": {
+              "median": 15,
+              "max": 44
+            }
+          }
+        },
+        "openingDiversity": 6.183856189774735,
+        "boardDiversity": 1.7082654342086148,
+        "samplesGenerated": 13798,
+        "durationMs": 24634
+      },
+      "training": {
+        "iterations": 30,
+        "learningRate": 0.05,
+        "samplesUsed": 20697,
+        "replaySamplesUsed": 6899,
+        "newSamplesUsed": 13798,
+        "replayBufferSize": 50000,
+        "initialError": 0.01055081760246073,
+        "finalError": 0.003647027812933582,
+        "errorSnapshots": [
+          {
+            "iteration": 0,
+            "error": 0.01055081760246073
+          },
+          {
+            "iteration": 3,
+            "error": 0.005326275406064949
+          },
+          {
+            "iteration": 6,
+            "error": 0.004613519356237141
+          },
+          {
+            "iteration": 9,
+            "error": 0.00430015238336108
+          },
+          {
+            "iteration": 12,
+            "error": 0.004114198400316544
+          },
+          {
+            "iteration": 15,
+            "error": 0.003986539728041022
+          },
+          {
+            "iteration": 18,
+            "error": 0.003890224073942692
+          },
+          {
+            "iteration": 21,
+            "error": 0.003813162823289203
+          },
+          {
+            "iteration": 24,
+            "error": 0.003749133556561489
+          },
+          {
+            "iteration": 27,
+            "error": 0.0036945291189395425
+          },
+          {
+            "iteration": 30,
+            "error": 0.003647027812933582
+          }
+        ],
+        "errorReductionHalf": 0.9508223851742313,
+        "durationMs": 404047
+      },
+      "evaluation": {
+        "games": 100,
+        "opponent": "random",
+        "aiWins": 73,
+        "opponentWins": 24,
+        "draws": 3,
+        "scores": {
+          "ai": {
+            "median": 25,
+            "variance": 148.06990000000005
+          },
+          "opponent": {
+            "median": 22.5,
+            "variance": 187.90989999999994
+          },
+          "gap": 2.5
+        },
+        "avgScores": {
+          "1": 26.01,
+          "2": 26.49
+        },
+        "aiWinRate": 0.73,
+        "avgMoves": 164.99,
+        "durationMs": 5236
+      },
+      "totalDurationMs": 433925
+    }
+  ],
+  "completedAt": "2026-10-23T14:33:18.759Z"
+}

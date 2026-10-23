@@ -1,0 +1,7 @@
+
+🏋️  Triantica AI Training Pipeline
+Started: 2026-10-23T11:49:31.981Z
+Log: /Users/aespinel/.openclaw/workspace/triantica/experiments/logs/training-1792756171981.log
+
+  🗃️  Replay buffer: maxSize=50000, replayRatio=0.5
+🔄 Cycle 1/15----------------------------------------  🎮 Running 100 self-play games (mixed mode)...    10/100 games done    20/100 games done    30/100 games done    40/100 games done

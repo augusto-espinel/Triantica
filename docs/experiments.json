@@ -1,7 +1,7 @@
 [
   {
     "id": "exp12",
-    "name": "Exp 12 \u2014 Curriculum Learning",
+    "name": "Exp 12 — Curriculum Learning",
     "date": "2026-10-20",
     "logFile": "training-1792619296837.json",
     "summary": "Mixed opponent training with HeuristicPlayer. Critical bug fix: _runGameVsOpponent() never switched currentPlayer.",
@@ -31,10 +31,10 @@
   },
   {
     "id": "exp12b",
-    "name": "Exp 12b \u2014 Curriculum Continuation",
+    "name": "Exp 12b — Curriculum Continuation",
     "date": "2026-10-20",
     "logFile": null,
-    "summary": "Continuation of Exp 12 checkpoint \u2014 same config, 20 more cycles. No sustained improvement.",
+    "summary": "Continuation of Exp 12 checkpoint — same config, 20 more cycles. No sustained improvement.",
     "parameters": {
       "cycles": 20,
       "games": 100,
@@ -89,7 +89,7 @@
   },
   {
     "id": "exp15",
-    "name": "Exp 15 \u2014 Fixed Normalization + 30 Iters",
+    "name": "Exp 15 — Fixed Normalization + 30 Iters",
     "date": "2026-10-22",
     "logFile": null,
     "summary": "Fixed immediate reward normalization bug. Negative rewards were clamped to +0.155, destroying gradient. +10.5pp improvement.",
@@ -106,7 +106,7 @@
       "enableClusterReward": false,
       "gradientIsolation": false
     },
-    "changes": "1) Fixed calculateImmediateRewardVector normalization (negative rewards). 2) Reduced iterations from 100\u219230 to prevent overfitting. 3) Increased LR to 0.1.",
+    "changes": "1) Fixed calculateImmediateRewardVector normalization (negative rewards). 2) Reduced iterations from 100→30 to prevent overfitting. 3) Increased LR to 0.1.",
     "bugsFixed": [
       "Immediate reward normalization (clamping negative rewards)"
     ],
@@ -119,7 +119,7 @@
   },
   {
     "id": "exp16",
-    "name": "Exp 16 \u2014 Opening Diversity",
+    "name": "Exp 16 — Opening Diversity",
     "date": "2026-10-22",
     "logFile": "training-1792677421783.log",
     "dataFile": null,
@@ -149,11 +149,11 @@
   },
   {
     "id": "exp17",
-    "name": "Exp 17 \u2014 Cluster Reward (TD(\u03bb))",
+    "name": "Exp 17 — Cluster Reward (TD(λ))",
     "date": "2026-10-22",
     "logFile": "training-1792692589746.log",
     "dataFile": "training-1792693733660.json",
-    "summary": "Enabled TD(\u03bb) cluster-contribution reward. +5% vs Random but still 0% vs Heuristic.",
+    "summary": "Enabled TD(λ) cluster-contribution reward. +5% vs Random but still 0% vs Heuristic.",
     "parameters": {
       "cycles": 5,
       "games": 100,
@@ -170,7 +170,7 @@
       "clusterGamma": 0.99,
       "gradientIsolation": false
     },
-    "changes": "Enabled --enable-cluster-reward with factor=0.1, \u03bb=0.9, \u03b3=0.99.",
+    "changes": "Enabled --enable-cluster-reward with factor=0.1, λ=0.9, γ=0.99.",
     "bugsFixed": [],
     "result": {
       "startWinRate": 86.0,
@@ -181,11 +181,11 @@
   },
   {
     "id": "exp17b",
-    "name": "Exp 17b \u2014 Cluster Reward + Fixed Normalization",
+    "name": "Exp 17b — Cluster Reward + Fixed Normalization",
     "date": "2026-10-22",
     "logFile": "training-1792693850941.log",
     "dataFile": "training-1792695004072.json",
-    "summary": "Fixed minCombinedReward normalization bug (-1.0 \u2192 -5.0). +7% improvement with cluster reward.",
+    "summary": "Fixed minCombinedReward normalization bug (-1.0 → -5.0). +7% improvement with cluster reward.",
     "parameters": {
       "cycles": 5,
       "games": 100,
@@ -215,7 +215,7 @@
   },
   {
     "id": "exp19",
-    "name": "Exp 19 \u2014 Fresh Start (Post Self-Play Bug Fix)",
+    "name": "Exp 19 — Fresh Start (Post Self-Play Bug Fix)",
     "date": "2026-10-23",
     "logFile": "training-1792714804973.json",
     "dataFile": "training-1792719612458.json",
@@ -244,7 +244,7 @@
   },
   {
     "id": "exp20",
-    "name": "Exp 20 \u2014 Mixed Opponents (Post Self-Play Bug Fix)",
+    "name": "Exp 20 — Mixed Opponents (Post Self-Play Bug Fix)",
     "date": "2026-10-23",
     "logFile": "training-1792722575589.json",
     "dataFile": "training-1792722575589.json",
@@ -269,6 +269,39 @@
       "endWinRate": 91.0,
       "improvement": 11.0,
       "peakWinRate": 92.0
+    }
+  },
+  {
+    "id": "exp21",
+    "name": "Exp 21 — Learn from the Master",
+    "date": "2026-10-23",
+    "dataFile": "exp21_merged.json",
+    "summary": "Distillation from heuristic: heavy heuristic exposure (60/30/10 split) with trainOnOpponentMoves=true so the network learns from heuristic's winning play. Fine-tuning from exp20 at LR=0.05.",
+    "parameters": {
+      "cycles": 15,
+      "games": 100,
+      "evalGames": 100,
+      "iterations": 30,
+      "learningRate": 0.05,
+      "exploration": 0.3,
+      "opponentMix": "mixed",
+      "heuristicRatio": 0.6,
+      "randomRatio": 0.1,
+      "selfPlayMode": "network",
+      "enableClusterReward": false,
+      "gradientIsolation": false,
+      "trainOnOpponentMoves": true,
+      "startFrom": "exp20_mixed.json"
+    },
+    "changes": "Heuristic ratio 0.6 (was ~0.4), randomRatio 0.1 (was ~0.2), trainOnOpponentMoves=true (was false), LR 0.05 (was 0.1). Goal: distill heuristic knowledge into network via opponent move training.",
+    "bugsFixed": [],
+    "result": {
+      "startWinRate": 73.0,
+      "endWinRate": 70.0,
+      "improvement": -3.0,
+      "peakWinRate": 82.0,
+      "vsHeuristic": 0.0,
+      "note": "Distillation failed. Regressed from 91% (exp20) to 70-82% vs Random. trainOnOpponentMoves caused instability. 0% vs Heuristic unchanged."
     }
   }
 ]

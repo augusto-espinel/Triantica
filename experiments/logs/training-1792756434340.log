@@ -1,0 +1,10 @@
+
+🏋️  Triantica AI Training Pipeline
+Started: 2026-10-23T11:53:54.340Z
+Log: /Users/aespinel/.openclaw/workspace/triantica/experiments/logs/training-1792756434340.log
+
+  🗃️  Replay buffer: maxSize=50000, replayRatio=0.5
+🔄 Cycle 1/1----------------------------------------  🎮 Running 2 self-play games (network mode)...  ✅ Self-play complete: 2 games, 332 samples, 813ms  📚 Training network (1 iterations, lr=0.1, 498 samples [166 replay + 332 new])...  ✅ Training complete: error=0.007601 (was 0.221077, Δ=0.213476), 447ms  📉 Error curve: 0:0.2211 → 1:0.0076  📊 Evaluating vs Random (2 games)...  📈 AI Win Rate: 100.0% (2W / 0L / 0D)     Scores: AI med=28 (σ2=1), Random med=27 (σ2=9), gap=+1     Avg moves: 171.5, Duration: 118ms
+  📋 Cycle 1 Summary | Self-play: P1=1 P2=1 D=0 | P1 med=25 (σ2=2, 23-26) | P2 med=26 (σ2=132, 14-37) | Train: 0.221077 → 0.007601 (166 replay + 332 new) | Eval: 100.0% (AI med=28, Rand med=27, gap=+1) | Diversity: Open=1.00 Board=0.69 | Buf: 332 | 1s
+  💾 Checkpoint saved: /Users/aespinel/.openclaw/workspace/triantica/docs/data/checkpoint-cycle-1.json
+🎯 AI reached 100.0% win rate - training target met!
