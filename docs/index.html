@@ -144,8 +144,14 @@
         const r = exp.result;
         const wrClass = r.peakWinRate >= 85 ? 'good' : r.peakWinRate >= 70 ? 'mid' : 'bad';
         const deltaClass = r.improvement >= 0 ? 'positive' : 'negative';
+        const d = cycleData[exp.id];
+        const lastCycle = d?.cycles?.slice(-1)[0];
+        const hWins = lastCycle?.selfPlay?.winsByOpponent?.heuristic;
+        const hCount = lastCycle?.selfPlay?.opponentTypeCounts?.heuristic || 0;
+        const hRate = hWins && hCount ? Math.round((hWins['1'] / hCount) * 100) : null;
+        const hBadge = hRate !== null ? `${hRate}% vs Heuristic` : '';
         return `<div class="exp-card" onclick="showDetail('${exp.id}')" id="card-${exp.id}">
-          <span class="heuristic-badge">0% vs Heuristic</span>
+          ${hBadge ? `<span class="heuristic-badge">${hBadge}</span>` : ''}
           <h3>${exp.name}</h3>
           <div class="date">${exp.date}</div>
           <div class="win-rate ${wrClass}">${r.peakWinRate}%</div>
@@ -200,7 +206,7 @@
       
       if (data?.cycles) {
         const labels = data.cycles.map(c => `C${c.cycle}`);
-        const winRates = data.cycles.map(c => c.eval?.winRate ? (c.eval.winRate * 100) : null);
+        const winRates = data.cycles.map(c => c.evaluation?.aiWinRate ? (c.evaluation.aiWinRate * 100) : null);
         const errors = data.cycles.map(c => c.training?.finalError);
         
         charts.winrate = new Chart(document.getElementById('chart-winrate'), {
@@ -216,10 +222,15 @@
         });
       }
       
-      // Placeholder for Heuristic chart
+      // Heuristic chart — extract self-play wins vs heuristic opponent per cycle
+      const heuristicWinRates = data.cycles.map(c => {
+        const hw = c.selfPlay?.winsByOpponent?.heuristic;
+        const hCount = c.selfPlay?.opponentTypeCounts?.heuristic || 1;
+        return hw ? ((hw['1'] / hCount) * 100) : null;
+      });
       charts.heuristic = new Chart(document.getElementById('chart-heuristic'), {
-        type: 'bar',
-        data: { labels: ['vs Heuristic'], datasets: [{ label: 'Win Rate (%)', data: [0], backgroundColor: 'rgba(248,81,73,0.6)', borderColor: '#f85149', borderWidth: 1 }] },
+        type: 'line',
+        data: { labels, datasets: [{ label: 'Win Rate vs Heuristic (%)', data: heuristicWinRates, borderColor: '#f85149', backgroundColor: 'rgba(248,81,73,0.1)', fill: true, tension: 0.3 }] },
         options: { ...opts, scales: { ...opts.scales, y: { ...opts.scales.y, min: 0, max: 50 } } }
       });
     }
@@ -262,7 +273,7 @@
       
       const datasets = exps.map((exp, i) => {
         const data = cycleData[exp.id];
-        const winRates = data?.cycles?.map(c => c.eval?.winRate ? (c.eval.winRate * 100) : null) || [];
+        const winRates = data?.cycles?.map(c => c.evaluation?.aiWinRate ? (c.evaluation.aiWinRate * 100) : null) || [];
         return {
           label: exp.name,
           data: winRates,
