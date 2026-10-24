@@ -1678,136 +1678,153 @@ TensorFlow.js provides all these plus Metal GPU acceleration (~100x speedup).
 
 ## TF.js Audited Baseline Experiments (2026-10-23)
 
-### Experiment TF-B1: Pure Self-Play (Audited)
+### Experiment TF-B1: Pure Self-Play (Corrected Run)
 
-**Started:** 2026-10-23 22:15
-**Completed:** 2026-10-23 22:51
-**Duration:** 35.2 minutes
-**Log:** `experiments/logs/TF-B1_pure.log`
+**Started:** 2026-10-24 06:30
+**Completed:** 2026-10-24 07:09
+**Duration:** 39.4 minutes
+**Log:** `experiments/logs/TF-B1_pure_v2.log`
 **Data:** `docs/data/TF-B1_pure.json`
 
 ### Configuration
 - Fresh random network (no pre-training)
 - 20 cycles, 100 games/cycle, 100 eval games
-- Pure network self-play (network vs network)
+- **Training P2:** 100% network (pure self-play)
+- **Eval:** vs Random (100 games) + vs Heuristic (100 games)
+- Learning rate: 0.05, iterations: 10
 - Game auditing enabled (5% sample rate)
 
 ### Results
-| Cycle | vs Random | Error |
-|-------|-----------|-------|
-| 1 | 30% | 0.0142 |
-| 2 | 44% | 0.0122 |
-| 3 | 46% | 0.0113 |
-| 5 | 41% | 0.0109 |
-| 10 | 29% | 0.0105 |
-| 15 | 38% | 0.0103 |
-| 20 | 42% | 0.0099 |
+| Cycle | vs Random | vs Heuristic | Error |
+|-------|-----------|--------------|-------|
+| 1 | 53% | 0% | 0.0814 |
+| 5 | 37% | 0% | 0.0180 |
+| 10 | 38% | 0% | 0.0133 |
+| 15 | 46% | 0% | 0.0125 |
+| 20 | 49% | 0% | 0.0117 |
 
-**Peak:** 46% (cycle 3)
-**Final:** 42% vs Random
-**Audits:** 90 games audited, 100% pass rate ✓
+**Final:** 49% vs Random, **0% vs Heuristic**
+**Audits:** 92 games audited, 100% pass rate ✓
 
-### Verdict: Clean baseline ✅
-Pure self-play establishes that the training pipeline works correctly. The regression from 46% → 29% confirms the "Heuristic Wall" pattern persists.
+### Verdict: Pure self-play baseline ✅
+Healthy error convergence (0.189 → 0.012). Pure self-play establishes baseline but cannot escape the Heuristic Wall.
 
 ---
 
-### Experiment TF-B2: Mixed Opponents 70/30 (Audited)
+### Experiment TF-B2: Mixed Opponents with Heuristic (Corrected Run)
 
-**Started:** 2026-10-23 22:15
-**Completed:** 2026-10-23 22:51
-**Duration:** 35.4 minutes
-**Log:** `experiments/logs/TF-B2_mixed.log`
+**Started:** 2026-10-24 06:30
+**Completed:** 2026-10-24 07:51
+**Duration:** 81 minutes (ran after B1)
+**Log:** `experiments/logs/TF-B2_mixed_v2.log`
 **Data:** `docs/data/TF-B2_mixed.json`
 
 ### Configuration
 - Fresh random network
 - 20 cycles, 100 games/cycle, 100 eval games
-- Mixed opponents: 70% network, 30% Random
+- **Training P2:** 50% network, 30% random, **20% heuristic**
+- **Eval:** vs Random (100 games) + vs Heuristic (100 games)
+- Learning rate: 0.05, iterations: 10
 - Game auditing enabled (5% sample rate)
 
 ### Results
-| Cycle | vs Random | Error |
-|-------|-----------|-------|
-| 1 | 35% | 0.0147 |
-| 2 | 42% | 0.0141 |
-| 5 | 34% | 0.0111 |
-| 10 | 50% | 0.0105 |
-| 15 | 46% | 0.0103 |
-| 20 | **50%** | 0.0103 |
+| Cycle | vs Random | vs Heuristic | Error |
+|-------|-----------|--------------|-------|
+| 1 | 27% | 0% | 0.0833 |
+| 5 | 37% | 0% | 0.0204 |
+| 10 | 48% | 0% | 0.0145 |
+| 15 | 42% | 0% | 0.0141 |
+| 20 | 44% | 0% | 0.0134 |
 
-**Peak:** 54% (cycle 13)
-**Final:** 50% vs Random
+**Final:** 44% vs Random, **0% vs Heuristic**
 **Audits:** 107 games audited, 100% pass rate ✓
 
-### Verdict: Best baseline ✅
-Mixed opponent training (30% Random) provides curriculum learning. Network achieves 50% final vs Random — significantly better than pure self-play (42%).
+### Verdict: Heuristic in training doesn't help ⚠️
+Including 20% heuristic opponents in self-play provides no improvement. The network still loses 100% to heuristic. The Heuristic Wall is solid.
 
 ---
 
-### Experiment TF-B3: Cluster Reward TD(λ) (Audited)
+### Experiment TF-B3: Cluster Reward + Network/Random Mix (Corrected Run)
 
-**Started:** 2026-10-23 22:15
-**Completed:** 2026-10-23 22:51
-**Duration:** 34.7 minutes
-**Log:** `experiments/logs/TF-B3_cluster.log`
+**Started:** 2026-10-24 07:09
+**Completed:** 2026-10-24 07:49
+**Duration:** 40.1 minutes
+**Log:** `experiments/logs/TF-B3_cluster_v2.log`
 **Data:** `docs/data/TF-B3_cluster.json`
 
 ### Configuration
 - Fresh random network
 - 20 cycles, 100 games/cycle, 100 eval games
-- Cluster reward enabled: TD(λ) with λ=0.9, γ=0.99, factor=0.1
+- **Training P2:** 70% network, 30% random (NO heuristic in training)
+- **Cluster reward enabled:** TD(λ) with λ=0.9, γ=0.99, factor=0.1
+- **Eval:** vs Random (100 games) + vs Heuristic (100 games)
+- Learning rate: 0.05, iterations: 10
 - Game auditing enabled (5% sample rate)
 
 ### Results
-| Cycle | vs Random | Error |
-|-------|-----------|-------|
-| 1 | 34% | 0.0137 |
-| 2 | 36% | 0.0122 |
-| 5 | 49% | 0.0108 |
-| 6 | **50%** | 0.0106 |
-| 10 | 36% | 0.0100 |
-| 15 | 49% | 0.0101 |
-| 20 | 49% | 0.0100 |
+| Cycle | vs Random | vs Heuristic | Error |
+|-------|-----------|--------------|-------|
+| 1 | 38% | 0% | 0.0812 |
+| 5 | 46% | 0% | 0.0173 |
+| 10 | 47% | 0% | 0.0133 |
+| 15 | 30% | 0% | 0.0123 |
+| 20 | 43% | 0% | 0.0119 |
 
-**Peak:** 52% (cycle 11)
-**Final:** 49% vs Random
-**Audits:** 91 games audited, 100% pass rate ✓
+**Final:** 43% vs Random, **0% vs Heuristic**
+**Audits:** 107 games audited, 100% pass rate ✓
 
-### Verdict: Similar to TF-B2 ⚠️
-Cluster reward (TD(λ)) shows similar performance to mixed opponents. No clear advantage over TF-B2's simpler curriculum learning approach.
+### Verdict: Cluster reward ≈ Mixed ⚠️
+Cluster reward TD(λ) shows similar performance to mixed opponents. Still stuck at the Heuristic Wall (0% win rate).
 
 ---
 
-## TF.js Baseline Comparison
+## TF.js Baseline Comparison (Corrected Run 2026-10-24)
 
-| Exp | Config | Final vs Random | Peak | Error | Audits | Time |
-|-----|--------|-----------------|------|-------|--------|------|
-| TF-B1 | Pure self-play | 42% | 46% | 0.0099 | 90/90 ✓ | 35.2m |
-| TF-B2 | Mixed 70/30 | **50%** | **54%** | 0.0103 | 107/107 ✓ | 35.4m |
-| TF-B3 | Cluster TD(λ) | 49% | 52% | 0.0100 | 91/91 ✓ | 34.7m |
+| Exp | Training P2 Mix | Final vs Random | Final vs Heuristic | Error | Audits | Time |
+|-----|-----------------|-----------------|-------------------|-------|--------|------|
+| TF-B1 | 100% network | 49% | **0%** | 0.0117 | 92/92 ✓ | 39.4m |
+| TF-B2 | 50% net, 30% rand, 20% heur | 44% | **0%** | 0.0134 | 107/107 ✓ | 81m |
+| TF-B3 | 70% net, 30% rand + cluster | 43% | **0%** | 0.0119 | 107/107 ✓ | 40.1m |
 
 ### Key Findings
 
-1. **Audit feature is essential** — Discovered critical `isValidMove` bug that would have shipped broken training
-2. **Mixed opponents help** — TF-B2's curriculum learning (30% Random) gave 8pp improvement over pure self-play
-3. **Cluster reward ≈ Mixed** — No clear advantage; both achieve ~50% vs Random
-4. **Heuristic wall persists** — Still stuck at ~50% vs Random, 0% vs Heuristic
-5. **Training speed excellent** — ~35 min for 20 cycles (100x faster than brain.js)
+1. **THE HEURISTIC WALL IS REAL** — All 3 experiments: **0% win rate vs Heuristic**
+   - The heuristic player scores 173 (maximum) every single game
+   - The AI scores 3 points every game (just the opening triangle)
+   - Including heuristic in training (B2) provides NO improvement
 
-### Implications for Architecture Phase
+2. **Pure self-play (B1) actually performs best** — 49% vs Random
+   - Mixed opponents don't help when the opponent is too strong
+   - The network can't learn from being crushed 100% of the time
 
-The foundation is now solid:
-- ✅ Bug-free training pipeline
-- ✅ Comprehensive game auditing
-- ✅ Fast iteration cycle (~35 min per experiment)
-- ✅ Best baseline: 50% vs Random (TF-B2)
+3. **Healthy error convergence** — LR=0.05, iterations=10 prevents overfitting
+   - Error drops gradually: 0.19 → 0.08 → 0.04 → 0.02 → 0.01
+   - Previous run's "instant convergence" was a red flag
 
-**Ready for Value Head implementation.** The feedforward architecture cannot break 50% vs Random. Adding a Value Head for position evaluation will enable strategic lookahead.
+4. **Audit feature essential** — Discovered and fixed critical bugs
+   - isValidMove bug fixed
+   - Heuristic opponent integration verified
+
+### The Fundamental Problem
+
+The heuristic player has discovered a dominant strategy that the feedforward network cannot learn:
+
+```
+Heuristic scores: 173/173 (100% of max)
+AI scores: 3/173 (1.7% of max)
+```
+
+The network plays valid moves but has no concept of strategic territory control. It needs:
+
+1. **Value Head** — To evaluate positions, not just predict move probabilities
+2. **Search** — MCTS or similar to look ahead beyond immediate rewards
+3. **Architectural upgrade** — Convolutional layers to understand spatial patterns
+
+**The baseline experiments confirm: The Heuristic Wall cannot be broken with the current architecture.**
 
 ---
 
-## Current State (2026-10-23)
+## Current State (2026-10-24)
 
 ### Deployed
 - **Game:** https://augusto-espinel.github.io/Triantica/ (uses exp20 weights: 91% vs Random)
@@ -1816,14 +1833,22 @@ The foundation is now solid:
 ### Training Pipeline
 - **Script:** `src/server/train_tfjs.cjs` (TF.js + Metal GPU)
 - **Environment:** Node v20.20.2 LTS + @tensorflow/tfjs-node
-- **Speed:** ~35 min for 20 cycles (100 games/cycle)
+- **Speed:** ~40 min for 20 cycles (100 games/cycle)
 
 ### Best Network Weights
-- **vs Random:** exp20 (91%) — deployed to game
-- **TF.js Baseline:** TF-B2 (50%) — clean audited training
+- **vs Random:** exp20 (91%) — deployed to game (pre-TF.js, brain.js architecture)
+- **TF.js Baseline:** TF-B1 (49%) — pure self-play, best clean baseline
+
+### The Heuristic Wall
+All TF.js experiments confirmed: **0% win rate vs Heuristic**
+
+The feedforward policy network cannot learn strategic territory control. It needs:
+1. **Value Head** — Position evaluation (Actor-Critic)
+2. **Search** — MCTS or beam search for lookahead
+3. **Convolutional layers** — Spatial pattern recognition
 
 ### Next Steps
-1. Implement Value Head (Actor-Critic architecture)
-2. Add Canonical Board Encoding (8× data efficiency)
-3. Evaluate deeper network [256, 128] vs [200]
-4. Consider residual connections
+1. Implement **Value Head** (Actor-Critic architecture)
+2. Add **Canonical Board Encoding** (8× data efficiency)
+3. Implement **MCTS** or simplified search
+4. Consider **ResNet blocks** for deeper architecture
