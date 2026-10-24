@@ -1064,9 +1064,434 @@ After 22 brain.js experiments and 10+ TF.js experiments, a clear pattern emerged
 
 ---
 
-## Appendix A: Command Reference
+## 12. Optimization Roadmap: Breaking the Heuristic Wall {#12-optimization-roadmap}
 
-### Training Commands
+This chapter outlines a prioritized plan to improve AI performance. Each phase builds on the previous, with clear success metrics and implementation notes specific to TensorFlow.js on Mac Studio M2 Ultra.
+
+### Current Baseline
+
+| Metric | Current | Target |
+|--------|---------|--------|
+| vs Random | 37-52% | 80%+ |
+| vs Heuristic | 0% | 10%+ |
+| Training time (20 cycles) | 35-40 min | <20 min |
+| Samples per cycle | 100 games | 1000 games |
+
+**Why these targets?** 10% vs Heuristic demonstrates the architecture can learn strategic concepts. 80% vs Random proves stability. Faster training enables rapid iteration.
+
+---
+
+### Phase 1: Experience Replay Buffer
+
+**Priority:** Highest (immediate gain, low complexity)
+
+**Problem:** Current training uses each game once. The network forgets early games by the time it sees later ones.
+
+**Solution:** Store game histories in a circular buffer. Sample random batches for training.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                  Experience Replay Buffer                    │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│   Traditional: Play 100 games → Train on all → Discard      │
+│                                                             │
+│   Replay Buffer: Play 100 games → Add to buffer → Sample   │
+│                                                             │
+│                 ┌───┬───┬───┬───┬───┐                       │
+│   Buffer:       │ G1│ G2│ G3│...│G10K│  (100K samples)      │
+│                 └───┴───┴───┴───┴───┘                       │
+│                      ↓ Random sample                        │
+│                 ┌───┬───┬───┐                              │
+│   Batch:         │ G5│G42│ G7│  (diverse examples)          │
+│                 └───┴───┴───┘                              │
+│                                                             │
+│   Benefit: See each position multiple times, from different│
+│            game contexts. Stable learning.                 │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Implementation Steps:**
+
+| Step | Task | Estimated Time |
+|------|------|----------------|
+| 1.1 | Create `ReplayBuffer` class with circular storage | 30 min |
+| 1.2 | Implement `add(samples)` method | 15 min |
+| 1.3 | Implement `sample(batchSize)` with priority sampling | 30 min |
+| 1.4 | Modify training loop to use buffer instead of immediate training | 45 min |
+| 1.5 | Add buffer size parameter to CLI | 10 min |
+| 1.6 | Test: Train 5 cycles, verify buffer fills correctly | 20 min |
+| 1.7 | Run experiment TF-B4 (replay buffer, 20 cycles) | 40 min |
+| 1.8 | Document results in TRAINING_BOOK | 15 min |
+
+**Success Criteria:**
+- [ ] Buffer fills to capacity (100K samples) within first 10 cycles
+- [ ] Training loss decreases smoothly (no spikes)
+- [ ] vs Random improves to 60%+ (from current 50%)
+- [ ] No memory leaks (verify with Activity Monitor)
+
+**M2 Ultra Optimization:**
+- Set buffer size to 500K-1M samples (64GB unified memory)
+- Use `tf.data.Dataset` for efficient streaming
+- Store tensors in GPU memory when possible
+
+**Code Location:** `src/server/ReplayBuffer.js`
+
+---
+
+### Phase 2: Convolutional Layers for Spatial Patterns
+
+**Priority:** High (architectural fix for spatial reasoning)
+
+**Problem:** Current architecture flattens the board, losing spatial relationships.
+
+**Current:** `401 inputs → [200 hidden] → 400 outputs` (dense)
+
+**Proposed:** `10×10×4 input → [Conv layers] → Policy head + Value head`
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Convolutional Architecture                │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│   Input: 10×10×4 tensor (one channel per triangle corner)  │
+│                      ↓                                      │
+│   Conv2D(32 filters, 3×3, padding='same') + ReLU           │
+│                      ↓                                      │
+│   Conv2D(64 filters, 3×3, padding='same') + ReLU           │
+│                      ↓                                      │
+│   Conv2D(64 filters, 3×3, padding='same') + ReLU           │
+│                      ↓                                      │
+│            ┌────────────┴────────────┐                      │
+│            ↓                         ↓                      │
+│      Policy Head                 Value Head                 │
+│   (400 outputs)                  (1 output)                 │
+│   Move probabilities            Position score             │
+│                                                             │
+│   Key insight: Conv layers learn "enclosure patterns"      │
+│   that dense layers cannot see.                            │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Why convolutions work for Triantica:**
+- Enclosures are local patterns (3-7 cells)
+- Rotational invariance: a triangle at 90° is similar to 0°
+- Territory is defined by contiguous regions → convs detect regions
+
+**Implementation Steps:**
+
+| Step | Task | Estimated Time |
+|------|------|----------------|
+| 2.1 | Design input tensor format (10×10×4 vs 10×10×8) | 30 min |
+| 2.2 | Implement `createConvNetwork()` function | 1 hour |
+| 2.3 | Add policy head (flatten → dense → softmax) | 30 min |
+| 2.4 | Update `getStateForConv()` encoding function | 45 min |
+| 2.5 | Modify training loop to use conv network | 30 min |
+| 2.6 | Test: Single game with conv network, verify output shapes | 20 min |
+| 2.7 | Run experiment TF-B5 (conv, 20 cycles) | 50 min |
+| 2.8 | Compare training time vs dense network | 15 min |
+| 2.9 | Document results in TRAINING_BOOK | 20 min |
+
+**Success Criteria:**
+- [ ] Network produces valid probability distribution over moves
+- [ ] Training time per cycle < 3 minutes (conv is slower but parallel)
+- [ ] vs Random matches dense baseline (50%) by cycle 5
+- [ ] vs Random exceeds dense baseline (60%+) by cycle 20
+
+**M2 Ultra Optimization:**
+- Use `tf.conv2d` with `tf.memory()` monitoring
+- Batch size 64-128 (larger batches for conv)
+- Enable `tf.webgl.forceHalfFloat()` for faster computation
+
+**Code Location:** `src/server/ConvNetwork.js`
+
+---
+
+### Phase 3: Value Head (Actor-Critic)
+
+**Priority:** High (enables position evaluation)
+
+**Problem:** Network only learns "what moves are good" (policy). It doesn't know "how good is my position" (value).
+
+**Current:** Pure policy gradient — only learns from game outcomes.
+
+**Proposed:** Actor-Critic — learn both policy and value simultaneously.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Actor-Critic Architecture                 │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│   Shared trunk (conv layers)                               │
+│                      ↓                                      │
+│            ┌────────────┴────────────┐                      │
+│            ↓                         ↓                      │
+│      Actor (Policy)             Critic (Value)               │
+│   Input: Position              Input: Position               │
+│   Output: Move probs            Output: Win prob [−1, +1]     │
+│                                                             │
+│   Training signal:              Training signal:             │
+│   - Final outcome × policy     - TD(λ) from game outcomes   │
+│   - MCTS improved policy       - Bootstrap from value net  │
+│                                                             │
+│   Benefit: Value head provides dense learning signal.      │
+│   Even when you lose, you learn which positions were bad.   │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Implementation Steps:**
+
+| Step | Task | Estimated Time |
+|------|------|----------------|
+| 3.1 | Add value head to conv network (flatten → dense → tanh) | 45 min |
+| 3.2 | Implement value loss: MSE(predicted, actual) | 30 min |
+| 3.3 | Combine policy loss + value loss (weighted) | 30 min |
+| 3.4 | Implement TD(λ) returns for value targets | 1 hour |
+| 3.5 | Modify training loop: compute both losses | 45 min |
+| 3.6 | Add value prediction to evaluation logging | 20 min |
+| 3.7 | Test: Verify value predictions are in [−1, +1] | 15 min |
+| 3.8 | Run experiment TF-B6 (actor-critic, 20 cycles) | 50 min |
+| 3.9 | Analyze: correlation between value and outcome | 30 min |
+| 3.10 | Document results in TRAINING_BOOK | 20 min |
+
+**Success Criteria:**
+- [ ] Value predictions correlate with outcomes (r > 0.5)
+- [ ] Training converges faster (same loss in fewer iterations)
+- [ ] vs Random improves to 65%+ (from Phase 2's 60%)
+- [ ] vs Heuristic shows first wins (even 1% matters)
+
+**M2 Ultra Optimization:**
+- Larger batches for value loss (32-64)
+- Use `tf.losses.meanSquaredError` with reduction=SUM
+- Value loss weight: 0.5 (tune after initial results)
+
+**Code Location:** `src/server/ActorCriticNetwork.js`
+
+---
+
+### Phase 4: Batch Normalization + Deeper Network
+
+**Priority:** Medium (stability for deeper networks)
+
+**Problem:** Deeper networks are harder to train. Gradients vanish or explode.
+
+**Solution:** Batch normalization after each conv layer.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│              Deep Residual Network with BatchNorm            │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│   Conv2D → BatchNorm → ReLU → Conv2D → BatchNorm → ReLU    │
+│                      ↓                                      │
+│                Residual connection (add input)              │
+│                      ↓                                      │
+│   (Repeat 4-6 times)                                        │
+│                      ↓                                      │
+│            Policy Head + Value Head                         │
+│                                                             │
+│   BatchNorm benefits:                                       │
+│   • 10x faster convergence                                  │
+│   • Allows deeper networks without gradient issues          │
+│   • More stable training (fewer hyperparameter tweaks)     │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Implementation Steps:**
+
+| Step | Task | Estimated Time |
+|------|------|----------------|
+| 4.1 | Add `tf.batchNormalization()` after each conv | 30 min |
+| 4.2 | Implement residual block (conv → BN → ReLU → conv → BN → add skip) | 1 hour |
+| 4.3 | Stack 4 residual blocks | 20 min |
+| 4.4 | Test: Verify gradients don't explode (add gradient clipping) | 30 min |
+| 4.5 | Run experiment TF-B7 (deep network, 20 cycles) | 60 min |
+| 4.6 | Compare training curves vs Phase 3 | 20 min |
+| 4.7 | Document results in TRAINING_BOOK | 20 min |
+
+**Success Criteria:**
+- [ ] Training reaches lower loss than Phase 3
+- [ ] No NaN losses (gradient stability)
+- [ ] vs Random 70%+ (from Phase 3's 65%)
+- [ ] vs Heuristic 3-5% (from Phase 3's 1%)
+
+**M2 Ultra Optimization:**
+- BatchNorm works better with larger batches (64+)
+- Use `training: true` in BatchNorm during training
+- Lower learning rate (0.001 → 0.0005) for stability
+
+**Code Location:** `src/server/ResidualBlock.js`
+
+---
+
+### Phase 5: Monte Carlo Tree Search (MCTS)
+
+**Priority:** Medium-High (strategic lookahead, but complex)
+
+**Problem:** Network has no mechanism for "what if" reasoning.
+
+**Solution:** MCTS simulates game continuations and uses network to evaluate positions.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    MCTS Integration                           │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│   1. Selection: Start from root, pick promising moves        │
+│      • Use policy network to guide selection                 │
+│      • Use UCT formula: Q + c × P × √N/(1+n)                │
+│                                                             │
+│   2. Expansion: Add new node when reaching leaf             │
+│      • Use policy network to rank moves                     │
+│                                                             │
+│   3. Evaluation: At leaf, use value network                 │
+│      • v = value_network(position)                         │
+│                                                             │
+│   4. Backpropagation: Update statistics up tree             │
+│      • Q(node) += v                                         │
+│      • N(node) += 1                                        │
+│                                                             │
+│   5. Return: After N simulations, return improved policy   │
+│      • π(a) = N(child) / N(root)                            │
+│                                                             │
+│   Key insight: MCTS + NN > NN alone                        │
+│   The tree does the planning, NN does the evaluation.       │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Implementation Steps:**
+
+| Step | Task | Estimated Time |
+|------|------|----------------|
+| 5.1 | Implement `MCTSNode` class (parent, children, Q, N, P) | 1 hour |
+| 5.2 | Implement `select()` with UCT formula | 45 min |
+| 5.3 | Implement `expand()` with policy network priors | 45 min |
+| 5.4 | Implement `evaluate()` with value network | 30 min |
+| 5.5 | Implement `backpropagate()` | 20 min |
+| 5.6 | Implement `search(root, simulations)` | 30 min |
+| 5.7 | Test: 100 simulations from start position, verify tree builds | 30 min |
+| 5.8 | Integrate MCTS into self-play (use improved policy for training) | 1 hour |
+| 5.9 | Run experiment TF-B8 (MCTS 50 sims, 10 cycles) | 2 hours |
+| 5.10 | Run experiment TF-B9 (MCTS 200 sims, 10 cycles) | 4 hours |
+| 5.11 | Analyze: compare MCTS vs no-MCTS performance | 30 min |
+| 5.12 | Document results in TRAINING_BOOK | 30 min |
+
+**Success Criteria:**
+- [ ] MCTS completes 50 simulations in < 5 seconds
+- [ ] MCTS improves policy vs raw network (KL divergence > 0.1)
+- [ ] vs Random 75%+ (from Phase 4's 70%)
+- [ ] vs Heuristic 10%+ (from Phase 4's 5%)
+
+**M2 Ultra Optimization:**
+- Batch evaluate leaves (collect all leaves, evaluate in one forward pass)
+- Use Web Workers for parallel simulations
+- Virtual loss for parallel MCTS (add −1 to Q during search)
+
+**Code Location:** `src/server/MCTS.js`
+
+---
+
+### Phase 6: Self-Play Tournament + Iterative Retraining
+
+**Priority:** Lower (polish after core improvements)
+
+**Problem:** Network may overfit to its own play style.
+
+**Solution:** Maintain pool of historical versions. Train against diverse opponents.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                  Training Tournament Loop                     │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│   1. Self-play: Current net vs current net                 │
+│      → Generate games, add to replay buffer                  │
+│                                                             │
+│   2. Evaluation: Current net vs past versions                │
+│      → If win rate < 55%, demote current                     │
+│      → If win rate > 70%, promote candidate                  │
+│                                                             │
+│   3. Diversity injection: Add random/heuristic games        │
+│      → Prevent style collapse                               │
+│                                                             │
+│   4. Retrain: Sample from buffer, train batch               │
+│      → Repeat N times                                       │
+│                                                             │
+│   Benefit: Robust AI that handles varied opponents          │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Implementation Steps:**
+
+| Step | Task | Estimated Time |
+|------|------|----------------|
+| 6.1 | Implement `ModelPool` class to manage network versions | 1 hour |
+| 6.2 | Implement tournament evaluation loop | 45 min |
+| 6.3 | Add candidate promotion logic | 30 min |
+| 6.4 | Add diversity injection (5-10% random games) | 20 min |
+| 6.5 | Run experiment TF-B10 (tournament, 20 cycles) | 2 hours |
+| 6.6 | Analyze: win rate vs past versions | 30 min |
+| 6.7 | Document results in TRAINING_BOOK | 20 min |
+
+**Success Criteria:**
+- [ ] Current network beats all past versions (55%+)
+- [ ] vs Random 80%+ (from Phase 5's 75%)
+- [ ] vs Heuristic 15%+ (from Phase 5's 10%)
+- [ ] No catastrophic forgetting (past skills retained)
+
+**Code Location:** `src/server/ModelPool.js`
+
+---
+
+### Progress Tracking
+
+Use this table to track implementation progress. Update after each experiment.
+
+| Phase | Experiment | Status | vs Random | vs Heuristic | Notes |
+|-------|------------|--------|-----------|--------------|-------|
+| Baseline | TF-B1_pure | ✅ Done | 49% | 0% | Pure self-play |
+| Baseline | TF-B2_mixed | ✅ Done | 44% | 0% | Mixed opponents |
+| Baseline | TF-B3_cluster | ✅ Done | 52% | 0% | TD(λ) rewards |
+| 1: Replay | TF-B4 | 🔄 Code Ready | — | — | Buffer implemented, needs full run |
+| 2: Conv | TF-B5 | ⏳ Pending | — | — | — |
+| 3: Actor-Critic | TF-B6 | ⏳ Pending | — | — | — |
+| 4: Deep | TF-B7 | ⏳ Pending | — | — | — |
+| 5: MCTS-50 | TF-B8 | ⏳ Pending | — | — | — |
+| 5: MCTS-200 | TF-B9 | ⏳ Pending | — | — | — |
+| 6: Tournament | TF-B10 | ⏳ Pending | — | — | — |
+
+**Status Legend:**
+- ✅ Done — Experiment complete, documented
+- 🔄 Running — Currently executing
+- ⏳ Pending — Not started
+- ❌ Failed — Did not meet success criteria (requires revision)
+
+---
+
+### Summary: Expected Impact
+
+| Phase | Change | Expected Δvs Random | Expected Δvs Heuristic | Complexity |
+|-------|--------|---------------------|------------------------|------------|
+| 1 | Replay buffer | +10% (50→60%) | +0% (0→0%) | Low |
+| 2 | Conv layers | +10% (60→70%) | +3% (0→3%) | Medium |
+| 3 | Value head | +5% (70→75%) | +3% (3→6%) | Medium |
+| 4 | BatchNorm + Deep | +5% (75→80%) | +5% (6→11%) | Medium |
+| 5 | MCTS | +5% (80→85%) | +5% (11→16%) | High |
+| 6 | Tournament | +0% (stable) | +4% (16→20%) | Medium |
+
+**Total Expected:** 85% vs Random, 20% vs Heuristic
+
+**Key Insight:** Architecture changes (conv + value head) matter more than training tricks (replay buffer). MCTS adds strategic lookahead. Tournament ensures robustness.
+
+---
+
+## Appendix A: Command Reference
 
 ```bash
 # Basic training (pure self-play)
