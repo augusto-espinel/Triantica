@@ -665,7 +665,7 @@ async function main() {
       opponentTypeCounts[opponentType] = (opponentTypeCounts[opponentType] || 0) + 1;
       if (!winsByOpponent[opponentType]) {
         winsByOpponent[opponentType] = { 1: 0, 2: 0, draws: 0 };
-        scoresByOpponent[opponentType] = { p1: [], p2: [] };
+        scoresByOpponent[opponentType] = { p1: [], p2: [], ai: [], opponent: [] };
       }
       
       while (!grid.isGridFull() && m < maxM) {
@@ -747,6 +747,12 @@ async function main() {
       winsByOpponent[opponentType][winner === 0 ? 'draws' : (winner === 1 ? 1 : 2)]++;
       scoresByOpponent[opponentType].p1.push(grid.getLargestContiguous(1));
       scoresByOpponent[opponentType].p2.push(grid.getLargestContiguous(2));
+      // Also capture scores from AI's perspective (for role-alternation experiments)
+      const aiFinalScore = grid.getLargestContiguous(aiPlayerNumber);
+      const oppPlayerNumber = aiPlayerNumber === 1 ? 2 : 1;
+      const oppFinalScore = grid.getLargestContiguous(oppPlayerNumber);
+      scoresByOpponent[opponentType].ai.push(aiFinalScore);
+      scoresByOpponent[opponentType].opponent.push(oppFinalScore);
       
       // Track final board state for diversity
       finalBoards.push(grid.grid.flat().map(cell => ({
@@ -916,7 +922,10 @@ async function main() {
             k,
             {
               p1: { median: computeMedian(v.p1), min: Math.min(...v.p1), max: Math.max(...v.p1) },
-              p2: { median: computeMedian(v.p2), min: Math.min(...v.p2), max: Math.max(...v.p2) }
+              p2: { median: computeMedian(v.p2), min: Math.min(...v.p2), max: Math.max(...v.p2) },
+              // AI perspective scores (for role-alternation experiments)
+              ai: v.ai && v.ai.length > 0 ? { median: computeMedian(v.ai), min: Math.min(...v.ai), max: Math.max(...v.ai) } : null,
+              opponent: v.opponent && v.opponent.length > 0 ? { median: computeMedian(v.opponent), min: Math.min(...v.opponent), max: Math.max(...v.opponent) } : null
             }
           ])
         ),

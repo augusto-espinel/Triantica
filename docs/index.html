@@ -117,7 +117,7 @@
         <div class="section"><h3>Win Rate Over Cycles</h3><div class="chart-container"><canvas id="chart-winrate"></canvas></div></div>
       </div>
       <div class="detail-grid full">
-        <div class="section"><h3>Game Scores Per Cycle (P1 vs opponent type)</h3><div class="chart-container tall"><canvas id="chart-scores"></canvas></div></div>
+        <div class="section"><h3>Game Scores Per Cycle (AI perspective)</h3><div class="chart-container tall"><canvas id="chart-scores"></canvas></div></div>
       </div>
       <div class="detail-grid">
         <div class="section"><h3>Training Error</h3><div class="chart-container"><canvas id="chart-error"></canvas></div></div>
@@ -361,41 +361,50 @@
       });
       
       // Scores per cycle - use scoresByOpponent if available, else fall back to aggregate scores
+      // Show scores from ACTOR's perspective (AI), not player number, since roles alternate
       const hasScoresByOpp = data?.cycles?.[0]?.selfPlay?.scoresByOpponent;
       let scoreDatasets;
       if (hasScoresByOpp) {
         const scoreTypes = ['network', 'heuristic', 'random'];
         const scoreColors = { network: '#d29922', heuristic: '#f85149', random: '#58a6ff' };
-        scoreDatasets = scoreTypes.flatMap(type => [
-          {
-            label: `${type[0].toUpperCase()}${type.slice(1)} (P1 med)`,
-            data: data.cycles.map(c => c.selfPlay?.scoresByOpponent?.[type]?.p1?.median ?? null),
-            borderColor: scoreColors[type],
-            backgroundColor: 'transparent',
-            tension: 0.3
-          },
-          {
-            label: `${type[0].toUpperCase()}${type.slice(1)} (P1 max)`,
-            data: data.cycles.map(c => c.selfPlay?.scoresByOpponent?.[type]?.p1?.max ?? null),
-            borderColor: scoreColors[type],
-            backgroundColor: 'transparent',
-            borderDash: [3,3],
-            tension: 0.3
-          }
-        ]);
+        scoreDatasets = scoreTypes.flatMap(type => {
+          // Prefer AI scores (new format), fall back to P1 scores (old format)
+          const hasAiScores = data.cycles[0]?.selfPlay?.scoresByOpponent?.[type]?.ai;
+          const medianKey = hasAiScores ? 'ai' : 'p1';
+          return [
+            {
+              label: `${type[0].toUpperCase()}${type.slice(1)} (AI med)`,
+              data: data.cycles.map(c => c.selfPlay?.scoresByOpponent?.[type]?.[medianKey]?.median ?? null),
+              borderColor: scoreColors[type],
+              backgroundColor: 'transparent',
+              tension: 0.3
+            },
+            {
+              label: `${type[0].toUpperCase()}${type.slice(1)} (AI max)`,
+              data: data.cycles.map(c => c.selfPlay?.scoresByOpponent?.[type]?.[medianKey]?.max ?? null),
+              borderColor: scoreColors[type],
+              backgroundColor: 'transparent',
+              borderDash: [3,3],
+              tension: 0.3
+            }
+          ];
+        });
       } else {
-        // Fallback: aggregate P1 scores
+        // Fallback: aggregate AI scores (if available) or P1 scores
+        const hasAiScores = data?.cycles?.[0]?.selfPlay?.scores?.ai;
+        const scoreKey = hasAiScores ? 'ai' : 'p1';
+        const label = hasAiScores ? 'AI' : 'P1';
         scoreDatasets = [
           {
-            label: 'P1 Median',
-            data: data?.cycles?.map(c => c.selfPlay?.scores?.p1?.median ?? null) || [],
+            label: `${label} Median`,
+            data: data?.cycles?.map(c => c.selfPlay?.scores?.[scoreKey]?.median ?? null) || [],
             borderColor: '#3fb950',
             backgroundColor: 'transparent',
             tension: 0.3
           },
           {
-            label: 'P1 Max',
-            data: data?.cycles?.map(c => c.selfPlay?.scores?.p1?.max ?? null) || [],
+            label: `${label} Max`,
+            data: data?.cycles?.map(c => c.selfPlay?.scores?.[scoreKey]?.max ?? null) || [],
             borderColor: '#3fb950',
             backgroundColor: 'transparent',
             borderDash: [3,3],
