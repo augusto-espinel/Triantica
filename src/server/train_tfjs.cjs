@@ -17,6 +17,7 @@
 const tf = require('@tensorflow/tfjs-node');
 const fs = require('fs');
 const path = require('path');
+const { ReplayBuffer } = require('./ReplayBuffer.cjs');
 
 // Dynamic imports for ES modules (must be awaited)
 let GridManager, GameAuditor, HeuristicPlayer;
@@ -522,6 +523,10 @@ async function main() {
   const auditRate = parseFloat(getArg('audit-rate', '0.05'));
   const useGradientIsolation = getArg('gradient-isolation', 'true') === 'true';
   const batchSize = parseInt(getArg('batch-size', '256'));
+  const useReplayBuffer = getArg('replay-buffer', 'true') === 'true';
+  const replayBufferSize = parseInt(getArg('replay-buffer-size', '500000'));
+  const replayBatchSize = parseInt(getArg('replay-batch-size', '256'));
+  const replayRatio = parseFloat(getArg('replay-ratio', '2.0')); // How many replay batches per cycle vs new data batches
   
   console.log('🧪  TF.js Training Pipeline');
   console.log('='.repeat(60));
@@ -547,6 +552,12 @@ async function main() {
   console.log(`  Gradient iso:    ${useGradientIsolation}`);
   console.log(`  Exploration:      ${exploration}`);
   console.log(`  Cluster reward:   ${enableClusterReward}`);
+  console.log(`  Replay buffer:    ${useReplayBuffer ? 'ENABLED' : 'disabled'}`);
+  if (useReplayBuffer) {
+    console.log(`  Replay size:      ${replayBufferSize.toLocaleString()}`);
+    console.log(`  Replay batch:     ${replayBatchSize}`);
+    console.log(`  Replay ratio:     ${replayRatio}x`);
+  }
   console.log(`  Audit mode:       ${audit ? 'ENABLED' + (audit ? ' (' + (auditRate * 100).toFixed(0) + '% sample rate)' : '') : 'disabled'}`);
   console.log(`  Start from:      ${startFrom || 'fresh'}`);
   console.log(`  Output:          ${output}`);
@@ -592,6 +603,10 @@ async function main() {
       learningRate,
       batchSize,
       gradientIsolation: useGradientIsolation,
+      replayBuffer: useReplayBuffer,
+      replayBufferSize,
+      replayBatchSize,
+      replayRatio,
       audit,
       auditRate,
       framework: 'tensorflow.js',
@@ -606,9 +621,21 @@ async function main() {
     sampleRate: auditRate,
     verbose: audit
   });
-  
+
   if (audit) {
     console.log(`🔍  Game auditing ENABLED (${(auditRate * 100).toFixed(0)}% sample rate)`);
+  }
+
+  // Initialize replay buffer if enabled
+  const replayBuffer = useReplayBuffer ? new ReplayBuffer({
+    maxSize: replayBufferSize,
+    alpha: 0.6,
+    beta: 0.4,
+    betaGrowth: 0.001
+  }) : null;
+
+  if (useReplayBuffer) {
+    console.log(`🗄️  Replay buffer initialized (max ${replayBufferSize.toLocaleString()} samples)`);
   }
   
   // Training reward constants
@@ -806,13 +833,82 @@ async function main() {
     
     console.log(`✅ Self-play: ${games} games, ${allInputs.length} samples, ${Date.now() - cycleStart}ms`);
     console.log(`   Wins: P1=${p1Wins} P2=${p2Wins} Draws=${draws}`);
-    
-    // Training
+
+    // Add new samples to replay buffer
+    if (useReplayBuffer && allInputs.length > 0) {
+      replayBuffer.add(allInputs, allOutputs, allChosenIndices);
+      const bufStats = replayBuffer.getStats();
+      console.log(`🗄️  Buffer: ${bufStats.size.toLocaleString()}/${bufStats.maxSize.toLocaleString()} samples (${(bufStats.utilization * 100).toFixed(1)}% full)`);
+    }
+
+    // Training — use replay buffer if available, otherwise train on current cycle data
     const trainStart = Date.now();
-    const trainResult = useGradientIsolation
-      ? await network.trainBatchWithIsolation(allInputs, allOutputs, allChosenIndices, iterations, learningRate, batchSize)
-      : await network.trainBatch(allInputs, allOutputs, iterations, learningRate, batchSize);
-    console.log(`📚 Training: ${trainResult.initialError.toFixed(6)} → ${trainResult.finalError.toFixed(6)} (${iterations} epochs, ${trainResult.timeMs}ms)`);
+    let trainResult;
+    let trainingSamplesUsed = allInputs.length;
+
+    if (useReplayBuffer && replayBuffer.size >= replayBatchSize) {
+      // Train on a mix of new data + replayed historical data
+      // Total training batches = (new data batches) × replayRatio
+      const newBatchCount = Math.ceil(allInputs.length / replayBatchSize);
+      const totalBatches = Math.max(1, Math.round(newBatchCount * replayRatio));
+
+      // First: train on current cycle data (on-policy)
+      if (allInputs.length > 0) {
+        trainResult = useGradientIsolation
+          ? await network.trainBatchWithIsolation(allInputs, allOutputs, allChosenIndices, Math.max(1, Math.floor(iterations / 2)), learningRate, batchSize)
+          : await network.trainBatch(allInputs, allOutputs, Math.max(1, Math.floor(iterations / 2)), learningRate, batchSize);
+      }
+
+      // Then: train on replay buffer samples (off-policy)
+      const replayIters = Math.max(1, Math.floor(iterations / 2));
+      let replayLossTotal = 0;
+      let replayBatchCount = 0;
+
+      for (let rb = 0; rb < totalBatches; rb++) {
+        const batch = replayBuffer.sample(replayBatchSize);
+        const replayResult = useGradientIsolation
+          ? await network.trainBatchWithIsolation(batch.inputs, batch.outputs, batch.chosenIndices, replayIters, learningRate, batchSize)
+          : await network.trainBatch(batch.inputs, batch.outputs, replayIters, learningRate, batchSize);
+        
+        replayLossTotal += replayResult.finalError;
+        replayBatchCount++;
+        trainingSamplesUsed += replayBatchSize;
+
+        // Update priorities based on TD-error (current loss as proxy)
+        if (useGradientIsolation && batch.indices) {
+          const tdErrors = batch.inputs.map((inp, i) => {
+            const pred = network.run(inp);
+            return Math.abs(pred[batch.chosenIndices[i]] - batch.outputs[i][batch.chosenIndices[i]]);
+          });
+          replayBuffer.updatePriorities(batch.indices, tdErrors);
+        }
+      }
+
+      // Merge training results for logging
+      if (!trainResult) {
+        // Only replay, no new data this cycle
+        trainResult = {
+          initialError: replayLossTotal / replayBatchCount,
+          finalError: replayLossTotal / replayBatchCount,
+          errorHistory: [replayLossTotal / replayBatchCount],
+          iterations: replayIters * replayBatchCount,
+          timeMs: Date.now() - trainStart
+        };
+      } else {
+        // Append replay loss to training result
+        trainResult.errorHistory.push(replayLossTotal / replayBatchCount);
+        trainResult.finalError = replayLossTotal / replayBatchCount;
+        trainResult.timeMs = Date.now() - trainStart;
+      }
+      console.log(`📚 Training (new+replay): ${trainResult.initialError.toFixed(6)} → ${trainResult.finalError.toFixed(6)} (${iterations} epochs, ${replayBatchCount} replay batches, ${trainResult.timeMs}ms)`);
+      console.log(`   Samples used: ${trainingSamplesUsed.toLocaleString()} (new: ${allInputs.length}, replay: ${trainingSamplesUsed - allInputs.length})`);
+    } else {
+      // No replay buffer (or buffer too small) — standard training on current cycle
+      trainResult = useGradientIsolation
+        ? await network.trainBatchWithIsolation(allInputs, allOutputs, allChosenIndices, iterations, learningRate, batchSize)
+        : await network.trainBatch(allInputs, allOutputs, iterations, learningRate, batchSize);
+      console.log(`📚 Training: ${trainResult.initialError.toFixed(6)} → ${trainResult.finalError.toFixed(6)} (${iterations} epochs, ${trainResult.timeMs}ms)`);
+    }
     
     // Evaluation vs Random
     let evalWins = 0, evalLosses = 0, evalDraws = 0;
@@ -934,12 +1030,14 @@ async function main() {
       },
       training: {
         samples: allInputs.length,
+        totalSamplesUsed: trainingSamplesUsed || allInputs.length,
         iterations,
         learningRate,
         initialError: trainResult.initialError,
         finalError: trainResult.finalError,
         errorSnapshots: trainResult.errorHistory.map((err, i) => ({ iteration: i, error: err })),
-        timeMs: trainResult.timeMs
+        timeMs: trainResult.timeMs,
+        replayBuffer: useReplayBuffer ? replayBuffer.getStats() : null
       },
       evaluation: {
         vsRandom: {
