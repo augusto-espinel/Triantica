@@ -1458,7 +1458,7 @@ Use this table to track implementation progress. Update after each experiment.
 | Baseline | TF-B1_pure | ✅ Done | 49% | 0% | Pure self-play |
 | Baseline | TF-B2_mixed | ✅ Done | 44% | 0% | Mixed opponents |
 | Baseline | TF-B3_cluster | ✅ Done | 52% | 0% | TD(λ) rewards |
-| 1: Replay | TF-B4 | 🔄 Code Ready | — | — | Buffer implemented, needs full run |
+| 1: Replay | TF-B4 | ❌ No gain | 45% | 0% | Replay alone doesn't help; architecture limit |
 | 2: Conv | TF-B5 | ⏳ Pending | — | — | — |
 | 3: Actor-Critic | TF-B6 | ⏳ Pending | — | — | — |
 | 4: Deep | TF-B7 | ⏳ Pending | — | — | — |
