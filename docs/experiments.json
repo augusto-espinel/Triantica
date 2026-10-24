@@ -5,7 +5,7 @@
     "date": "2026-10-24",
     "logFile": "data/TF-B1_v3.json",
     "dataFile": "TF-B1_v3.json",
-    "summary": "Fresh network, 10 cycles pure self-play with role alternation fix. AI plays as both P1 and P2 during training. Gradient isolation enabled. LR=0.05, iterations=10, batch=256. 37% vs Random (lower than published due to cleaner gradient isolation).",
+    "summary": "Fresh network, 10 cycles pure self-play with role alternation fix. AI plays as both P1 and P2 during training. Gradient isolation enabled. LR=0.05, iterations=10, batch=256. 37% vs Random.",
     "parameters": {
       "cycles": 10,
       "games": 100,
@@ -28,25 +28,8 @@
       "backend": "Metal GPU"
     },
     "changes": "Added role alternation (AI plays as both P1 and P2). Added gradient isolation (only chosen move receives gradient). Larger batch size for M2 Ultra.",
-    "bugsFixed": [
-      "Role alternation: AI now plays as both P1 and P2 during training",
-      "Gradient isolation: only chosen move receives learning signal"
-    ],
-    "result": {
-      "startWinRate": 42,
-      "endWinRate": 37,
-      "improvement": -5,
-      "peakWinRate": 42,
-      "vsRandom": 37,
-      "vsHeuristic": 0,
-      "heuristicScoreAI": 4,
-      "heuristicScoreOpponent": 166,
-      "selfPlayDrawRate": 5,
-      "finalError": 0.012822,
-      "trainingTimeMin": 20.2,
-      "auditPassRate": 100,
-      "auditGames": 53
-    }
+    "bugsFixed": ["Role alternation: AI now plays as both P1 and P2 during training", "Gradient isolation: only chosen move receives learning signal"],
+    "result": {"startWinRate": 42, "endWinRate": 37, "improvement": -5, "peakWinRate": 42, "vsRandom": 37, "vsHeuristic": 0, "heuristicScoreAI": 4, "heuristicScoreOpponent": 166, "selfPlayDrawRate": 5, "finalError": 0.012822, "trainingTimeMin": 20.2, "auditPassRate": 100, "auditGames": 53}
   },
   {
     "id": "TF-B1_pure",
@@ -78,21 +61,7 @@
     },
     "changes": "Baseline pure self-play. No gradient isolation (dense supervision from all moves).",
     "bugsFixed": [],
-    "result": {
-      "startWinRate": 53,
-      "endWinRate": 49,
-      "improvement": -4,
-      "peakWinRate": 53,
-      "vsRandom": 49,
-      "vsHeuristic": 0,
-      "heuristicScoreAI": 3,
-      "heuristicScoreOpponent": 173,
-      "selfPlayDrawRate": 5,
-      "finalError": 0.011746,
-      "trainingTimeMin": 39.4,
-      "auditPassRate": 100,
-      "auditGames": 92
-    }
+    "result": {"startWinRate": 53, "endWinRate": 49, "improvement": -4, "peakWinRate": 53, "vsRandom": 49, "vsHeuristic": 0, "heuristicScoreAI": 3, "heuristicScoreOpponent": 173, "selfPlayDrawRate": 5, "finalError": 0.011746, "trainingTimeMin": 39.4, "auditPassRate": 100, "auditGames": 92}
   },
   {
     "id": "TF-B1_optimized",
@@ -124,21 +93,7 @@
     },
     "changes": "Lower learning rate (0.01 vs 0.05). More iterations (100 vs 10). Smaller batch (32 vs 256) for better gradient quality.",
     "bugsFixed": [],
-    "result": {
-      "startWinRate": 42,
-      "endWinRate": 47,
-      "improvement": 5,
-      "peakWinRate": 47,
-      "vsRandom": 47,
-      "vsHeuristic": 0,
-      "heuristicScoreAI": 4,
-      "heuristicScoreOpponent": 169,
-      "selfPlayDrawRate": 3,
-      "finalError": 0.008593,
-      "trainingTimeMin": 34.7,
-      "auditPassRate": 100,
-      "auditGames": 52
-    }
+    "result": {"startWinRate": 42, "endWinRate": 47, "improvement": 5, "peakWinRate": 47, "vsRandom": 47, "vsHeuristic": 0, "heuristicScoreAI": 4, "heuristicScoreOpponent": 169, "selfPlayDrawRate": 3, "finalError": 0.008593, "trainingTimeMin": 34.7, "auditPassRate": 100, "auditGames": 52}
   },
   {
     "id": "TF-B2_v3",
@@ -172,24 +127,8 @@
       "backend": "Metal GPU"
     },
     "changes": "Added heuristic opponents to training. Role alternation enabled. Gradient isolation enabled.",
-    "bugsFixed": [
-      "HeuristicPlayer now receives correct player number"
-    ],
-    "result": {
-      "startWinRate": 41,
-      "endWinRate": 43,
-      "improvement": 2,
-      "peakWinRate": 43,
-      "vsRandom": 43,
-      "vsHeuristic": 0,
-      "heuristicScoreAI": 4,
-      "heuristicScoreOpponent": 166,
-      "selfPlayDrawRate": 4,
-      "finalError": 0.013012,
-      "trainingTimeMin": 40.5,
-      "auditPassRate": 100,
-      "auditGames": 54
-    }
+    "bugsFixed": ["HeuristicPlayer now receives correct player number"],
+    "result": {"startWinRate": 41, "endWinRate": 43, "improvement": 2, "peakWinRate": 43, "vsRandom": 43, "vsHeuristic": 0, "heuristicScoreAI": 4, "heuristicScoreOpponent": 166, "selfPlayDrawRate": 4, "finalError": 0.013012, "trainingTimeMin": 40.5, "auditPassRate": 100, "auditGames": 54}
   },
   {
     "id": "TF-B2_mixed",
@@ -224,21 +163,7 @@
     },
     "changes": "Mixed opponent training without gradient isolation. Baseline for comparison.",
     "bugsFixed": [],
-    "result": {
-      "startWinRate": 27,
-      "endWinRate": 44,
-      "improvement": 17,
-      "peakWinRate": 51,
-      "vsRandom": 44,
-      "vsHeuristic": 0,
-      "heuristicScoreAI": 3,
-      "heuristicScoreOpponent": 173,
-      "selfPlayDrawRate": 5,
-      "finalError": 0.013373,
-      "trainingTimeMin": 81.0,
-      "auditPassRate": 100,
-      "auditGames": 107
-    }
+    "result": {"startWinRate": 27, "endWinRate": 44, "improvement": 17, "peakWinRate": 51, "vsRandom": 44, "vsHeuristic": 0, "heuristicScoreAI": 3, "heuristicScoreOpponent": 173, "selfPlayDrawRate": 5, "finalError": 0.013373, "trainingTimeMin": 81.0, "auditPassRate": 100, "auditGames": 107}
   },
   {
     "id": "TF-B3_v3",
@@ -276,21 +201,7 @@
     },
     "changes": "Cluster reward TD(λ) enabled. No heuristic in training mix. Gradient isolation enabled.",
     "bugsFixed": [],
-    "result": {
-      "startWinRate": 39,
-      "endWinRate": 36,
-      "improvement": -3,
-      "peakWinRate": 39,
-      "vsRandom": 36,
-      "vsHeuristic": 0,
-      "heuristicScoreAI": 4,
-      "heuristicScoreOpponent": 167,
-      "selfPlayDrawRate": 4,
-      "finalError": 0.013018,
-      "trainingTimeMin": 20.1,
-      "auditPassRate": 100,
-      "auditGames": 53
-    }
+    "result": {"startWinRate": 39, "endWinRate": 36, "improvement": -3, "peakWinRate": 39, "vsRandom": 36, "vsHeuristic": 0, "heuristicScoreAI": 4, "heuristicScoreOpponent": 167, "selfPlayDrawRate": 4, "finalError": 0.013018, "trainingTimeMin": 20.1, "auditPassRate": 100, "auditGames": 53}
   },
   {
     "id": "TF-B3_cluster",
@@ -328,21 +239,7 @@
     },
     "changes": "Cluster reward TD(λ) enabled. No heuristic in training. No gradient isolation (dense supervision).",
     "bugsFixed": [],
-    "result": {
-      "startWinRate": 38,
-      "endWinRate": 43,
-      "improvement": 5,
-      "peakWinRate": 52,
-      "vsRandom": 43,
-      "vsHeuristic": 0,
-      "heuristicScoreAI": 3,
-      "heuristicScoreOpponent": 173,
-      "selfPlayDrawRate": 4,
-      "finalError": 0.011859,
-      "trainingTimeMin": 40.1,
-      "auditPassRate": 100,
-      "auditGames": 107
-    }
+    "result": {"startWinRate": 38, "endWinRate": 43, "improvement": 5, "peakWinRate": 52, "vsRandom": 43, "vsHeuristic": 0, "heuristicScoreAI": 3, "heuristicScoreOpponent": 173, "selfPlayDrawRate": 4, "finalError": 0.011859, "trainingTimeMin": 40.1, "auditPassRate": 100, "auditGames": 107}
   },
   {
     "id": "exp20",
@@ -350,7 +247,7 @@
     "date": "2026-10-23",
     "logFile": "data/exp20_mixed.json",
     "dataFile": "exp20_mixed.json",
-    "summary": "Best brain.js result: 91% vs Random, 0% vs Heuristic. Mixed opponent training (network/random/heuristic). LR=0.01, iterations=200. No role alternation, no gradient isolation.",
+    "summary": "Best brain.js result: 91% vs Random, 0% vs Heuristic. Mixed opponent training. LR=0.01, iterations=200. No role alternation, no gradient isolation.",
     "parameters": {
       "cycles": 20,
       "games": 100,
@@ -373,19 +270,7 @@
     },
     "changes": "Historical best result. brain.js baseline before TF.js migration.",
     "bugsFixed": [],
-    "result": {
-      "startWinRate": 50,
-      "endWinRate": 91,
-      "improvement": 41,
-      "peakWinRate": 91,
-      "vsRandom": 91,
-      "vsHeuristic": 0,
-      "heuristicScoreAI": 3,
-      "heuristicScoreOpponent": 173,
-      "selfPlayDrawRate": 9,
-      "finalError": 0.008,
-      "trainingTimeMin": 8.0
-    }
+    "result": {"startWinRate": 50, "endWinRate": 91, "improvement": 41, "peakWinRate": 91, "vsRandom": 91, "vsHeuristic": 0, "heuristicScoreAI": 3, "heuristicScoreOpponent": 173, "selfPlayDrawRate": 9, "finalError": 0.008, "trainingTimeMin": 8.0}
   },
   {
     "id": "exp22",
@@ -403,4 +288,22 @@
       "momentum": null,
       "exploration": 0.3,
       "batchSize": 1,
-      "selfPlayMode":
+      "selfPlayMode": "mixed",
+      "opponentMix": "mixed",
+      "trainingP2": "mixed with cluster reward",
+      "roleAlternation": false,
+      "gradientIsolation": false,
+      "enableClusterReward": true,
+      "clusterRewardFactor": 0.1,
+      "clusterLambda": 0.9,
+      "clusterGamma": 0.99,
+      "audit": false,
+      "startFrom": "fresh",
+      "framework": "brain.js",
+      "backend": "CPU"
+    },
+    "changes": "Historical cluster reward test with brain.js.",
+    "bugsFixed": [],
+    "result": {"startWinRate": 50, "endWinRate": 84, "improvement": 34, "peakWinRate": 84, "vsRandom": 84, "vsHeuristic": 0, "heuristicScoreAI": 3, "heuristicScoreOpponent": 173, "selfPlayDrawRate": 8, "finalError": 0.009, "trainingTimeMin": 8.0}
+  }
+]
