@@ -57,7 +57,7 @@ Saved at `experiments/data/baseline-random-100.json`.
 | --- | --- |
 | **`game.js`** | Phaser Scenes + visual rendering + rules logic |
 | **`src/server/train_tfjs.cjs`** | TF.js training pipeline (Metal GPU) |
-| **`AIPlayer.js`** | Neural network, move prediction, brain.js browser inference |
+| **`AIPlayer.js`** | Neural network, move prediction, browser inference (brain.js for client) |
 | **`src/core/GridManager.js`** | Extracted pure game logic (no Phaser deps) |
 | **`src/core/GameSession.js`** | Game orchestration for experiments |
 | **`src/players/RandomPlayer.js`** | Baseline random opponent |
@@ -75,7 +75,7 @@ Saved at `experiments/data/baseline-random-100.json`.
 * **Training:** Self-play RL with epsilon-greedy exploration
 * **Reward:** Immediate cluster/enclosure gains + final outcome
 * **Framework:** TensorFlow.js + Metal GPU (Node v20 LTS)
-* **Browser inference:** Brain.js (lightweight, no GPU needed)
+* **Browser inference:** Brain.js (lightweight, no GPU needed, client-side only)
 
 ### Critical Functions
 
@@ -83,4 +83,4 @@ Saved at `experiments/data/baseline-random-100.json`.
 | --- | --- | --- |
 | **`GridManager.updateClustersForNewTriangle`** | `GridManager.js` | Core mechanic: merges clusters on placement |
 | **`AIPlayer.calculateImmediateRewardVector`** | `AIPlayer.js` | Simulates every legal move to find immediate reward |
-| **`AIPlayer.trainNetwork`** | `AIPlayer.js` | Feeds self-play history into Brain.js |
+| **`AIPlayer.trainNetwork`** | `AIPlayer.js` | Feeds self-play history into neural network (TF.js for training, brain.js for browser inference) |

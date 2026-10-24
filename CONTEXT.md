@@ -83,15 +83,17 @@ See `README_QUICKSTART.md` for full instructions.
 ### Phase 4: AIPlayer Integration ✅
 - Refactored `AIPlayer.js` to extend `PlayerInterface`
 - Uses `GridManager` directly (no Phaser dependency)
-- `brain.js` resolved via dynamic import (ESM-safe)
+- `brain.js` resolved via dynamic import (ESM-safe) for browser inference
+- Training uses `@tensorflow/tfjs-node` with Metal GPU acceleration (Node v20 LTS)
 - Three experiment modes working: AI vs Random, Random vs AI, AI vs AI
 - `calculateImmediateRewardVector` uses `GridManager.clone()` instead of JSON.parse/stringify
 - `runSelfPlayGame` method preserved for training
 
 ## Known Issues / Lessons
 
-1. **brain.js ESM resolution:** `require()` doesn't work in ESM context. Use `await import('brain.js')` with `mod.default || mod` fallback.
+1. **brain.js ESM resolution:** `require()` doesn't work in ESM context. Use `await import('brain.js')` with `mod.default || mod` fallback. (Browser inference only — training uses TF.js.)
 2. **async _getBrain():** Must `await` the result — missing `await` was the cause of "NeuralNetwork is not a constructor".
+3. **TF.js Node version:** Requires Node v20 LTS. Node v25's V8 engine breaks `tfjs-node` native bindings. Use `fnm use v20.20.2`.
 3. **Coordinate convention:** `placeTriangle(x, y)` → `grid[y][x]` (row-major).
 4. **Cluster adjacency:** Same-cell triangles share a corner, not a diagonal group.
 5. **AI performance:** Pre-trained network is barely above random. This is the baseline to improve.
