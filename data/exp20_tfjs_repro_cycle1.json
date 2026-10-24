@@ -1,0 +1,99 @@
+{
+  "startedAt": "2026-10-23T19:55:07.188Z",
+  "experimentId": "exp20-tfjs-repro",
+  "options": {
+    "cycles": 1,
+    "games": 5,
+    "evalGames": 5,
+    "iterations": 3,
+    "learningRate": 0.1,
+    "exploration": 0.3,
+    "startFrom": null
+  },
+  "cycles": [
+    {
+      "cycle": 1,
+      "selfPlay": {
+        "games": 5,
+        "wins": {
+          "1": 0,
+          "2": 0,
+          "draws": 5
+        },
+        "winsByOpponent": {
+          "network": {
+            "1": 0,
+            "2": 0,
+            "draws": 5
+          }
+        },
+        "opponentTypeCounts": {
+          "network": 5
+        },
+        "scores": {
+          "p1": {
+            "median": 1,
+            "min": 1,
+            "max": 4
+          },
+          "p2": {
+            "median": 1,
+            "min": 1,
+            "max": 4
+          }
+        },
+        "scoresByOpponent": {
+          "network": {
+            "p1": {
+              "median": 1,
+              "max": 4
+            },
+            "p2": {
+              "median": 1,
+              "max": 4
+            }
+          }
+        }
+      },
+      "training": {
+        "samples": 51,
+        "iterations": 3,
+        "learningRate": 0.1,
+        "initialError": 0.21790671348571777,
+        "finalError": 0.21790671348571777,
+        "errorSnapshots": [
+          {
+            "iteration": 0,
+            "error": 0.21790671348571777
+          }
+        ],
+        "timeMs": 11
+      },
+      "evaluation": {
+        "aiWinRate": 20,
+        "aiWins": 1,
+        "losses": 1,
+        "draws": 3,
+        "aiScores": [
+          2,
+          1,
+          3,
+          1,
+          2
+        ],
+        "opponentScores": [
+          2,
+          1,
+          1,
+          2,
+          2
+        ],
+        "opponent": "random"
+      }
+    }
+  ],
+  "endedAt": "2026-10-23T19:55:07.608Z",
+  "finalResult": {
+    "vsRandom": 20
+  }
+}

@@ -19,12 +19,14 @@ const fs = require('fs');
 const path = require('path');
 
 // Dynamic imports for ES modules
-let GridManager, GameAuditor;
+let GridManager, GameAuditor, HeuristicPlayer;
 (async () => {
   const gridModule = await import('../core/GridManager.js');
   GridManager = gridModule.GridManager;
   const auditorModule = await import('./GameAuditor.js');
   GameAuditor = auditorModule.GameAuditor;
+  const heuristicModule = await import('../players/HeuristicPlayer.js');
+  HeuristicPlayer = heuristicModule.HeuristicPlayer;
 })();
 
 // ============================================================
@@ -102,8 +104,11 @@ class TFNeuralNetwork {
     xs.dispose();
     ys.dispose();
     
+    const losses = history.history.loss;
     return {
-      error: history.history.loss[history.history.loss.length - 1],
+      initialError: losses[0],
+      finalError: losses[losses.length - 1],
+      errorHistory: losses,
       iterations,
       timeMs: Date.now() - start
     };
@@ -180,7 +185,9 @@ class TFNeuralNetwork {
       this.model.compile({ optimizer: tf.train.sgd(0.1), loss: 'meanSquaredError' });
 
       for (let i = 0; i < this.model.layers.length; i++) {
-        const brainLayer = json.layers[i + 1] || json.layers[i];
+        // TF.js saved format: layers[0] is first dense layer
+        // Brain.js format: layers[0] is input layer (no weights), layers[1] is first dense layer
+        const brainLayer = json.layers[i] || json.layers[i + 1];
         if (!brainLayer?.weights) continue;
         
         const src = brainLayer.weights[0]?.length || 0;
@@ -272,6 +279,45 @@ function computeMedian(arr) {
   const s = [...arr].sort((a, b) => a - b);
   const m = Math.floor(s.length / 2);
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+
+// Diversity tracking functions
+function computeEntropy(counts) {
+  const total = counts.reduce((a, b) => a + b, 0);
+  if (total === 0) return 0;
+  let entropy = 0;
+  for (const c of counts) {
+    if (c > 0) {
+      const p = c / total;
+      entropy -= p * Math.log2(p);
+    }
+  }
+  return entropy;
+}
+
+function computeOpeningDiversity(firstMoves) {
+  if (firstMoves.length === 0) return 0;
+  const counts = {};
+  for (const move of firstMoves) {
+    counts[move] = (counts[move] || 0) + 1;
+  }
+  return computeEntropy(Object.values(counts));
+}
+
+function computeBoardDiversity(finalBoards) {
+  if (finalBoards.length === 0) return 0;
+  const numCells = finalBoards[0].length;
+  let totalEntropy = 0;
+  
+  for (let i = 0; i < numCells; i++) {
+    const stateCounts = {};
+    for (const board of finalBoards) {
+      const state = `${board[i].t1},${board[i].t2}`;
+      stateCounts[state] = (stateCounts[state] || 0) + 1;
+    }
+    totalEntropy += computeEntropy(Object.values(stateCounts));
+  }
+  return totalEntropy / numCells;
 }
 
 // ============================================================
@@ -456,6 +502,8 @@ async function main() {
     const winsByOpponent = {};
     const opponentTypeCounts = {};
     const scoresByOpponent = {};
+    const firstMoves = [];  // Track opening moves for diversity
+    const finalBoards = [];  // Track final board states for diversity
     
     let p1Wins = 0, p2Wins = 0, draws = 0;
     
@@ -501,6 +549,11 @@ async function main() {
         
         if (!move) break;
         
+        // Track first move for opening diversity
+        if (m === 0) {
+          firstMoves.push(`${move.x},${move.y},r${move.rotation}`);
+        }
+        
         grid.selectedRotation = move.rotation;
         if (!grid.placeTriangle(move.x, move.y)) break;
         
@@ -541,6 +594,12 @@ async function main() {
       scoresByOpponent[opponentType].p1.push(grid.getLargestContiguous(1));
       scoresByOpponent[opponentType].p2.push(grid.getLargestContiguous(2));
       
+      // Track final board state for diversity
+      finalBoards.push(grid.grid.flat().map(cell => ({
+        t1: cell.triangles[0]?.player ?? 0,
+        t2: cell.triangles[1]?.player ?? 0
+      })));
+      
       // Audit game for bugs
       if (auditor.shouldAudit() && hist.length > 0) {
         auditor.auditSelfPlayGame(hist, grid, opponentType);
@@ -578,7 +637,7 @@ async function main() {
     // Training
     const trainStart = Date.now();
     const trainResult = await network.trainBatch(allInputs, allOutputs, iterations, learningRate);
-    console.log(`📚 Training: error=${trainResult.error.toFixed(6)} (${iterations} epochs, ${trainResult.timeMs}ms)`);
+    console.log(`📚 Training: ${trainResult.initialError.toFixed(6)} → ${trainResult.finalError.toFixed(6)} (${iterations} epochs, ${trainResult.timeMs}ms)`);
     
     // Evaluation vs Random
     let evalWins = 0, evalLosses = 0, evalDraws = 0;
@@ -614,6 +673,46 @@ async function main() {
     const evalRate = evalWins / evalGames * 100;
     console.log(`📊 Eval vs Random: ${evalRate.toFixed(1)}% (${evalWins}W / ${evalLosses}L / ${evalDraws}D)`);
     
+    // Evaluation vs Heuristic
+    let heurWins = 0, heurLosses = 0, heurDraws = 0;
+    let heurAIScores = [], heurOppScores = [];
+    const heuristicP2 = new HeuristicPlayer(2, { explorationFactor: 0 });
+    
+    for (let g = 0; g < Math.min(50, evalGames); g++) {
+      grid.reset();
+      let cur = 1, m = 0;
+      const maxM = grid.rows * grid.cols * 3;
+      
+      while (!grid.isGridFull() && m < maxM) {
+        grid.currentPlayer = cur;
+        const move = cur === 1 ? getAIMove(network, grid, 0) : heuristicP2.getMove(grid);
+        if (!move) break;
+        
+        grid.selectedRotation = move.rotation;
+        if (!grid.placeTriangle(move.x, move.y)) break;
+        
+        const claimed = grid.claimEnclosedTriangles();
+        grid.extraTurns += Math.floor((1 + claimed) / 2);
+        if (grid.extraTurns > 0) grid.extraTurns--;
+        else cur = cur === 1 ? 2 : 1;
+        m++;
+      }
+      
+      const s1 = grid.getLargestContiguous(1);
+      const s2 = grid.getLargestContiguous(2);
+      if (s1 > s2) heurWins++; else if (s2 > s1) heurLosses++; else heurDraws++;
+      heurAIScores.push(s1);
+      heurOppScores.push(s2);
+    }
+    
+    const heurRate = heurWins / Math.min(50, evalGames) * 100;
+    console.log(`📊 Eval vs Heuristic: ${heurRate.toFixed(1)}% (${heurWins}W / ${heurLosses}L / ${heurDraws}D)`);
+    
+    // Compute diversity metrics
+    const openingDiversity = computeOpeningDiversity(firstMoves);
+    const boardDiversity = computeBoardDiversity(finalBoards);
+    console.log(`🎨 Diversity: Open=${openingDiversity.toFixed(2)} Board=${boardDiversity.toFixed(2)}`);
+    
     // Log cycle
     log.cycles.push({
       cycle,
@@ -630,25 +729,36 @@ async function main() {
               p2: { median: computeMedian(v.p2), min: Math.min(...v.p2), max: Math.max(...v.p2) }
             }
           ])
-        )
+        ),
+        openingDiversity,
+        boardDiversity
       },
       training: {
         samples: allInputs.length,
         iterations,
         learningRate,
-        initialError: trainResult.error,
-        finalError: trainResult.error,
-        errorSnapshots: [{ iteration: 0, error: trainResult.error }],
+        initialError: trainResult.initialError,
+        finalError: trainResult.finalError,
+        errorSnapshots: trainResult.errorHistory.map((err, i) => ({ iteration: i, error: err })),
         timeMs: trainResult.timeMs
       },
       evaluation: {
-        aiWinRate: evalRate,
-        aiWins: evalWins,
-        losses: evalLosses,
-        draws: evalDraws,
-        aiScores: evalAIScores,
-        opponentScores: evalRandScores,
-        opponent: 'random'
+        vsRandom: {
+          aiWinRate: evalRate,
+          aiWins: evalWins,
+          losses: evalLosses,
+          draws: evalDraws,
+          aiScores: evalAIScores,
+          opponentScores: evalRandScores
+        },
+        vsHeuristic: {
+          aiWinRate: heurRate,
+          aiWins: heurWins,
+          losses: heurLosses,
+          draws: heurDraws,
+          aiScores: heurAIScores,
+          opponentScores: heurOppScores
+        }
       }
     });
     
@@ -662,7 +772,10 @@ async function main() {
       fs.writeFileSync(networkPath, JSON.stringify(network.toJSON(), null, 2));
       
       log.endedAt = new Date().toISOString();
-      log.finalResult = { vsRandom: evalRate };
+      log.finalResult = { 
+        vsRandom: evalRate, 
+        vsHeuristic: heurRate 
+      };
       fs.writeFileSync(outputPath, JSON.stringify(log, null, 2));
       
       console.log(`💾 Saved: ${path.basename(networkPath)}, ${path.basename(outputPath)}`);
@@ -675,7 +788,9 @@ async function main() {
   }
 
   console.log(`\n✅ Training complete in ${((Date.now() - new Date(log.startedAt).getTime()) / 1000 / 60).toFixed(1)} min`);
-  console.log(`   Final vs Random: ${log.cycles[log.cycles.length - 1].evaluation.aiWinRate.toFixed(1)}%`);
+  const lastCycle = log.cycles[log.cycles.length - 1];
+  console.log(`   Final vs Random: ${lastCycle.evaluation.vsRandom.aiWinRate.toFixed(1)}%`);
+  console.log(`   Final vs Heuristic: ${lastCycle.evaluation.vsHeuristic.aiWinRate.toFixed(1)}%`);
 }
 
 // Wait for GridManager to load, then run main
