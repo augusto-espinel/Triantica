@@ -491,8 +491,10 @@ async function main() {
   
   // Training reward constants
   const finalRewardWeight = 1.0;
-  const minImmediateReward = -4.0;
-  const maxImmediateReward = 15.5;
+  // CRITICAL: Immediate rewards are already normalized to [0.01, 0.99]
+  // by calculateImmediateRewardVector()
+  const minImmediateReward = 0.01;
+  const maxImmediateReward = 0.99;
   const minCombinedReward = minImmediateReward - (1.0 * finalRewardWeight);
   const maxCombinedReward = maxImmediateReward + (1.0 * finalRewardWeight);
   const combinedRewardRange = maxCombinedReward - minCombinedReward;
@@ -547,7 +549,7 @@ async function main() {
         
         const state = getStateRelative(grid);
         const immediateRewardVector = calculateImmediateRewardVector(grid, curP);
-        const rawImmediateReward = immediateRewardVector.reduce((sum, v) => sum + v, 0) / immediateRewardVector.length;
+        // Don't calculate rawImmediateReward here - we'll use chosenMoveReward after move selection
         
         // Determine whose perspective we're playing from
         const isNetworkP = curP === 1 || (selfPlayMode === 'network' && curP === 2 && opponentType === 'network');
@@ -576,11 +578,15 @@ async function main() {
         const claimed = grid.claimEnclosedTriangles();
         const moveIdx = (move.y * grid.cols + move.x) * 4 + move.rotation;
         
+        // Store the immediate reward value at the CHOSEN move index
+        // CRITICAL: Use vector[moveIdx], NOT average of all values
+        const chosenMoveReward = immediateRewardVector[moveIdx];
+        
         hist.push({
           state,
           moveIdx,
           player: curP,
-          rawImmediateReward,
+          chosenMoveReward,  // Use this instead of rawImmediateReward
           immediateRewardVector: [...immediateRewardVector],
           move,
           opponentType
@@ -630,8 +636,10 @@ async function main() {
         // Start with immediate reward vector
         const finalOutputVector = [...step.immediateRewardVector];
         
-        // Combined reward for chosen move
-        const combinedReward = step.rawImmediateReward + rewardForPlayer * finalRewardWeight;
+        // Combined reward for chosen move: immediate + discounted final reward
+        // Linear discount: later moves get stronger final signal
+        const discountFactor = (t + 1) / totalMoves;
+        const combinedReward = step.chosenMoveReward + rewardForPlayer * finalRewardWeight * discountFactor;
         let scaledCombined = combinedRewardRange !== 0
           ? (combinedReward - minCombinedReward) / combinedRewardRange
           : 0.5;
