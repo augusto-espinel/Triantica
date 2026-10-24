@@ -1,129 +1,79 @@
 # Metrics Integration Guide
 
-## Adding MetricsLogger to AIPlayer
+## Metrics in TF.js Training Pipeline
 
-### Step 1: Include the Logger
+The TF.js training pipeline (`src/server/train_tfjs.cjs`) includes comprehensive metrics tracking built in. No additional setup needed — all metrics are automatically recorded per cycle.
 
-Add to `index.html`:
+### Tracked Metrics
 
-```html
-<script src="MetricsLogger.js"></script>
+| Metric | Location | What it measures |
+|--------|----------|------------------|
+| `openingDiversity` | `selfPlay` | Shannon entropy of first-move distribution (bits) |
+| `boardDiversity` | `selfPlay` | Shannon entropy of final board states (bits) |
+| `initialError` | `training` | Loss before training on new cycle data |
+| `finalError` | `training` | Loss after training |
+| `errorSnapshots` | `training` | Per-iteration loss curve (array) |
+| `aiWinRate` | `evaluation` | Win % vs Random opponent |
+| `winsByOpponent` | `selfPlay` | Win breakdown by opponent type |
+| `scoresByOpponent` | `selfPlay` | Score breakdown by opponent type |
+| `opponentTypeCounts` | `selfPlay` | Number of games per opponent type |
+
+### Running with Auditing
+
+```bash
+# Enable game auditing to catch training bugs
+node src/server/train_tfjs.cjs \
+  --cycles 20 \
+  --games 100 \
+  --audit true \
+  --audit-rate 0.05 \
+  --output data/experiment.json
 ```
 
-### Step 2: Initialize in AIPlayer
+The audit system validates:
+- Games play to completion (~170 moves)
+- Both players make moves (no zero-move games)
+- Grid is fully filled at game end
+- Final cluster sizes are consistent
 
+### Interpreting Metrics
+
+#### Diversity Metrics
+- **Opening diversity**: 6.6 bits = maximum (100 unique openings). Below 5.0 = network is stuck in a rut.
+- **Board diversity**: Higher is better — means the network is exploring varied strategies.
+
+#### Error Metrics
+- **initialError**: Should spike when new data arrives, then `finalError` should be lower after training.
+- **Crash-to-zero error**: If `finalError` reaches 0.000000, the network is overfitting. Reduce `--iterations`.
+- **Healthy curve**: initialError ~0.01-0.02, finalError ~0.002-0.004.
+
+#### Win Rate
+- **vs Random**: Best baseline = 91% (exp20, brain.js). TF.js baselines ~50% (fresh weights, same architecture).
+- **vs Heuristic**: Currently 0% across all experiments — the "Heuristic Wall."
+
+### Dashboard
+
+Training results are viewable on the dashboard:
+**https://augusto-espinel.github.io/Triantica/docs/**
+
+To update dashboard data, copy training JSON to `docs/data/` and update `docs/experiments.json`, then push to `gh-pages` branch.
+
+### Adding Custom Metrics
+
+To add a new metric, edit `src/server/train_tfjs.cjs`:
+
+1. **Compute the metric** in the cycle loop (around line 700+):
 ```javascript
-class AIPlayer {
-    constructor(gridManager, difficulty = 'medium', playerNumber = 2) {
-        // ... existing code ...
-        
-        // Add metrics logging
-        this.metrics = new MetricsLogger(`exp-${Date.now()}`);
-    }
+const myMetric = computeMyMetric(gameData);
+console.log(`📊 My Metric: ${myMetric.toFixed(4)}`);
+```
+
+2. **Add to cycle output** in the cycle summary object:
+```javascript
+selfPlay: {
+  // ... existing fields
+  myMetric: myMetric
 }
 ```
 
-### Step 3: Track Game Results
-
-In `runSelfPlayGame()`:
-
-```javascript
-async runSelfPlayGame() {
-    this.metrics.startGame();
-    
-    // ... existing game loop ...
-    
-    // Track each move
-    const moveStart = performance.now();
-    const move = currentPlayerAI.predictMove();
-    const moveTime = performance.now() - moveStart;
-    this.metrics.recordMove(moveTime);
-    
-    // Track claims
-    const claims = this.gridManager.claimEnclosedTriangles();
-    this.metrics.recordClaims(claims);
-    
-    // ... at game end ...
-    
-    this.metrics.endGame(winner);
-    this.metrics.printSummary();
-}
-```
-
-### Step 4: Track Training
-
-In `trainNetwork()`:
-
-```javascript
-trainNetwork(iterations = 500, learningRate = 0.1) {
-    this.metrics.startTraining(this.trainingData.length);
-    
-    const result = this.network.train(this.trainingData, {
-        iterations,
-        learningRate,
-        // ... existing options ...
-        
-        // Add callback for iteration tracking
-        callback: (details) => {
-            this.metrics.logIteration(details.iterations, details.error);
-        }
-    });
-    
-    this.metrics.endTraining(result.error, result.iterations);
-}
-```
-
-### Step 5: Export Results
-
-```javascript
-// In browser console after games:
-ai.metrics.downloadLog();
-
-// Or get JSON directly:
-const summary = ai.metrics.getSummary();
-```
-
-## Quick Test Script
-
-Run 100 self-play games with metrics:
-
-```javascript
-async function runBenchmark(ai, numGames = 100) {
-    console.log(`Running ${numGames} games...`);
-    
-    for (let i = 0; i < numGames; i++) {
-        await ai.runSelfPlayGame();
-        
-        if (i % 10 === 0) {
-            console.log(`Progress: ${i}/${numGames}`);
-        }
-    }
-    
-    ai.metrics.printSummary();
-    ai.metrics.downloadLog();
-}
-```
-
-## Metrics Explained
-
-| Metric | What it measures | Why it matters |
-|--------|------------------|----------------|
-| Win Rate | % of games won by each player | Overall AI quality |
-| Decision Time | ms per move prediction | Network efficiency |
-| Training Error | Loss after training | Learning progress |
-| Claims/Game | Average enclosures | Strategic behavior |
-| Game Length | Moves per game | Play style indicator |
-
-## Interpretation Guide
-
-### Good Signs
-- Win rate > 60% vs random opponent
-- Decision time < 20ms
-- Training error decreasing over sessions
-- Consistent claim counts
-
-### Warning Signs
-- Win rate < 50% vs random
-- Decision time > 100ms (network too large?)
-- Training error plateaued or increasing
-- Wildly varying game lengths
+3. **Update the dashboard** to display the new field in `docs/index.html`.
