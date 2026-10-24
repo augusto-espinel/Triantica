@@ -4,7 +4,7 @@
  * 
  * Supports:
  * - Pure network self-play
- * - Mixed opponents (network + random)
+ * - Mixed opponents (network + random + heuristic)
  * - Cluster reward with TD(λ)
  * - Full dashboard metrics output
  * - Game auditing for bug detection
@@ -18,9 +18,9 @@ const tf = require('@tensorflow/tfjs-node');
 const fs = require('fs');
 const path = require('path');
 
-// Dynamic imports for ES modules
+// Dynamic imports for ES modules (must be awaited)
 let GridManager, GameAuditor, HeuristicPlayer;
-(async () => {
+let importPromise = (async () => {
   const gridModule = await import('../core/GridManager.js');
   GridManager = gridModule.GridManager;
   const auditorModule = await import('./GameAuditor.js');
@@ -71,7 +71,7 @@ class TFNeuralNetwork {
     }));
     
     this.model.compile({
-      optimizer: tf.train.sgd(0.1),
+      optimizer: tf.train.momentum(0.01, 0.9), // Optimized for M2 Ultra batching
       loss: 'meanSquaredError'
     });
   }
@@ -84,19 +84,111 @@ class TFNeuralNetwork {
     });
   }
 
-  async trainBatch(inputs, outputs, iterations = 30, learningRate = 0.1) {
+  async trainBatchWithIsolation(inputs, outputs, chosenIndices, iterations = 100, learningRate = 0.01) {
+    // Gradient isolation: compute loss ONLY on the chosen move per sample.
+    // 
+    // CRITICAL: model.fit() with custom loss function doesn't properly handle
+    // closure-captured tensors. Use manual gradient computation instead.
+    //
+    // Optimized for M2 Ultra: batch=32 for GPU parallelism.
+    
+    const optimizer = tf.train.momentum(learningRate, 0.9);
+    const start = Date.now();
+    const lossHistory = [];
+    const batchSize = Math.min(32, inputs.length); // GPU-optimized batch size
+    
+    for (let epoch = 0; epoch < iterations; epoch++) {
+      // Shuffle indices each epoch
+      const indices = Array.from({length: inputs.length}, (_, i) => i);
+      for (let i = indices.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [indices[i], indices[j]] = [indices[j], indices[i]];
+      }
+      
+      let epochLoss = 0;
+      let batchCount = 0;
+      
+      for (let b = 0; b < inputs.length; b += batchSize) {
+        const batchIndices = indices.slice(b, b + batchSize);
+        
+        // Compute gradients manually
+        const grads = optimizer.computeGradients(() => {
+          const batchXs = tf.tensor2d(
+            batchIndices.map(i => inputs[i]),
+            [batchIndices.length, inputs[0].length]
+          );
+          
+          const preds = this.model.predict(batchXs);
+          const predData = preds.dataSync();
+          
+          // Build targets: copy predictions, override chosen moves with targets
+          const outputSize = outputs[0].length;
+          const targetData = new Float32Array(batchIndices.length * outputSize);
+          
+          for (let s = 0; s < batchIndices.length; s++) {
+            const sampleIdx = batchIndices[s];
+            const chosenIdx = chosenIndices[sampleIdx];
+            
+            // Copy prediction (zero gradient for unchosen moves)
+            for (let o = 0; o < outputSize; o++) {
+              targetData[s * outputSize + o] = predData[s * outputSize + o];
+            }
+            
+            // Override chosen move with target value
+            targetData[s * outputSize + chosenIdx] = outputs[sampleIdx][chosenIdx];
+          }
+          
+          const batchYs = tf.tensor2d(targetData, [batchIndices.length, outputSize]);
+          
+          // Compute loss (MSE, but only chosen moves have non-zero error)
+          const loss = preds.sub(batchYs).square().mean();
+          
+          batchXs.dispose();
+          batchYs.dispose();
+          preds.dispose();
+          
+          return loss;
+        });
+        
+        // Apply gradients
+        optimizer.applyGradients(grads.grads);
+        
+        const lossVal = grads.value.dataSync()[0];
+        epochLoss += lossVal;
+        batchCount++;
+        
+        // Dispose gradient tensors
+        for (const tensor of Object.values(grads.grads)) {
+          if (tensor) tensor.dispose();
+        }
+        grads.value.dispose();
+      }
+      
+      lossHistory.push(epochLoss / batchCount);
+    }
+    
+    return {
+      initialError: lossHistory[0],
+      finalError: lossHistory[lossHistory.length - 1],
+      errorHistory: lossHistory,
+      iterations,
+      timeMs: Date.now() - start
+    };
+  }
+
+  async trainBatch(inputs, outputs, iterations = 100, learningRate = 0.01) {
     const xs = tf.tensor2d(inputs, [inputs.length, inputs[0].length]);
     const ys = tf.tensor2d(outputs, [outputs.length, outputs[0].length]);
     
     this.model.compile({
-      optimizer: tf.train.sgd(learningRate),
+      optimizer: tf.train.momentum(learningRate, 0.9), // Optimized for M2 Ultra
       loss: 'meanSquaredError'
     });
     
     const start = Date.now();
     const history = await this.model.fit(xs, ys, {
       epochs: iterations,
-      batchSize: Math.min(256, inputs.length),
+      batchSize: Math.min(32, inputs.length), // GPU-optimized batch size
       shuffle: true,
       verbose: 0
     });
@@ -214,22 +306,45 @@ class TFNeuralNetwork {
 // Helper Functions
 // ============================================================
 
-function getStateRelative(grid) {
+/**
+ * FIXED PERSPECTIVE state representation (matching original brain.js)
+ * 
+ * AI always sees: my pieces = 1, enemy pieces = -1
+ * Independent of which player number AI is assigned
+ * 
+ * @param {GridManager} grid - The game state
+ * @param {number} aiPlayerNumber - Which player the AI is playing as (1 or 2)
+ * @returns {number[]} - 401-element state vector
+ */
+function getStateFixed(grid, aiPlayerNumber) {
   const state = [];
   const { rows, cols } = grid;
-  const curPlayer = grid.currentPlayer;
+  const opponent = aiPlayerNumber === 1 ? 2 : 1;
+  
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const cell = grid.grid[r][c];
       const t1 = cell.triangles[0], t2 = cell.triangles[1];
-      const pv = t => t ? (t.player === curPlayer ? 1 : -1) : 0;
+      
+      // Player value: AI's pieces = 1, opponent = -1, empty = 0
+      const pv = t => {
+        if (!t) return 0;
+        return t.player === aiPlayerNumber ? 1 : -1;
+      };
+      
+      // Rotation: normalized 0-0.75 or -1 for empty
       const rv = r => r === undefined || r === -1 ? -1 : r / 4;
+      
       state.push(pv(t1), rv(t1?.rotation ?? -1), pv(t2), rv(t2?.rotation ?? -1));
     }
   }
+  // Final element: always 1 (from AI's perspective)
   state.push(1);
   return state;
 }
+
+// Keep alias for compatibility
+const getStateRelative = getStateFixed;
 
 function isValidMove(grid, x, y, rot) {
   // Use GridManager's native method
@@ -249,10 +364,10 @@ function getRandomMove(grid) {
   return valid.length ? valid[Math.floor(Math.random() * valid.length)] : null;
 }
 
-function getAIMove(network, grid, exploration) {
+function getAIMove(network, grid, exploration, aiPlayerNumber = 1) {
   if (Math.random() < exploration) return getRandomMove(grid);
   
-  const state = getStateRelative(grid);
+  const state = getStateFixed(grid, aiPlayerNumber);
   const output = network.run(state);
   const moves = [];
   const { rows, cols } = grid;
@@ -392,8 +507,8 @@ async function main() {
   const cycles = parseInt(getArg('cycles', '10'));
   const games = parseInt(getArg('games', '100'));
   const evalGames = parseInt(getArg('eval-games', '100'));
-  const iterations = parseInt(getArg('iterations', '30'));
-  const learningRate = parseFloat(getArg('learning-rate', '0.1'));
+  const iterations = parseInt(getArg('iterations', '100')); // Optimized for M2 Ultra
+  const learningRate = parseFloat(getArg('learning-rate', '0.01')); // Optimized for M2 Ultra
   const exploration = parseFloat(getArg('exploration', '0.3'));
   const selfPlayMode = getArg('self-play-mode', 'network');
   const opponentMix = getArg('opponent-mix', 'network');
@@ -405,6 +520,7 @@ async function main() {
   const enableClusterReward = getArg('enable-cluster-reward', 'false') === 'true';
   const audit = getArg('audit', 'false') === 'true';
   const auditRate = parseFloat(getArg('audit-rate', '0.05'));
+  const useGradientIsolation = getArg('gradient-isolation', 'true') === 'true';
   
   console.log('🧪  TF.js Training Pipeline');
   console.log('='.repeat(60));
@@ -426,6 +542,7 @@ async function main() {
   console.log(`  Eval games:      ${evalGames}`);
   console.log(`  Train iters:     ${iterations}`);
   console.log(`  Learning rate:   ${learningRate}`);
+  console.log(`  Gradient iso:    ${useGradientIsolation}`);
   console.log(`  Exploration:      ${exploration}`);
   console.log(`  Cluster reward:   ${enableClusterReward}`);
   console.log(`  Audit mode:       ${audit ? 'ENABLED' + (audit ? ' (' + (auditRate * 100).toFixed(0) + '% sample rate)' : '') : 'disabled'}`);
@@ -469,6 +586,7 @@ async function main() {
       heuristicRatio,
       startFrom,
       enableClusterReward,
+      gradientIsolation: useGradientIsolation,
       audit,
       auditRate,
       framework: 'tensorflow.js',
@@ -502,13 +620,12 @@ async function main() {
     const cycleStart = Date.now();
     
     // Self-play with opponent tracking
-    const allInputs = [], allOutputs = [];
+    const allInputs = [], allOutputs = [], allChosenIndices = [];
     const winsByOpponent = {};
     const opponentTypeCounts = {};
     const scoresByOpponent = {};
     const firstMoves = [];  // Track opening moves for diversity
     const finalBoards = [];  // Track final board states for diversity
-    const heuristicP2 = new HeuristicPlayer(2, { explorationFactor: 0 });
     
     let p1Wins = 0, p2Wins = 0, draws = 0;
     
@@ -517,6 +634,10 @@ async function main() {
       let curP = 1, m = 0;
       const maxM = grid.rows * grid.cols * 3;
       const hist = [];
+      
+      // FIXED PERSPECTIVE: AI alternates which player it plays as
+      // This ensures balanced training for both starting and responding positions
+      const aiPlayerNumber = (g % 2 === 0) ? 1 : 2;
       
       // Determine opponent type for this game
       let opponentType = 'network';
@@ -545,22 +666,29 @@ async function main() {
       while (!grid.isGridFull() && m < maxM) {
         grid.currentPlayer = curP;
         
-        const state = getStateRelative(grid);
+        const state = getStateFixed(grid, aiPlayerNumber);
         const immediateRewardVector = calculateImmediateRewardVector(grid, curP);
         // Don't calculate rawImmediateReward here - we'll use chosenMoveReward after move selection
         
-        // Determine whose perspective we're playing from
-        const isNetworkP = curP === 1 || (selfPlayMode === 'network' && curP === 2 && opponentType === 'network');
+        // Determine if current player is AI
+        const isAIP = curP === aiPlayerNumber;
         
         let move;
-        if (curP === 1) {
-          move = getAIMove(network, grid, exploration);
-        } else if (opponentType === 'network') {
-          move = getAIMove(network, grid, exploration);
-        } else if (opponentType === 'heuristic') {
-          move = heuristicP2.getMove(grid);
+        if (isAIP) {
+          // AI's turn - use network
+          move = getAIMove(network, grid, exploration, aiPlayerNumber);
         } else {
-          move = getRandomMove(grid);
+          // Opponent's turn
+          if (opponentType === 'network') {
+            // Self-play: opponent also uses network (but from THEIR perspective)
+            move = getAIMove(network, grid, exploration, curP);
+          } else if (opponentType === 'heuristic') {
+            // Create heuristic with correct player number for this turn
+            const heuristicOpp = new HeuristicPlayer(curP, { explorationFactor: 0 });
+            move = heuristicOpp.getMove(grid);
+          } else {
+            move = getRandomMove(grid);
+          }
         }
         
         if (!move) break;
@@ -584,6 +712,7 @@ async function main() {
           state,
           moveIdx,
           player: curP,
+          aiPlayerNumber,  // Track which player AI was playing as
           chosenMoveReward,  // Use this instead of rawImmediateReward
           immediateRewardVector: [...immediateRewardVector],
           move,
@@ -626,18 +755,28 @@ async function main() {
       }
       
       // Build training data (reverse iteration)
+      // CRITICAL: Only train on AI's moves, not opponent's!
+      // Training on opponent moves with negative reward teaches AI to lose.
+      //
+      // GRADIENT ISOLATION: We only push the chosen move index per sample.
+      // The trainBatchWithIsolation method will set unchosen move targets
+      // to the current prediction (zero gradient), matching brain.js
+      // online training behavior.
       const totalMoves = hist.length;
       for (let t = totalMoves - 1; t >= 0; t--) {
         const step = hist[t];
+        
+        // Skip opponent moves - only train on AI's decisions
+        if (step.player !== aiPlayerNumber) continue;
+        
         const rewardForPlayer = winner === step.player ? 1.0 : (winner === 0 ? 0.0 : -1.0);
         
         // Start with immediate reward vector
         const finalOutputVector = [...step.immediateRewardVector];
         
-        // Combined reward for chosen move: immediate + discounted final reward
-        // Linear discount: later moves get stronger final signal
-        const discountFactor = (t + 1) / totalMoves;
-        const combinedReward = step.chosenMoveReward + rewardForPlayer * finalRewardWeight * discountFactor;
+        // Combined reward for chosen move: immediate + final outcome
+        // NO discount factor — train.js gives full win/loss credit to ALL moves
+        const combinedReward = step.chosenMoveReward + rewardForPlayer * finalRewardWeight;
         let scaledCombined = combinedRewardRange !== 0
           ? (combinedReward - minCombinedReward) / combinedRewardRange
           : 0.5;
@@ -648,6 +787,7 @@ async function main() {
         
         allInputs.push(step.state);
         allOutputs.push(finalOutputVector);
+        allChosenIndices.push(step.moveIdx);
       }
       
       if ((g + 1) % 10 === 0) process.stdout.write(`${g + 1}/${games} games done\r`);
@@ -658,7 +798,9 @@ async function main() {
     
     // Training
     const trainStart = Date.now();
-    const trainResult = await network.trainBatch(allInputs, allOutputs, iterations, learningRate);
+    const trainResult = useGradientIsolation
+      ? await network.trainBatchWithIsolation(allInputs, allOutputs, allChosenIndices, iterations, learningRate)
+      : await network.trainBatch(allInputs, allOutputs, iterations, learningRate);
     console.log(`📚 Training: ${trainResult.initialError.toFixed(6)} → ${trainResult.finalError.toFixed(6)} (${iterations} epochs, ${trainResult.timeMs}ms)`);
     
     // Evaluation vs Random
@@ -669,10 +811,12 @@ async function main() {
       grid.reset();
       let cur = 1, m = 0;
       const maxM = grid.rows * grid.cols * 3;
+      // FIXED PERSPECTIVE: AI alternates which player it plays as in eval too
+      const evalAIPlayerNumber = (g % 2 === 0) ? 1 : 2;
       
       while (!grid.isGridFull() && m < maxM) {
         grid.currentPlayer = cur;
-        const move = cur === 1 ? getAIMove(network, grid, 0) : getRandomMove(grid);
+        const move = cur === evalAIPlayerNumber ? getAIMove(network, grid, 0, evalAIPlayerNumber) : getRandomMove(grid);
         if (!move) break;
         
         grid.selectedRotation = move.rotation;
@@ -687,9 +831,16 @@ async function main() {
       
       const s1 = grid.getLargestContiguous(1);
       const s2 = grid.getLargestContiguous(2);
-      if (s1 > s2) evalWins++; else if (s2 > s1) evalLosses++; else evalDraws++;
-      evalAIScores.push(s1);
-      evalRandScores.push(s2);
+      // Score from AI's perspective
+      if (evalAIPlayerNumber === 1) {
+        if (s1 > s2) evalWins++; else if (s2 > s1) evalLosses++; else evalDraws++;
+        evalAIScores.push(s1);
+        evalRandScores.push(s2);
+      } else {
+        if (s2 > s1) evalWins++; else if (s1 > s2) evalLosses++; else evalDraws++;
+        evalAIScores.push(s2);
+        evalRandScores.push(s1);
+      }
     }
     
     const evalRate = evalWins / evalGames * 100;
@@ -698,16 +849,21 @@ async function main() {
     // Evaluation vs Heuristic
     let heurWins = 0, heurLosses = 0, heurDraws = 0;
     let heurAIScores = [], heurOppScores = [];
-    const heuristicEvalP2 = new HeuristicPlayer(2, { explorationFactor: 0 });
     
     for (let g = 0; g < evalGames; g++) {
       grid.reset();
       let cur = 1, m = 0;
       const maxM = grid.rows * grid.cols * 3;
+      // FIXED PERSPECTIVE: AI alternates which player it plays as
+      const heurAIPlayerNumber = (g % 2 === 0) ? 1 : 2;
+      const heuristicOpponentNumber = heurAIPlayerNumber === 1 ? 2 : 1;
+      const heuristicEval = new HeuristicPlayer(heuristicOpponentNumber, { explorationFactor: 0 });
       
       while (!grid.isGridFull() && m < maxM) {
         grid.currentPlayer = cur;
-        const move = cur === 1 ? getAIMove(network, grid, 0) : heuristicEvalP2.getMove(grid);
+        const move = cur === heurAIPlayerNumber 
+          ? getAIMove(network, grid, 0, heurAIPlayerNumber) 
+          : heuristicEval.getMove(grid);
         if (!move) break;
         
         grid.selectedRotation = move.rotation;
@@ -722,9 +878,16 @@ async function main() {
       
       const s1 = grid.getLargestContiguous(1);
       const s2 = grid.getLargestContiguous(2);
-      if (s1 > s2) heurWins++; else if (s2 > s1) heurLosses++; else heurDraws++;
-      heurAIScores.push(s1);
-      heurOppScores.push(s2);
+      // Score from AI's perspective
+      if (heurAIPlayerNumber === 1) {
+        if (s1 > s2) heurWins++; else if (s2 > s1) heurLosses++; else heurDraws++;
+        heurAIScores.push(s1);
+        heurOppScores.push(s2);
+      } else {
+        if (s2 > s1) heurWins++; else if (s1 > s2) heurLosses++; else heurDraws++;
+        heurAIScores.push(s2);
+        heurOppScores.push(s1);
+      }
     }
     
     const heurRate = heurWins / evalGames * 100;
@@ -817,9 +980,7 @@ async function main() {
 
 // Wait for GridManager to load, then run main
 async function waitForGridManager() {
-  while (!GridManager) {
-    await new Promise(resolve => setTimeout(resolve, 10));
-  }
+  await importPromise;
 }
 
 waitForGridManager().then(() => main()).catch(e => {
