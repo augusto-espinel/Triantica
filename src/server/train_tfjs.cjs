@@ -329,16 +329,18 @@ function calculateImmediateRewardVector(grid, player) {
   const { rows, cols } = grid;
   const outputVector = new Array(rows * cols * 4).fill(0.01);
   
+  // CRITICAL: Match original AIPlayer.js factors
   const claimRewardFactor = 0.3;
   const connectedClusterRewardFactor = 0.1;
-  const largestLeadFactor = 0.2;
+  // NO largestLeadFactor in immediate reward (was added incorrectly)
   
-  const minImmediateReward = -4.0;
-  const maxImmediateReward = 15.5;
+  // Dynamic range calculation (matching original)
+  const maxPossibleClaimBonus = 1.5; // Estimate: max ~2 triangles claimed
+  const maxPossibleClusterSize = rows * cols * 2;
+  const maxPossibleClusterBonus = maxPossibleClusterSize * connectedClusterRewardFactor;
+  const minImmediateReward = 0;
+  const maxImmediateReward = maxPossibleClaimBonus + maxPossibleClusterBonus;
   const rewardRange = maxImmediateReward - minImmediateReward;
-  
-  const myCurrentLargest = grid.getLargestContiguous(player);
-  const oppCurrentLargest = grid.getLargestContiguous(opponent);
   
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
@@ -359,12 +361,9 @@ function calculateImmediateRewardVector(grid, player) {
           const simClusterSize = tempManager.getConnectedClusterSize(x, y, rotation);
           const hypoClusterReward = simClusterSize * connectedClusterRewardFactor;
           
-          const myNewLargest = tempManager.getLargestContiguous(player);
-          const oppNewLargest = tempManager.getLargestContiguous(opponent);
-          const leadDelta = (myNewLargest - oppNewLargest) - (myCurrentLargest - oppCurrentLargest);
-          const hypoLeadReward = leadDelta * largestLeadFactor;
+          // NO lead delta in immediate reward (removed - not in original)
           
-          const hypotheticalReward = hypoClaimReward + hypoClusterReward + hypoLeadReward;
+          const hypotheticalReward = hypoClaimReward + hypoClusterReward;
           
           let scaledReward = rewardRange !== 0
             ? (hypotheticalReward - minImmediateReward) / rewardRange
@@ -490,11 +489,10 @@ async function main() {
   }
   
   // Training reward constants
+  // CRITICAL: Match original AIPlayer.js range calculation
   const finalRewardWeight = 1.0;
-  // CRITICAL: Immediate rewards are already normalized to [0.01, 0.99]
-  // by calculateImmediateRewardVector()
-  const minImmediateReward = 0.01;
-  const maxImmediateReward = 0.99;
+  const minImmediateReward = 0.01; // Min output from immediate calculation
+  const maxImmediateReward = 0.99; // Max output from immediate calculation
   const minCombinedReward = minImmediateReward - (1.0 * finalRewardWeight);
   const maxCombinedReward = maxImmediateReward + (1.0 * finalRewardWeight);
   const combinedRewardRange = maxCombinedReward - minCombinedReward;

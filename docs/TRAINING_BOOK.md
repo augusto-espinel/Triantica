@@ -16,6 +16,42 @@
 
 ## TF.js Migration & Mac Studio Optimization
 
+### Critical Bugs Found in TF.js Migration (2026-10-24)
+
+The TF.js training pipeline (`train_tfjs.cjs`) had **three critical bugs** that reduced win rate from 91% to 49%:
+
+| Bug | Original (91% win) | TF.js Buggy | Impact |
+|-----|-------------------|-------------|--------|
+| Reward signal | `vector[chosenIdx]` | `mean(vector)` | Diluted by ~350 invalid moves (0.01) |
+| Normalization range | Dynamic: [0, 21.5] | Hardcoded: [-4, 15.5] | Wrong scaling |
+| Lead delta reward | NOT included | Added incorrectly | Extra component not in original |
+| Training iterations | 200 per cycle | 10 per cycle | 20x undertraining |
+
+**Bug 1: Averaged reward instead of chosen move reward**
+- TF.js computed `rawImmediateReward = sum(vector) / 400`
+- Original used `vector[chosenMoveIndex]` (already 0.01-0.99)
+- Average diluted by ~350 illegal move values (0.01)
+- Win signal dropped from ~0.99 to ~0.28
+
+**Bug 2: Wrong normalization range**
+- Original: `minImmediateReward=0, maxImmediateReward≈21.5` (dynamic)
+- TF.js: Hardcoded `minImmediateReward=-4.0, maxImmediateReward=15.5`
+- Values compressed to middle of range
+
+**Bug 3: Incorrect lead delta component**
+- TF.js added `largestLeadFactor=0.2` to immediate reward
+- Original AIPlayer.js does NOT include this in immediate reward
+- Lead delta only applies to TD(λ) cluster reward, not immediate
+
+**Fix Applied:**
+```javascript
+// OLD (buggy)
+const rawImmediateReward = immediateRewardVector.reduce((sum, v) => sum + v, 0) / immediateRewardVector.length;
+
+// NEW (correct)
+const chosenMoveReward = immediateRewardVector[moveIdx];
+```
+
 ### Why We Migrated from brain.js to TensorFlow.js
 
 After 22 experiments, it became clear that the brain.js feedforward architecture
