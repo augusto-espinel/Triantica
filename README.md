@@ -47,7 +47,7 @@ Saved at `experiments/data/baseline-random-100.json`.
 
 * **Goal:** Players place triangles on a 10×10 grid to form the largest contiguous cluster of their color.
 * **Mechanic:** Each grid cell can hold up to two triangles. Connecting triangles merges "clusters." Enclosing an empty space claims it and grants an extra turn.
-* **AI:** Neural network (Brain.js) trained via self-play RL.
+* **AI:** Neural network trained via self-play RL, powered by **TensorFlow.js** with Metal GPU acceleration.
 
 ---
 
@@ -56,7 +56,8 @@ Saved at `experiments/data/baseline-random-100.json`.
 | File | Primary Responsibility |
 | --- | --- |
 | **`game.js`** | Phaser Scenes + visual rendering + rules logic |
-| **`AIPlayer.js`** | Neural network, move prediction, self-play training |
+| **`src/server/train_tfjs.cjs`** | TF.js training pipeline (Metal GPU) |
+| **`AIPlayer.js`** | Neural network, move prediction, brain.js browser inference |
 | **`src/core/GridManager.js`** | Extracted pure game logic (no Phaser deps) |
 | **`src/core/GameSession.js`** | Game orchestration for experiments |
 | **`src/players/RandomPlayer.js`** | Baseline random opponent |
@@ -68,11 +69,13 @@ Saved at `experiments/data/baseline-random-100.json`.
 
 ### AI Architecture
 
-* **Input (401):** Flattened 10×10 grid + current rotation
+* **Input (401):** Flattened 10×10 grid + current player flag
 * **Hidden (200):** Fully connected
 * **Output (400):** One score per (cell × rotation) move
 * **Training:** Self-play RL with epsilon-greedy exploration
-* **Reward:** Immediate cluster/enclosure gains + discounted final outcome
+* **Reward:** Immediate cluster/enclosure gains + final outcome
+* **Framework:** TensorFlow.js + Metal GPU (Node v20 LTS)
+* **Browser inference:** Brain.js (lightweight, no GPU needed)
 
 ### Critical Functions
 

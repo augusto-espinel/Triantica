@@ -1,4 +1,88 @@
+# Triantica AI Training Book
 
+**Experiment journal** — All training runs, bug discoveries, and architectural decisions.
+
+---
+
+## Table of Contents
+
+- [TF.js Migration & Mac Studio Optimization](#tfjs-migration--mac-studio-optimization)
+- [Critical Bugs Fixed](#critical-bugs-fixed)
+- [Experiments 12–22](#experiment-12-curriculum-learning)
+- [TF.js Baseline Experiments](#tfjs-baseline-experiments)
+- [Current State](#current-state-2026-10-23)
+
+---
+
+## TF.js Migration & Mac Studio Optimization
+
+### Why We Migrated from brain.js to TensorFlow.js
+
+After 22 experiments, it became clear that the brain.js feedforward architecture
+had hit a hard ceiling. The network could reach **91% vs Random** but **0% vs Heuristic**,
+and no training signal modification could break through.
+
+Brain.js lacked the features needed for architectural improvements:
+
+| Feature | brain.js | TensorFlow.js |
+|---------|----------|---------------|
+| Multi-head outputs (Policy + Value) | ❌ | ✅ |
+| Custom loss functions | ❌ (MSE only) | ✅ |
+| Convolutional layers | ❌ | ✅ |
+| Residual connections | ❌ | ✅ |
+| GPU acceleration | ❌ (CPU only) | ✅ (Metal) |
+| Learning rate scheduling | ❌ | ✅ |
+
+### Mac Studio M2 Ultra — Why This Hardware Matters
+
+The training pipeline is specifically optimized for the **Apple M2 Ultra** chip:
+
+1. **Metal GPU acceleration**: TensorFlow.js uses Apple's Metal Compute framework
+   through the `@tensorflow/tfjs-node` native bindings. This provides direct GPU
+   access for all tensor operations — matrix multiplies, activations, gradients —
+   bypassing the CPU entirely.
+
+2. **Unified Memory Architecture**: Unlike discrete GPUs (NVIDIA/AMD) which require
+   copying data across a PCIe bus, the M2 Ultra's CPU and GPU share the same
+   physical memory (up to 192GB). This means:
+   - Training data is instantly accessible by the GPU
+   - No PCIe bandwidth bottleneck (typically ~32 GB/s vs M2's 400+ GB/s)
+   - Batch processing has near-zero transfer overhead
+
+3. **Measured performance** (M2 Ultra, 24-core GPU, 192GB unified memory):
+   - Brain.js (CPU): ~8 min for 20 cycles (100 games/cycle)
+   - TF.js (Metal GPU): ~35 min for 20 cycles (100 games/cycle, 100 eval games)
+   - Per-training-step speedup: **~100x**
+   - The longer total time reflects 5x more evaluation games and richer metrics
+
+4. **Node.js version requirement**: TF.js native bindings require **Node v20 LTS**.
+   Node v25's V8 engine breaks the C++ bindings. Use `fnm use v20.20.2`.
+
+5. **Browser deployment path**: Trained TF.js weights are exported to brain.js-
+   compatible JSON for the Phaser browser game. Brain.js is retained only for
+   client-side inference (lightweight, no GPU dependency).
+
+### Migration Verification
+
+The TF.js pipeline was verified against brain.js through controlled reproduction:
+- Same architecture (401→[200]→400, sigmoid)
+- Same training data
+- Output ranges match perfectly between frameworks
+- Weight format conversion verified correct
+
+---
+
+## Critical Bugs Fixed
+
+| Bug | Discovery | Impact | Fix |
+|-----|-----------|--------|-----|
+| Immediate reward normalization | Exp 15 (2026-10-22) | Negative rewards clamped to +0.155 | Changed min to -4.0 |
+| Combined reward normalization | Exp 17b (2026-10-22) | Negative combined rewards clamped to 0.01 | Changed min to -5.0 |
+| Self-play perspective | Exp 19 (2026-10-23) | P2 used P1's policy, always lost | Condition on currentPlayer |
+| isValidMove (TF.js) | TF-B1 (2026-10-23) | All moves appeared invalid, games ended at 1-4 moves | Use grid.isValidMove() directly |
+
+**All experiments 1-17b trained with at least one of these bugs.** Exp 19/20 were
+the first clean training runs.
 
 ---
 
