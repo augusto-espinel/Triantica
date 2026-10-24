@@ -400,6 +400,7 @@ async function main() {
   const opponentMix = getArg('opponent-mix', 'network');
   const networkRatio = parseFloat(getArg('network-ratio', '1.0'));
   const randomRatio = parseFloat(getArg('random-ratio', '0.0'));
+  const heuristicRatio = parseFloat(getArg('heuristic-ratio', '0.0'));
   const startFrom = getArg('start-from', null);
   const output = getArg('output', 'data/training.json');
   const enableClusterReward = getArg('enable-cluster-reward', 'false') === 'true';
@@ -418,8 +419,10 @@ async function main() {
   console.log(`  Self-play mode:  ${selfPlayMode}`);
   console.log(`  Opponent mix:    ${opponentMix}`);
   if (opponentMix === 'mixed') {
-    console.log(`  Network ratio:   ${networkRatio * 100}%`);
-    console.log(`  Random ratio:     ${randomRatio * 100}%`);
+    const total = networkRatio + randomRatio + heuristicRatio;
+    console.log(`  Network ratio:   ${(networkRatio / total * 100).toFixed(0)}%`);
+    console.log(`  Random ratio:     ${(randomRatio / total * 100).toFixed(0)}%`);
+    console.log(`  Heuristic ratio:  ${(heuristicRatio / total * 100).toFixed(0)}%`);
   }
   console.log(`  Eval games:      ${evalGames}`);
   console.log(`  Train iters:     ${iterations}`);
@@ -464,6 +467,7 @@ async function main() {
       opponentMix,
       networkRatio,
       randomRatio,
+      heuristicRatio,
       startFrom,
       enableClusterReward,
       audit,
@@ -504,6 +508,7 @@ async function main() {
     const scoresByOpponent = {};
     const firstMoves = [];  // Track opening moves for diversity
     const finalBoards = [];  // Track final board states for diversity
+    const heuristicP2 = new HeuristicPlayer(2, { explorationFactor: 0 });
     
     let p1Wins = 0, p2Wins = 0, draws = 0;
     
@@ -517,9 +522,18 @@ async function main() {
       let opponentType = 'network';
       if (opponentMix === 'random') {
         opponentType = 'random';
+      } else if (opponentMix === 'heuristic') {
+        opponentType = 'heuristic';
       } else if (opponentMix === 'mixed') {
-        const r = Math.random();
-        opponentType = r < networkRatio ? 'network' : 'random';
+        const total = networkRatio + randomRatio + heuristicRatio;
+        const r = Math.random() * total;
+        if (r < networkRatio) {
+          opponentType = 'network';
+        } else if (r < networkRatio + randomRatio) {
+          opponentType = 'random';
+        } else {
+          opponentType = 'heuristic';
+        }
       }
       
       opponentTypeCounts[opponentType] = (opponentTypeCounts[opponentType] || 0) + 1;
@@ -543,6 +557,8 @@ async function main() {
           move = getAIMove(network, grid, exploration);
         } else if (opponentType === 'network') {
           move = getAIMove(network, grid, exploration);
+        } else if (opponentType === 'heuristic') {
+          move = heuristicP2.getMove(grid);
         } else {
           move = getRandomMove(grid);
         }
@@ -676,16 +692,16 @@ async function main() {
     // Evaluation vs Heuristic
     let heurWins = 0, heurLosses = 0, heurDraws = 0;
     let heurAIScores = [], heurOppScores = [];
-    const heuristicP2 = new HeuristicPlayer(2, { explorationFactor: 0 });
+    const heuristicEvalP2 = new HeuristicPlayer(2, { explorationFactor: 0 });
     
-    for (let g = 0; g < Math.min(50, evalGames); g++) {
+    for (let g = 0; g < evalGames; g++) {
       grid.reset();
       let cur = 1, m = 0;
       const maxM = grid.rows * grid.cols * 3;
       
       while (!grid.isGridFull() && m < maxM) {
         grid.currentPlayer = cur;
-        const move = cur === 1 ? getAIMove(network, grid, 0) : heuristicP2.getMove(grid);
+        const move = cur === 1 ? getAIMove(network, grid, 0) : heuristicEvalP2.getMove(grid);
         if (!move) break;
         
         grid.selectedRotation = move.rotation;
@@ -705,7 +721,7 @@ async function main() {
       heurOppScores.push(s2);
     }
     
-    const heurRate = heurWins / Math.min(50, evalGames) * 100;
+    const heurRate = heurWins / evalGames * 100;
     console.log(`📊 Eval vs Heuristic: ${heurRate.toFixed(1)}% (${heurWins}W / ${heurLosses}L / ${heurDraws}D)`);
     
     // Compute diversity metrics
