@@ -237,8 +237,13 @@
       
       if (data?.cycles) {
         
-        // Evaluation win rate (vs random, post-training)
-        const evalWinRates = data.cycles.map(c => c.evaluation?.aiWinRate ? (c.evaluation.aiWinRate * 100) : null);
+        // Evaluation win rates - handle both old and new format
+        const evalVsRandom = data.cycles.map(c => {
+          if (c.evaluation?.vsRandom?.aiWinRate) return c.evaluation.vsRandom.aiWinRate;
+          if (c.evaluation?.aiWinRate) return c.evaluation.aiWinRate;
+          return null;
+        });
+        const evalVsHeuristic = data.cycles.map(c => c.evaluation?.vsHeuristic?.aiWinRate ?? null);
         
         // Self-play win rates
         const selfPlayVsRandom = data.cycles.map(c => {
@@ -252,13 +257,16 @@
           return (nw && nc) ? (nw['1'] / nc * 100) : null;
         });
         
+        const datasets = [
+          { label: 'vs Random (eval, %)', data: evalVsRandom, borderColor: '#3fb950', backgroundColor: 'rgba(63,185,80,0.1)', fill: true, tension: 0.3 },
+          { label: 'vs Heuristic (eval, %)', data: evalVsHeuristic, borderColor: '#f85149', backgroundColor: 'rgba(248,81,73,0.1)', fill: true, tension: 0.3 },
+          { label: 'vs Random (self-play, %)', data: selfPlayVsRandom, borderColor: '#58a6ff', backgroundColor: 'transparent', borderDash: [5,3], tension: 0.3 },
+          { label: 'vs Network (self-play, %)', data: selfPlayVsNetwork, borderColor: '#d29922', backgroundColor: 'transparent', borderDash: [5,3], tension: 0.3 }
+        ].filter(d => d.data.some(v => v !== null));
+        
         charts.winrate = new Chart(document.getElementById('chart-winrate'), {
           type: 'line',
-          data: { labels, datasets: [
-            { label: 'vs Random (eval, %)', data: evalWinRates, borderColor: '#3fb950', backgroundColor: 'rgba(63,185,80,0.1)', fill: true, tension: 0.3 },
-            { label: 'vs Random (self-play, %)', data: selfPlayVsRandom, borderColor: '#58a6ff', backgroundColor: 'transparent', borderDash: [5,3], tension: 0.3 },
-            { label: 'vs Network (self-play, %)', data: selfPlayVsNetwork, borderColor: '#d29922', backgroundColor: 'transparent', borderDash: [5,3], tension: 0.3 }
-          ] },
+          data: { labels, datasets },
           options: { ...opts, scales: { ...opts.scales, y: { ...opts.scales.y, min: 0, max: 100 } } }
         });
         
@@ -452,15 +460,33 @@
       
       const datasets = exps.map((exp, i) => {
         const data = cycleData[exp.id];
-        const winRates = data?.cycles?.map(c => c.evaluation?.aiWinRate ? (c.evaluation.aiWinRate * 100) : null) || [];
+        const winRates = data?.cycles?.map(c => {
+          if (c.evaluation?.vsRandom?.aiWinRate) return c.evaluation.vsRandom.aiWinRate;
+          if (c.evaluation?.aiWinRate) return c.evaluation.aiWinRate * 100;
+          return null;
+        }) || [];
         return {
-          label: exp.name + ' (eval)',
+          label: exp.name + ' (vs Random)',
           data: winRates,
           borderColor: PALETTE[i % PALETTE.length],
           backgroundColor: 'transparent',
           tension: 0.3
         };
       });
+      
+      // Add vs Heuristic datasets
+      const heurDatasets = exps.map((exp, i) => {
+        const data = cycleData[exp.id];
+        const rates = data?.cycles?.map(c => c.evaluation?.vsHeuristic?.aiWinRate ?? null) || [];
+        return {
+          label: exp.name + ' (vs Heuristic)',
+          data: rates,
+          borderColor: PALETTE[i % PALETTE.length],
+          backgroundColor: 'transparent',
+          borderDash: [5, 3],
+          tension: 0.3
+        };
+      }).filter(d => d.data.some(v => v !== null));
       
       // Also add self-play vs network as dashed lines
       const spDatasets = exps.map((exp, i) => {
@@ -483,7 +509,7 @@
       
       charts.compareWinrate = new Chart(document.getElementById('chart-compare-winrate'), {
         type: 'line',
-        data: { labels, datasets: [...datasets, ...spDatasets] },
+        data: { labels, datasets: [...datasets, ...heurDatasets, ...spDatasets] },
         options: {
           responsive: true, maintainAspectRatio: false,
           plugins: { legend: { labels: { color: '#c9d1d9' } } },
