@@ -84,18 +84,18 @@ class TFNeuralNetwork {
     });
   }
 
-  async trainBatchWithIsolation(inputs, outputs, chosenIndices, iterations = 100, learningRate = 0.01) {
+  async trainBatchWithIsolation(inputs, outputs, chosenIndices, iterations = 10, learningRate = 0.05, batchSize = 256) {
     // Gradient isolation: compute loss ONLY on the chosen move per sample.
     // 
     // CRITICAL: model.fit() with custom loss function doesn't properly handle
     // closure-captured tensors. Use manual gradient computation instead.
     //
-    // Optimized for M2 Ultra: batch=32 for GPU parallelism.
+    // Optimized for M2 Ultra: configurable batch size for GPU parallelism.
     
     const optimizer = tf.train.momentum(learningRate, 0.9);
     const start = Date.now();
     const lossHistory = [];
-    const batchSize = Math.min(32, inputs.length); // GPU-optimized batch size
+    const actualBatchSize = Math.min(batchSize, inputs.length);
     
     for (let epoch = 0; epoch < iterations; epoch++) {
       // Shuffle indices each epoch
@@ -108,8 +108,8 @@ class TFNeuralNetwork {
       let epochLoss = 0;
       let batchCount = 0;
       
-      for (let b = 0; b < inputs.length; b += batchSize) {
-        const batchIndices = indices.slice(b, b + batchSize);
+      for (let b = 0; b < inputs.length; b += actualBatchSize) {
+        const batchIndices = indices.slice(b, b + actualBatchSize);
         
         // Compute gradients manually
         const grads = optimizer.computeGradients(() => {
@@ -176,19 +176,19 @@ class TFNeuralNetwork {
     };
   }
 
-  async trainBatch(inputs, outputs, iterations = 100, learningRate = 0.01) {
+  async trainBatch(inputs, outputs, iterations = 10, learningRate = 0.05, batchSize = 256) {
     const xs = tf.tensor2d(inputs, [inputs.length, inputs[0].length]);
     const ys = tf.tensor2d(outputs, [outputs.length, outputs[0].length]);
     
     this.model.compile({
-      optimizer: tf.train.momentum(learningRate, 0.9), // Optimized for M2 Ultra
+      optimizer: tf.train.momentum(learningRate, 0.9),
       loss: 'meanSquaredError'
     });
     
     const start = Date.now();
     const history = await this.model.fit(xs, ys, {
       epochs: iterations,
-      batchSize: Math.min(32, inputs.length), // GPU-optimized batch size
+      batchSize: Math.min(batchSize, inputs.length),
       shuffle: true,
       verbose: 0
     });
@@ -507,8 +507,8 @@ async function main() {
   const cycles = parseInt(getArg('cycles', '10'));
   const games = parseInt(getArg('games', '100'));
   const evalGames = parseInt(getArg('eval-games', '100'));
-  const iterations = parseInt(getArg('iterations', '100')); // Optimized for M2 Ultra
-  const learningRate = parseFloat(getArg('learning-rate', '0.01')); // Optimized for M2 Ultra
+  const iterations = parseInt(getArg('iterations', '10'));
+  const learningRate = parseFloat(getArg('learning-rate', '0.05'));
   const exploration = parseFloat(getArg('exploration', '0.3'));
   const selfPlayMode = getArg('self-play-mode', 'network');
   const opponentMix = getArg('opponent-mix', 'network');
@@ -521,6 +521,7 @@ async function main() {
   const audit = getArg('audit', 'false') === 'true';
   const auditRate = parseFloat(getArg('audit-rate', '0.05'));
   const useGradientIsolation = getArg('gradient-isolation', 'true') === 'true';
+  const batchSize = parseInt(getArg('batch-size', '256'));
   
   console.log('🧪  TF.js Training Pipeline');
   console.log('='.repeat(60));
@@ -542,6 +543,7 @@ async function main() {
   console.log(`  Eval games:      ${evalGames}`);
   console.log(`  Train iters:     ${iterations}`);
   console.log(`  Learning rate:   ${learningRate}`);
+  console.log(`  Batch size:      ${batchSize}`);
   console.log(`  Gradient iso:    ${useGradientIsolation}`);
   console.log(`  Exploration:      ${exploration}`);
   console.log(`  Cluster reward:   ${enableClusterReward}`);
@@ -586,6 +588,9 @@ async function main() {
       heuristicRatio,
       startFrom,
       enableClusterReward,
+      iterations,
+      learningRate,
+      batchSize,
       gradientIsolation: useGradientIsolation,
       audit,
       auditRate,
@@ -799,8 +804,8 @@ async function main() {
     // Training
     const trainStart = Date.now();
     const trainResult = useGradientIsolation
-      ? await network.trainBatchWithIsolation(allInputs, allOutputs, allChosenIndices, iterations, learningRate)
-      : await network.trainBatch(allInputs, allOutputs, iterations, learningRate);
+      ? await network.trainBatchWithIsolation(allInputs, allOutputs, allChosenIndices, iterations, learningRate, batchSize)
+      : await network.trainBatch(allInputs, allOutputs, iterations, learningRate, batchSize);
     console.log(`📚 Training: ${trainResult.initialError.toFixed(6)} → ${trainResult.finalError.toFixed(6)} (${iterations} epochs, ${trainResult.timeMs}ms)`);
     
     // Evaluation vs Random
