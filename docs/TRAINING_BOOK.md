@@ -1363,7 +1363,47 @@ node src/server/train_tfjs.cjs --cycles 10 --games 100 --mcts-sims 50 --architec
 
 **Expected:** vs Random 65-70%, vs Heuristic 3-8%
 
-**Status:** 🔄 Running (started 2026-10-25 ~08:06 CET, ~17 hours total)
+**Actual:** vs Random **30%**, vs Heuristic **0%**
+
+**Status:** ❌ Failed — Network learned to lose (performance degraded)
+
+**Runtime:** 438.1 minutes (~7.3 hours)
+
+**Key Finding:** The network consistently got worse over training:
+- Started: 40% vs Random
+- Peak (cycle 2): 42% vs Random
+- Final (cycle 10): 30% vs Random
+
+This confirms a **sign flip bug** in the training signal. The network IS learning — just learning the wrong thing. The learning mechanism works; the reward signal is inverted.
+
+**Cycle-by-Cycle Results:**
+
+| Cycle | vs Random | vs Heuristic | Training Loss |
+|-------|-----------|--------------|---------------|
+| 1 | 40% | 0% | 0.99 → 1.00 |
+| 2 | **42%** ⬆️ | 0% | 1.98 → 1.00 |
+| 3 | 30% | 0% | 1.88 → 1.00 |
+| 4 | 37% | 0% | 1.81 → 1.00 |
+| 5 | 31% | 0% | 1.93 → 1.00 |
+| 6 | **26%** ⚠️ | 0% | 2.34 → 1.00 |
+| 7 | 37% | 0% | 1.79 → 1.00 |
+| 8 | 37% | 0% | 2.09 → 1.00 |
+| 9 | 32% | 0% | 2.04 → 1.00 |
+| 10 | **30%** | 0% | 2.03 → 1.00 |
+
+**Analysis:**
+- Win rate fluctuates but trend is **downward**
+- Final performance (30%) is **worse than random** (50%)
+- Training loss converges well (always reaches ~1.00)
+- This is NOT overfitting — loss decreases smoothly
+- This is NOT capacity issue — network CAN learn
+- **This is inverted signal** — network learned to play badly
+
+**Bug Hypotheses (to debug):**
+1. `rewardForPlayer` sign flipped somewhere in self-play
+2. Canonical encoding: `myPieces=1, enemy=-1` inverted
+3. Value target: game outcome from wrong player's perspective
+4. Visit count normalization: high visits = bad move?
 
 **Key Implementation Details:**
 
@@ -2062,7 +2102,7 @@ Use this table to track implementation progress. Update after each experiment.
 | 2: Conv+Slot+Val | TF-B5 | ✅ Done | 50% | 0% | Canonical 18ch + Conv + Value head |
 | 3: Actor-Critic | TF-B6 | ✅ Done | 50% | 0% | Optimized hyperparams (LR=0.02, value weight=1.0) |
 | 4: Deep | TF-B7 | ⏳ Pending | — | — | — |
-| 5: MCTS-50 | TF-B8 | ⏳ Pending | — | — | — |
+| 5: MCTS-50 | TF-B8 | ❌ Failed | 30% | 0% | Sign flip bug: network learned to lose |
 | 5: MCTS-200 | TF-B9 | ⏳ Pending | — | — | — |
 | 6: Tournament | TF-B10 | ⏳ Pending | — | — | — |
 
