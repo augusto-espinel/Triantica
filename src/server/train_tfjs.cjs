@@ -304,6 +304,325 @@ class TFNeuralNetwork {
 }
 
 // ============================================================
+// TF.js Convolutional Neural Network (Phase 2)
+// ============================================================
+
+/**
+ * Conv network with dual heads: Policy (move probabilities) + Value (position score)
+ * 
+ * Input: 10×10×18 canonical one-hot tensor
+ * Backbone: 3 Conv2D layers for spatial pattern recognition
+ * Policy head: 400 outputs (one per possible move)
+ * Value head: 1 output (position evaluation, -1 to +1)
+ * 
+ * This architecture matches the design principles from AlphaGo Zero:
+ * - Conv layers learn local spatial patterns (enclosures, territory boundaries)
+ * - Policy head: "What should I do?"
+ * - Value head: "How good is my position?"
+ * - Canonical encoding makes pattern detection trivial for conv filters
+ */
+class TFConvNetwork {
+  constructor(config = {}) {
+    this.rows = config.rows || 10;
+    this.cols = config.cols || 10;
+    this.channels = config.channels || 18; // canonical encoding channels
+    this.numFilters = config.numFilters || [32, 64, 64];
+    this.policySize = this.rows * this.cols * 4; // 400 possible moves
+    this.model = null;
+    this._buildModel();
+  }
+
+  _buildModel() {
+    // Input: [batch, 10, 10, 18]
+    const input = tf.input({ shape: [this.rows, this.cols, this.channels] });
+    
+    // Backbone: 3 Conv2D layers with batch normalization and ReLU
+    let x = input;
+    for (let i = 0; i < this.numFilters.length; i++) {
+      x = tf.layers.conv2d({
+        filters: this.numFilters[i],
+        kernelSize: 3,
+        padding: 'same',
+        kernelInitializer: 'glorotUniform',
+        biasInitializer: 'zeros'
+      }).apply(x);
+      x = tf.layers.batchNormalization().apply(x);
+      x = tf.layers.reLU().apply(x);
+    }
+    
+    // Policy head: "What move should I make?"
+    // Conv → Flatten → Dense → Softmax-like (sigmoid for [0,1] range matching training data)
+    const policyConv = tf.layers.conv2d({
+      filters: 2,
+      kernelSize: 1,
+      padding: 'same',
+      kernelInitializer: 'glorotUniform'
+    }).apply(x);
+    const policyFlat = tf.layers.flatten().apply(policyConv);
+    const policyDense = tf.layers.dense({
+      units: this.policySize,
+      activation: 'sigmoid',
+      kernelInitializer: 'glorotUniform'
+    }).apply(policyFlat);
+    
+    // Value head: "How good is my position?"
+    // Conv → Flatten → Dense → Dense → tanh (-1 to +1)
+    const valueConv = tf.layers.conv2d({
+      filters: 1,
+      kernelSize: 1,
+      padding: 'same',
+      kernelInitializer: 'glorotUniform'
+    }).apply(x);
+    const valueFlat = tf.layers.flatten().apply(valueConv);
+    const valueDense1 = tf.layers.dense({
+      units: 64,
+      activation: 'relu',
+      kernelInitializer: 'glorotUniform'
+    }).apply(valueFlat);
+    const valueDense2 = tf.layers.dense({
+      units: 1,
+      activation: 'tanh',
+      kernelInitializer: 'glorotUniform'
+    }).apply(valueDense1);
+    
+    this.model = tf.model({
+      inputs: input,
+      outputs: [policyDense, valueDense2]
+    });
+    
+    // Compile with separate losses for each head
+    this.model.compile({
+      optimizer: tf.train.momentum(0.01, 0.9),
+      loss: ['meanSquaredError', 'meanSquaredError'],
+      lossWeights: [1.0, 0.5] // Policy loss weighted higher initially
+    });
+  }
+
+  /**
+   * Run a forward pass — returns { policy, value }
+   */
+  run(input1d) {
+    return tf.tidy(() => {
+      // Reshape flat 1800 array to [1, 10, 10, 18]
+      const inputTensor = tf.tensor4d(new Float32Array(input1d), [1, this.rows, this.cols, this.channels]);
+      const [policyOut, valueOut] = this.model.predict(inputTensor);
+      return {
+        policy: Array.from(policyOut.dataSync()),
+        value: valueOut.dataSync()[0]
+      };
+    });
+  }
+
+  /**
+   * Train on a batch with gradient isolation (only update chosen move in policy)
+   * Also trains value head toward the game outcome.
+   * 
+   * @param {number[][]} inputs - Canonical state vectors (1800 each)
+   * @param {number[][]} policyTargets - Full policy target vectors (400 each)
+   * @param {number[]} chosenIndices - Which move was chosen per sample
+   * @param {number[]} valueTargets - Game outcome per sample (-1, 0, +1)
+   * @param {number} iterations - Epochs
+   * @param {number} learningRate - LR
+   * @param {number} batchSize - Mini-batch size
+   */
+  async trainBatchWithIsolation(inputs, policyTargets, chosenIndices, valueTargets, iterations = 10, learningRate = 0.01, batchSize = 256) {
+    const optimizer = tf.train.momentum(learningRate, 0.9);
+    const start = Date.now();
+    const lossHistory = [];
+    const actualBatchSize = Math.min(batchSize, inputs.length);
+    
+    // Pre-convert inputs to Float32Arrays for efficient tensor creation
+    const float32Inputs = inputs.map(inp => new Float32Array(inp));
+    const inputSize = this.rows * this.cols * this.channels;
+    
+    for (let epoch = 0; epoch < iterations; epoch++) {
+      // Shuffle
+      const indices = Array.from({length: inputs.length}, (_, i) => i);
+      for (let i = indices.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [indices[i], indices[j]] = [indices[j], indices[i]];
+      }
+      
+      let epochLoss = 0;
+      let batchCount = 0;
+      
+      for (let b = 0; b < inputs.length; b += actualBatchSize) {
+        const batchIndices = indices.slice(b, b + actualBatchSize);
+        
+        const grads = optimizer.computeGradients(() => {
+          // Build batch tensor from flat Float32Arrays
+          const batchData = new Float32Array(batchIndices.length * inputSize);
+          for (let s = 0; s < batchIndices.length; s++) {
+            batchData.set(float32Inputs[batchIndices[s]], s * inputSize);
+          }
+          const batchXs = tf.tensor4d(batchData, [batchIndices.length, this.rows, this.cols, this.channels]);
+          
+          const [policyPred, valuePred] = this.model.predict(batchXs);
+          const policyData = policyPred.dataSync();
+          
+          // Build isolated policy targets: copy predictions, override chosen moves only
+          const outputSize = this.policySize;
+          const policyTargetData = new Float32Array(batchIndices.length * outputSize);
+          for (let s = 0; s < batchIndices.length; s++) {
+            const sampleIdx = batchIndices[s];
+            // Copy predictions (zero gradient for unchosen moves)
+            for (let o = 0; o < outputSize; o++) {
+              policyTargetData[s * outputSize + o] = policyData[s * outputSize + o];
+            }
+            // Override chosen move with target
+            policyTargetData[s * outputSize + chosenIndices[sampleIdx]] = policyTargets[sampleIdx][chosenIndices[sampleIdx]];
+          }
+          
+          const policyTargetTensor = tf.tensor2d(policyTargetData, [batchIndices.length, outputSize]);
+          
+          // Value targets
+          const valueTargetTensor = tf.tensor2d(
+            batchIndices.map(i => [valueTargets[i]]),
+            [batchIndices.length, 1]
+          );
+          
+          // Compute losses
+          const policyLoss = policyPred.sub(policyTargetTensor).square().mean();
+          const valueLoss = valuePred.sub(valueTargetTensor).square().mean();
+          
+          const totalLoss = policyLoss.add(valueLoss.mul(0.5));
+          
+          batchXs.dispose();
+          policyTargetTensor.dispose();
+          valueTargetTensor.dispose();
+          policyPred.dispose();
+          valuePred.dispose();
+          
+          return totalLoss;
+        });
+        
+        optimizer.applyGradients(grads.grads);
+        
+        const lossVal = grads.value.dataSync()[0];
+        epochLoss += lossVal;
+        batchCount++;
+        
+        for (const tensor of Object.values(grads.grads)) {
+          if (tensor) tensor.dispose();
+        }
+        grads.value.dispose();
+      }
+      
+      lossHistory.push(epochLoss / batchCount);
+    }
+    
+    return {
+      initialError: lossHistory[0],
+      finalError: lossHistory[lossHistory.length - 1],
+      errorHistory: lossHistory,
+      iterations,
+      timeMs: Date.now() - start
+    };
+  }
+
+  /**
+   * Standard batch training (no gradient isolation, no value head)
+   * Used for backward compatibility / ablation studies
+   */
+  async trainBatch(inputs, policyTargets, iterations = 10, learningRate = 0.01, batchSize = 256) {
+    const inputSize = this.rows * this.cols * this.channels;
+    const batchData = new Float32Array(inputs.length * inputSize);
+    for (let i = 0; i < inputs.length; i++) {
+      batchData.set(new Float32Array(inputs[i]), i * inputSize);
+    }
+    const xs = tf.tensor4d(batchData, [inputs.length, this.rows, this.cols, this.channels]);
+    const ys = tf.tensor2d(policyTargets, [policyTargets.length, this.policySize]);
+    
+    this.model.compile({
+      optimizer: tf.train.momentum(learningRate, 0.9),
+      loss: ['meanSquaredError', 'meanSquaredError'],
+      lossWeights: [1.0, 0.5]
+    });
+    
+    const start = Date.now();
+    const history = await this.model.fit(xs, ys, {
+      epochs: iterations,
+      batchSize: Math.min(batchSize, inputs.length),
+      shuffle: true,
+      verbose: 0
+    });
+    
+    xs.dispose();
+    ys.dispose();
+    
+    const losses = history.history.loss;
+    return {
+      initialError: losses[0],
+      finalError: losses[losses.length - 1],
+      errorHistory: losses,
+      iterations,
+      timeMs: Date.now() - start
+    };
+  }
+
+  toJSON() {
+    return tf.tidy(() => {
+      const result = {
+        type: 'ConvNetwork',
+        architecture: {
+          rows: this.rows,
+          cols: this.cols,
+          channels: this.channels,
+          numFilters: this.numFilters,
+          policySize: this.policySize
+        },
+        weights: []
+      };
+      
+      for (const layer of this.model.layers) {
+        const weights = layer.getWeights();
+        if (weights.length > 0) {
+          result.weights.push({
+            name: layer.name,
+            data: weights.map(w => Array.from(w.dataSync()))
+          });
+        }
+      }
+      
+      return result;
+    });
+  }
+
+  fromJSON(json) {
+    tf.tidy(() => {
+      this.rows = json.architecture?.rows || 10;
+      this.cols = json.architecture?.cols || 10;
+      this.channels = json.architecture?.channels || 18;
+      this.numFilters = json.architecture?.numFilters || [32, 64, 64];
+      this.policySize = json.architecture?.policySize || 400;
+      
+      this._buildModel();
+      
+      if (json.weights) {
+        let weightIdx = 0;
+        for (const layer of this.model.layers) {
+          const layerWeights = layer.getWeights();
+          if (layerWeights.length > 0 && weightIdx < json.weights.length) {
+            const saved = json.weights[weightIdx];
+            const restored = saved.data.map((arr, i) => {
+              const original = layerWeights[i];
+              return tf.tensor(arr, original.shape);
+            });
+            try {
+              layer.setWeights(restored);
+            } catch (e) {
+              // Shape mismatch — skip this layer
+            }
+            restored.forEach(t => t.dispose());
+            weightIdx++;
+          }
+        }
+      }
+    });
+  }
+}
+
+// ============================================================
 // Helper Functions
 // ============================================================
 
@@ -344,6 +663,58 @@ function getStateFixed(grid, aiPlayerNumber) {
   return state;
 }
 
+/**
+ * CANONICAL 1-TO-1 SLOT ENCODING
+ * 
+ * Every possible placement is a discrete binary fact: present or absent.
+ * No implicit ordering between rotations. Empty is first-class.
+ * Triantica is Markovian — only current board state matters.
+ * 
+ * Per cell, per diagonal group (╱ vs ╲):
+ *   Channel 0: empty
+ *   Channel 1-4: my piece, rotation 0°/90°/180°/270°
+ *   Channel 5-8: opponent, rotation 0°/90°/180°/270°
+ * 
+ * 9 channels × 2 groups = 18 channels per cell
+ * Input tensor: 10×10×18 = 1,800 values
+ * 
+ * @param {GridManager} grid - The game state
+ * @param {number} aiPlayerNumber - Which player the AI is playing as (1 or 2)
+ * @returns {number[]} - 1,800-element flat array (reshape to 10×10×18 for conv)
+ */
+function getStateCanonical(grid, aiPlayerNumber) {
+  const { rows, cols } = grid;
+  const opponent = aiPlayerNumber === 1 ? 2 : 1;
+  const channels = rows * cols * 18;
+  const state = new Float32Array(channels);
+  
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const cell = grid.grid[r][c];
+      const cellOffset = (r * cols + c) * 18;
+      
+      // Process each diagonal group (0 = ╱-type: rotations 0,2; 1 = ╲-type: rotations 1,3)
+      for (let group = 0; group < 2; group++) {
+        const groupOffset = cellOffset + group * 9;
+        
+        // Find triangle in this group (if any)
+        const tri = cell.triangles.find(t => grid.getDiagonalGroup(t.rotation) === group);
+        
+        if (!tri) {
+          // Empty slot: channel 0 = 1, all others = 0
+          state[groupOffset] = 1;
+        } else {
+          // Piece present: channel = 1 + rotation + (opponent ? 4 : 0)
+          const ownerOffset = tri.player === aiPlayerNumber ? 0 : 4;
+          state[groupOffset + 1 + ownerOffset + tri.rotation] = 1;
+        }
+      }
+    }
+  }
+  
+  return Array.from(state);
+}
+
 // Keep alias for compatibility
 const getStateRelative = getStateFixed;
 
@@ -365,20 +736,28 @@ function getRandomMove(grid) {
   return valid.length ? valid[Math.floor(Math.random() * valid.length)] : null;
 }
 
-function getAIMove(network, grid, exploration, aiPlayerNumber = 1) {
+function getAIMove(network, grid, exploration, aiPlayerNumber = 1, useConv = false) {
   if (Math.random() < exploration) return getRandomMove(grid);
   
-  const state = getStateFixed(grid, aiPlayerNumber);
-  const output = network.run(state);
+  let policy;
+  if (useConv) {
+    const state = getStateCanonical(grid, aiPlayerNumber);
+    const result = network.run(state);
+    policy = result.policy;
+  } else {
+    const state = getStateFixed(grid, aiPlayerNumber);
+    policy = network.run(state);
+  }
+  
   const moves = [];
   const { rows, cols } = grid;
   
-  for (let i = 0; i < output.length; i++) {
+  for (let i = 0; i < policy.length; i++) {
     const rot = i % 4;
     const idx = Math.floor(i / 4);
     const x = idx % cols;
     const y = Math.floor(idx / cols);
-    moves.push({ x, y, rotation: rot, score: output[i] });
+    moves.push({ x, y, rotation: rot, score: policy[i] });
   }
   
   moves.sort((a, b) => b.score - a.score);
@@ -527,6 +906,7 @@ async function main() {
   const replayBufferSize = parseInt(getArg('replay-buffer-size', '500000'));
   const replayBatchSize = parseInt(getArg('replay-batch-size', '256'));
   const replayRatio = parseFloat(getArg('replay-ratio', '2.0')); // How many replay batches per cycle vs new data batches
+  const architecture = getArg('architecture', 'dense'); // 'dense' or 'conv'
   
   console.log('🧪  TF.js Training Pipeline');
   console.log('='.repeat(60));
@@ -558,18 +938,31 @@ async function main() {
     console.log(`  Replay batch:     ${replayBatchSize}`);
     console.log(`  Replay ratio:     ${replayRatio}x`);
   }
+  console.log(`  Architecture:     ${architecture}`);
   console.log(`  Audit mode:       ${audit ? 'ENABLED' + (audit ? ' (' + (auditRate * 100).toFixed(0) + '% sample rate)' : '') : 'disabled'}`);
   console.log(`  Start from:      ${startFrom || 'fresh'}`);
   console.log(`  Output:          ${output}`);
   console.log('='.repeat(60));
   
   const grid = new GridManager(10, 10);
-  const network = new TFNeuralNetwork({
-    inputSize: 401,
-    hiddenLayers: [200],
-    outputSize: 400,
-    activation: 'sigmoid'
-  });
+  const useConv = architecture === 'conv';
+  let network;
+  
+  if (useConv) {
+    network = new TFConvNetwork({
+      rows: 10,
+      cols: 10,
+      channels: 18,
+      numFilters: [32, 64, 64]
+    });
+  } else {
+    network = new TFNeuralNetwork({
+      inputSize: 401,
+      hiddenLayers: [200],
+      outputSize: 400,
+      activation: 'sigmoid'
+    });
+  }
   
   if (startFrom) {
     const data = JSON.parse(fs.readFileSync(startFrom, 'utf-8'));
@@ -578,9 +971,15 @@ async function main() {
   }
   
   // Sanity check
-  const testState = new Array(401).fill(0);
-  const testOut = network.run(testState);
-  console.log(`🧠 Network ready (output range: ${Math.min(...testOut).toFixed(3)} - ${Math.max(...testOut).toFixed(3)})`);
+  if (useConv) {
+    const testState = new Array(1800).fill(0);
+    const testOut = network.run(testState);
+    console.log(`🧠 Conv network ready (policy range: ${Math.min(...testOut.policy).toFixed(3)} - ${Math.max(...testOut.policy).toFixed(3)}, value: ${testOut.value.toFixed(3)})`);
+  } else {
+    const testState = new Array(401).fill(0);
+    const testOut = network.run(testState);
+    console.log(`🧠 Dense network ready (output range: ${Math.min(...testOut).toFixed(3)} - ${Math.max(...testOut).toFixed(3)})`);
+  }
   
   const log = {
     experimentId: path.basename(output, '.json').replace('_training', ''),
@@ -603,6 +1002,7 @@ async function main() {
       learningRate,
       batchSize,
       gradientIsolation: useGradientIsolation,
+      architecture: architecture,
       replayBuffer: useReplayBuffer,
       replayBufferSize,
       replayBatchSize,
@@ -652,7 +1052,7 @@ async function main() {
     const cycleStart = Date.now();
     
     // Self-play with opponent tracking
-    const allInputs = [], allOutputs = [], allChosenIndices = [];
+    const allInputs = [], allOutputs = [], allChosenIndices = [], allValueTargets = [];
     const winsByOpponent = {};
     const opponentTypeCounts = {};
     const scoresByOpponent = {};
@@ -698,7 +1098,7 @@ async function main() {
       while (!grid.isGridFull() && m < maxM) {
         grid.currentPlayer = curP;
         
-        const state = getStateFixed(grid, aiPlayerNumber);
+        const state = useConv ? getStateCanonical(grid, aiPlayerNumber) : getStateFixed(grid, aiPlayerNumber);
         const immediateRewardVector = calculateImmediateRewardVector(grid, curP);
         // Don't calculate rawImmediateReward here - we'll use chosenMoveReward after move selection
         
@@ -708,12 +1108,12 @@ async function main() {
         let move;
         if (isAIP) {
           // AI's turn - use network
-          move = getAIMove(network, grid, exploration, aiPlayerNumber);
+          move = getAIMove(network, grid, exploration, aiPlayerNumber, useConv);
         } else {
           // Opponent's turn
           if (opponentType === 'network') {
             // Self-play: opponent also uses network (but from THEIR perspective)
-            move = getAIMove(network, grid, exploration, curP);
+            move = getAIMove(network, grid, exploration, curP, useConv);
           } else if (opponentType === 'heuristic') {
             // Create heuristic with correct player number for this turn
             const heuristicOpp = new HeuristicPlayer(curP, { explorationFactor: 0 });
@@ -826,6 +1226,7 @@ async function main() {
         allInputs.push(step.state);
         allOutputs.push(finalOutputVector);
         allChosenIndices.push(step.moveIdx);
+        allValueTargets.push(rewardForPlayer); // Value head target: game outcome from AI's perspective
       }
       
       if ((g + 1) % 10 === 0) process.stdout.write(`${g + 1}/${games} games done\r`);
@@ -841,44 +1242,65 @@ async function main() {
       console.log(`🗄️  Buffer: ${bufStats.size.toLocaleString()}/${bufStats.maxSize.toLocaleString()} samples (${(bufStats.utilization * 100).toFixed(1)}% full)`);
     }
 
-    // Training — use replay buffer if available, otherwise train on current cycle data
+    // Training — dispatch based on architecture
     const trainStart = Date.now();
     let trainResult;
     let trainingSamplesUsed = allInputs.length;
+    const halfIters = Math.max(1, Math.floor(iterations / 2));
+
+    /**
+     * Train function that handles both dense and conv architectures
+     * For conv: uses trainBatchWithIsolation with value targets
+     * For dense: uses existing train methods
+     */
+    async function trainOnData(inputs, outputs, chosenIndices, valueTargets, iters) {
+      if (useConv) {
+        return await network.trainBatchWithIsolation(
+          inputs, outputs, chosenIndices,
+          valueTargets || new Array(inputs.length).fill(0),
+          iters, learningRate, batchSize
+        );
+      } else if (useGradientIsolation) {
+        return await network.trainBatchWithIsolation(inputs, outputs, chosenIndices, iters, learningRate, batchSize);
+      } else {
+        return await network.trainBatch(inputs, outputs, iters, learningRate, batchSize);
+      }
+    }
 
     if (useReplayBuffer && replayBuffer.size >= replayBatchSize) {
       // Train on a mix of new data + replayed historical data
-      // Total training batches = (new data batches) × replayRatio
       const newBatchCount = Math.ceil(allInputs.length / replayBatchSize);
       const totalBatches = Math.max(1, Math.round(newBatchCount * replayRatio));
 
       // First: train on current cycle data (on-policy)
       if (allInputs.length > 0) {
-        trainResult = useGradientIsolation
-          ? await network.trainBatchWithIsolation(allInputs, allOutputs, allChosenIndices, Math.max(1, Math.floor(iterations / 2)), learningRate, batchSize)
-          : await network.trainBatch(allInputs, allOutputs, Math.max(1, Math.floor(iterations / 2)), learningRate, batchSize);
+        trainResult = await trainOnData(allInputs, allOutputs, allChosenIndices, allValueTargets, halfIters);
       }
 
       // Then: train on replay buffer samples (off-policy)
-      const replayIters = Math.max(1, Math.floor(iterations / 2));
       let replayLossTotal = 0;
       let replayBatchCount = 0;
 
       for (let rb = 0; rb < totalBatches; rb++) {
         const batch = replayBuffer.sample(replayBatchSize);
-        const replayResult = useGradientIsolation
-          ? await network.trainBatchWithIsolation(batch.inputs, batch.outputs, batch.chosenIndices, replayIters, learningRate, batchSize)
-          : await network.trainBatch(batch.inputs, batch.outputs, replayIters, learningRate, batchSize);
+        // For replay data, value targets aren't stored — approximate with 0 (neutral)
+        const replayValueTargets = new Array(replayBatchSize).fill(0);
+        const replayResult = await trainOnData(batch.inputs, batch.outputs, batch.chosenIndices, replayValueTargets, halfIters);
         
         replayLossTotal += replayResult.finalError;
         replayBatchCount++;
         trainingSamplesUsed += replayBatchSize;
 
-        // Update priorities based on TD-error (current loss as proxy)
-        if (useGradientIsolation && batch.indices) {
+        // Update priorities based on TD-error
+        if (batch.indices) {
           const tdErrors = batch.inputs.map((inp, i) => {
-            const pred = network.run(inp);
-            return Math.abs(pred[batch.chosenIndices[i]] - batch.outputs[i][batch.chosenIndices[i]]);
+            if (useConv) {
+              const pred = network.run(inp);
+              return Math.abs(pred.policy[batch.chosenIndices[i]] - batch.outputs[i][batch.chosenIndices[i]]);
+            } else {
+              const pred = network.run(inp);
+              return Math.abs(pred[batch.chosenIndices[i]] - batch.outputs[i][batch.chosenIndices[i]]);
+            }
           });
           replayBuffer.updatePriorities(batch.indices, tdErrors);
         }
@@ -886,16 +1308,14 @@ async function main() {
 
       // Merge training results for logging
       if (!trainResult) {
-        // Only replay, no new data this cycle
         trainResult = {
           initialError: replayLossTotal / replayBatchCount,
           finalError: replayLossTotal / replayBatchCount,
           errorHistory: [replayLossTotal / replayBatchCount],
-          iterations: replayIters * replayBatchCount,
+          iterations: halfIters * replayBatchCount,
           timeMs: Date.now() - trainStart
         };
       } else {
-        // Append replay loss to training result
         trainResult.errorHistory.push(replayLossTotal / replayBatchCount);
         trainResult.finalError = replayLossTotal / replayBatchCount;
         trainResult.timeMs = Date.now() - trainStart;
@@ -904,9 +1324,7 @@ async function main() {
       console.log(`   Samples used: ${trainingSamplesUsed.toLocaleString()} (new: ${allInputs.length}, replay: ${trainingSamplesUsed - allInputs.length})`);
     } else {
       // No replay buffer (or buffer too small) — standard training on current cycle
-      trainResult = useGradientIsolation
-        ? await network.trainBatchWithIsolation(allInputs, allOutputs, allChosenIndices, iterations, learningRate, batchSize)
-        : await network.trainBatch(allInputs, allOutputs, iterations, learningRate, batchSize);
+      trainResult = await trainOnData(allInputs, allOutputs, allChosenIndices, allValueTargets, iterations);
       console.log(`📚 Training: ${trainResult.initialError.toFixed(6)} → ${trainResult.finalError.toFixed(6)} (${iterations} epochs, ${trainResult.timeMs}ms)`);
     }
     
@@ -923,7 +1341,7 @@ async function main() {
       
       while (!grid.isGridFull() && m < maxM) {
         grid.currentPlayer = cur;
-        const move = cur === evalAIPlayerNumber ? getAIMove(network, grid, 0, evalAIPlayerNumber) : getRandomMove(grid);
+        const move = cur === evalAIPlayerNumber ? getAIMove(network, grid, 0, evalAIPlayerNumber, useConv) : getRandomMove(grid);
         if (!move) break;
         
         grid.selectedRotation = move.rotation;
@@ -969,7 +1387,7 @@ async function main() {
       while (!grid.isGridFull() && m < maxM) {
         grid.currentPlayer = cur;
         const move = cur === heurAIPlayerNumber 
-          ? getAIMove(network, grid, 0, heurAIPlayerNumber) 
+          ? getAIMove(network, grid, 0, heurAIPlayerNumber, useConv) 
           : heuristicEval.getMove(grid);
         if (!move) break;
         

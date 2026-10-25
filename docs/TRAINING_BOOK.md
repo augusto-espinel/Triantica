@@ -1150,11 +1150,11 @@ This chapter outlines a prioritized plan to improve AI performance. Each phase b
 
 **Current:** `401 inputs → [200 hidden] → 400 outputs` (dense, continuous rotation)
 
-**Proposed:** `10×10×16 one-hot input → [Conv layers] → Policy head + Value head`
+**Proposed:** `10×10×18 one-hot input → [Conv layers] → Policy head + Value head`
 
 #### Step 2A: Canonical 1-to-1 Slot Encoding
 
-**Key principle:** Triantica is Markovian — only the current board state matters, not the order moves were played. Each possible placement is a discrete binary fact: present or absent.
+**Key principle:** Triantica is Markovian — only the current board state matters, not the order moves were played. Each possible placement is a discrete binary fact: present or absent. Empty slots deserve first-class representation, not implicit absence.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -1166,30 +1166,32 @@ This chapter outlines a prioritized plan to improve AI performance. Each phase b
 │    rotation = 0, 0.25, 0.5, 0.75, or -1                    │
 │    ❌ Implies 90° is "between" 0° and 180°                 │
 │    ❌ Player and geometry mixed in same channel             │
+│    ❌ Empty = -1 rotation (special case, not a real angle)  │
 │    ❌ Conv layer can't cleanly detect patterns              │
 │                                                             │
-│  CANONICAL (16 binary channels per cell):                   │
-│    Channel 0: My triangle, top-half, rotation 0°            │
-│    Channel 1: My triangle, top-half, rotation 90°           │
-│    Channel 2: My triangle, top-half, rotation 180°          │
-│    Channel 3: My triangle, top-half, rotation 270°          │
-│    Channel 4: My triangle, bot-half, rotation 0°            │
-│    ... (8 channels for my pieces)                            │
-│    Channel 8: Opp triangle, top-half, rotation 0°           │
-│    ... (8 channels for opponent pieces)                      │
-│    ✅ Each slot is binary: YES/NO                            │
-│    ✅ No implicit ordering between rotations                 │
-│    ✅ Conv filters can directly detect enclosure patterns    │
+│  CANONICAL (18 one-hot channels per cell):                  │
+│    Per cell, per half (top/bottom):                         │
+│      Channel 0:  "empty"                                   │
+│      Channel 1-4: "my piece, rotation 0°/90°/180°/270°"    │
+│      Channel 5-8: "opponent, rotation 0°/90°/180°/270°"    │
+│                                                             │
+│    ✅ Every position has exactly ONE active channel/half    │
+│    ✅ Empty is first-class, not implicit absence            │
+│    ✅ No spurious ordering between rotations                 │
+│    ✅ Conv filters get clean binary inputs                   │
 │    ✅ Pure board state — no move order information           │
 │                                                             │
-│  Total: 10×10×16 = 1,600 input values                       │
+│  Total: 10×10×18 = 1,800 input values                       │
 │  (vs 401 current — still tiny for 64GB M2 Ultra)            │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
+**Why empty slots need their own channel:**
+A conv filter detecting "empty cell next to my enclosure" needs to recognize absence. With the 16-channel encoding (all zeros = empty), the filter must apply negative weights across all 16 channels — a complex pattern. With the 18-channel encoding, the filter simply needs a positive weight on channel 0 (empty) — trivial to learn.
+
 **Why this matters for convolutions:**
-A 3×3 conv filter on the current 4-channel input would need to simultaneously decode player identity AND rotation from mixed signals. On the 16-channel input, a filter simply checks "do I see my triangles at these specific rotations in these positions?" — directly detecting enclosure patterns.
+A 3×3 conv filter on the current 4-channel input would need to simultaneously decode player identity AND rotation from mixed signals. On the 18-channel input, a filter simply checks "do I see my triangles at these specific rotations in these positions?" — directly detecting enclosure patterns.
 
 #### Step 2B: Convolutional Architecture
 
@@ -1228,9 +1230,9 @@ A 3×3 conv filter on the current 4-channel input would need to simultaneously d
 
 | Step | Task | Estimated Time |
 |------|------|----------------|
-| 2.1 | Implement `getStateCanonical(grid, aiPlayerNumber)` — 16-channel binary encoding | 45 min |
+| 2.1 | Implement `getStateCanonical(grid, aiPlayerNumber)` — 18-channel one-hot encoding | 45 min |
 | 2.2 | Write roundtrip test: encode → decode → verify board state matches | 30 min |
-| 2.3 | Implement `createConvNetwork()` function with 10×10×16 input | 1 hour |
+| 2.3 | Implement `createConvNetwork()` function with 10×10×18 input | 1 hour |
 | 2.4 | Add policy head (flatten → dense → softmax) | 30 min |
 | 2.5 | Add value head (flatten → dense → tanh) — combining Phase 2 + 3 | 30 min |
 | 2.6 | Modify training loop: canonical encoding + conv network | 45 min |
