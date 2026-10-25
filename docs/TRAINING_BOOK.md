@@ -1340,7 +1340,48 @@ A 3×3 conv filter on the current 4-channel input would need to simultaneously d
 | vs Heuristic | 0% | 0% | 0% |
 | Training time | 40m | 42m | 42m |
 
-**Verdict:** Conv architecture adds complexity without benefit. The bottleneck is strategic reasoning, not pattern detection.
+#### TF-B8: MCTS-50 Training (AlphaGo Zero Style)
+
+**Goal:** Test if MCTS with 50 simulations can provide strategic lookahead to break the Heuristic Wall.
+
+**Architecture:** Conv (Phase 2 - TF-B5 proven)
+
+**Parameters:**
+- Cycles: 10
+- Games/cycle: 100
+- MCTS sims: 50 (batched, parallel evaluation)
+- MCTS batch: 8
+- Learning rate: 0.02
+- Batch size: 256
+- Exploration: 0.1 (MCTS provides exploration via Dirichlet noise)
+- Training target: MCTS visit policy π(a)
+
+**Command:**
+```bash
+node src/server/train_tfjs.cjs --cycles 10 --games 100 --mcts-sims 50 --architecture conv --output docs/data/TF-B8.json
+```
+
+**Expected:** vs Random 65-70%, vs Heuristic 3-8%
+
+**Status:** 🔄 Running (started 2026-10-25 ~08:06 CET, ~17 hours total)
+
+**Key Implementation Details:**
+
+1. **Training Pipeline Change:**
+   - Policy target: Visit distribution π(a) = N(child)/N(root)
+   - Value target: Game outcome (unchanged)
+   - Network learns: "What would MCTS do?"
+
+2. **MCTS Parameters:**
+   - Exploration constant c = 1.5
+   - Dirichlet noise α = 0.03, ε = 0.25
+   - Temperature: 1.0 early, 0.0 late game
+   - Batch size: 8 (parallel leaf evaluation)
+
+3. **Performance Notes:**
+   - ~50x slower than regular self-play
+   - 1 game ≈ 50 seconds with MCTS-50
+   - Batched evaluation: 2x speedup over sequential
 
 ---
 

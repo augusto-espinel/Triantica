@@ -454,6 +454,103 @@ all training runs.
 
 ---
 
+## Monte Carlo Tree Search (MCTS)
+
+MCTS provides strategic lookahead by simulating game continuations and using the neural network to evaluate positions.
+
+### Algorithm Overview
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                 MCTS Search Loop                             │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│   SELECT: Traverse tree using UCT from root to leaf        │
+│   EXPAND: Add children with NN policy priors               │
+│   EVALUATE: Use value network at leaves                     │
+│   BACKPROP: Update Q and N statistics up to root            │
+│                                                             │
+│   Result: Improved policy from visit counts                │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### UCT Formula
+
+```
+UCT(a) = Q(a)/N(a) + c × P(a) × √(N(parent)) / (1 + N(a))
+         ───────────────   ─────────────────────────────────
+         Exploitation:     Exploration:
+         "What's proven    "What's promising
+                 good?"                but unexplored?"
+```
+
+**Parameters:**
+- `c`: Exploration constant (default 1.5)
+- `P(a)`: Policy prior from neural network
+- `Q(a)`: Average value from simulations
+- `N(a)`: Visit count
+
+### Key Components
+
+| Component | File | Purpose |
+|-----------|------|--------|
+| MCTSNode | `MCTS.cjs` | Tree node with Q, N, P statistics |
+| MCTS | `MCTS.cjs` | Search controller |
+| Dirichlet noise | Root node | Exploration diversity |
+| Temperature schedule | Move selection | Opening variety |
+
+### Training Integration
+
+When MCTS is enabled (`--mcts-sims N`), the training target changes:
+
+| Target | Without MCTS | With MCTS |
+|--------|--------------|-----------|
+| Policy | Raw NN output | Visit distribution π(a) |
+| Value | Game outcome | Game outcome (unchanged) |
+
+The network learns to predict: "What move would MCTS choose?"
+
+### Performance Optimization
+
+**Batched Evaluation:** Evaluate multiple leaves in parallel
+```javascript
+// Sequential (slow): 50 sims × 1 NN call = 50 forward passes
+for (let i = 0; i < 50; i++) {
+  const value = await network.run(leaf.state);
+}
+
+// Batched (fast): 50 sims / batch_size NN calls
+for (let batch = 0; batch < batches; batch++) {
+  const leaves = collectLeaves(batch_size);
+  const values = await network.batchPredict(leaves);  // ONE call
+}
+```
+
+**Speedup:** 2-4x faster with batch size 8-16
+
+### Configuration Parameters
+
+| Parameter | CLI Flag | Default | Range |
+|-----------|----------|---------|-------|
+| Simulations | `--mcts-sims` | 0 | 0-1000 |
+| Batch size | `--mcts-batch-size` | 8 | 1-32 |
+| Exploration c | hardcoded | 1.5 | 0.5-3.0 |
+| Dirichlet α | hardcoded | 0.03 | 0.01-0.1 |
+| Temperature | hardcoded | 1.0→0.0 | 0.0-2.0 |
+
+### Example Usage
+
+```bash
+# Enable MCTS with 50 simulations per move
+node src/server/train_tfjs.cjs --cycles 10 --games 100 --mcts-sims 50 --architecture conv
+
+# Quick test with 25 simulations
+node src/server/train_tfjs.cjs --cycles 3 --games 10 --mcts-sims 25 --architecture conv
+```
+
+---
+
 ## Performance Characteristics
 
 ### Computational Complexity
