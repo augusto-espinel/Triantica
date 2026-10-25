@@ -243,7 +243,9 @@ class MCTS {
       }
       
       // Backpropagation
-      this._backpropagate(path, leafValue, grid.currentPlayer);
+      // FIX: NN value is from leaf.player's perspective, need to flip to root player's perspective
+      const valueFromRootPerspective = leaf.player === grid.currentPlayer ? leafValue : -leafValue;
+      this._backpropagate(path, valueFromRootPerspective, grid.currentPlayer);
     }
     
     // Get improved policy from visit counts
@@ -357,8 +359,9 @@ class MCTS {
       }
       
       let leafValue;
-      if (terminalResults.has(i)) {
-        // Terminal node - use actual outcome
+      let isTerminal = terminalResults.has(i);
+      if (isTerminal) {
+        // Terminal node - use actual outcome (already from rootPlayer's perspective)
         leafValue = terminalResults.get(i);
       } else {
         // Non-terminal - expand with NN policy
@@ -378,7 +381,16 @@ class MCTS {
         }
       }
       
-      this._backpropagate(path, leafValue, rootPlayer);
+      // Backpropagation
+      // FIX: NN value is from leaf.player's perspective, terminal value is from rootPlayer's perspective
+      let valueFromRootPerspective;
+      if (isTerminal) {
+        valueFromRootPerspective = leafValue;  // Already correct
+      } else {
+        // NN value: flip if from opponent's perspective
+        valueFromRootPerspective = leaf.player === rootPlayer ? leafValue : -leafValue;
+      }
+      this._backpropagate(path, valueFromRootPerspective, rootPlayer);
     }
   }
   
