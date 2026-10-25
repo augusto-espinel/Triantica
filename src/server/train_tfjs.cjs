@@ -1336,6 +1336,13 @@ async function main() {
         const aiPlayerNumber = (g % 2 === 0) ? 1 : 2;
         const opponentType = 'network'; // MCTS training is self-play only
         
+        // Initialize tracking for this opponent type (Fix for observation #5)
+        opponentTypeCounts[opponentType] = (opponentTypeCounts[opponentType] || 0) + 1;
+        if (!winsByOpponent[opponentType]) {
+          winsByOpponent[opponentType] = { 1: 0, 2: 0, draws: 0 };
+          scoresByOpponent[opponentType] = { p1: [], p2: [], ai: [], opponent: [] };
+        }
+        
         while (!grid.isGridFull() && m < maxM) {
           grid.currentPlayer = curP;
           
@@ -1397,6 +1404,22 @@ async function main() {
         if (winner === 1) p1Wins++;
         else if (winner === 2) p2Wins++;
         else draws++;
+        
+        // Track wins by opponent type (Fix for observation #5)
+        winsByOpponent['network'][winner === 0 ? 'draws' : winner]++;
+        
+        // Track scores from AI's perspective (Bug #4 fix)
+        const aiFinalScore = grid.getLargestContiguous(aiPlayerNumber);
+        const oppPlayerNumber = aiPlayerNumber === 1 ? 2 : 1;
+        const oppFinalScore = grid.getLargestContiguous(oppPlayerNumber);
+        scoresByOpponent['network'].ai.push(aiFinalScore);
+        scoresByOpponent['network'].opponent.push(oppFinalScore);
+        
+        // Track final board state for diversity (Bug #3 fix)
+        finalBoards.push(grid.grid.flat().map(cell => ({
+          t1: cell.triangles[0]?.player ?? 0,
+          t2: cell.triangles[1]?.player ?? 0
+        })));
         
         // Process MCTS training data
         const rewardForWinner = winner === 0 ? 0 : (winner === 1 ? 1 : -1);
@@ -1503,8 +1526,14 @@ async function main() {
           timeMs: Date.now() - trainStart
         };
       } else {
+        // Weighted average: preserve cycle training error, not replay buffer error (Bug #2 fix)
+        const cycleSamples = allInputs.length;
+        const replaySamples = trainingSamplesUsed - cycleSamples;
+        const totalSamples = trainingSamplesUsed;
+        const weightedFinalError = (trainResult.finalError * cycleSamples + (replayLossTotal / replayBatchCount) * replaySamples) / totalSamples;
+        
         trainResult.errorHistory.push(replayLossTotal / replayBatchCount);
-        trainResult.finalError = replayLossTotal / replayBatchCount;
+        trainResult.finalError = weightedFinalError;  // Weighted average instead of overwrite
         trainResult.timeMs = Date.now() - trainStart;
       }
       console.log(`📚 Training (new+replay): ${trainResult.initialError.toFixed(6)} → ${trainResult.finalError.toFixed(6)} (${iterations} epochs, ${replayBatchCount} replay batches, ${trainResult.timeMs}ms)`);
