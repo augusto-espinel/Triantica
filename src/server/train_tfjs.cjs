@@ -1346,7 +1346,9 @@ async function main() {
         while (!grid.isGridFull() && m < maxM) {
           grid.currentPlayer = curP;
           
-          const state = getStateCanonical(grid, aiPlayerNumber);
+          // BUGFIX: Encode state from current player's perspective (not AI's)
+          // This ensures state encoding matches what MCTS saw during search
+          const state = getStateCanonical(grid, curP);
           const isAI = curP === aiPlayerNumber;
           
           let move, mctsPolicy;
@@ -1425,14 +1427,14 @@ async function main() {
         const rewardForWinner = winner === 0 ? 0 : (winner === 1 ? 1 : -1);
         
         for (const step of hist) {
+          // Value target from the perspective of the player who made the move
           const rewardForPlayer = step.player === 1 ? rewardForWinner : -rewardForWinner;
-          const rewardForAI = step.aiPlayerNumber === 1 ? rewardForWinner : -rewardForWinner;
           
           // For MCTS: policy target is the visit distribution, value target is outcome
           allInputs.push(step.state);
           allOutputs.push(step.mctsPolicy);  // MCTS policy as target
           allChosenIndices.push(step.moveIdx);
-          allValueTargets.push(rewardForAI);
+          allValueTargets.push(rewardForPlayer);  // Value from mover's perspective
         }
         
         if ((g + 1) % 10 === 0) process.stdout.write(`${g + 1}/${games} MCTS games done\r`);
