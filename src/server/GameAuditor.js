@@ -159,8 +159,8 @@ class GameAuditor {
     // Check 6: State encoding matches (if provided)
     if (gameHistory.length > 0 && gameHistory[0].state) {
       const finalState = gameHistory[gameHistory.length - 1].state;
-      // Basic sanity: state length should be consistent
-      if (finalState && finalState.length !== 401) {
+      // Basic sanity: state length should be consistent (401 for dense, 1800 for canonical)
+      if (finalState && finalState.length !== 401 && finalState.length !== 1800) {
         issues.push({
           type: 'STATE_ENCODING',
           message: `Final state has ${finalState.length} elements (expected 401)`

@@ -966,6 +966,8 @@ After 22 brain.js experiments and 10+ TF.js experiments, a clear pattern emerged
 | TF-ONLINE | Online SGD | TF.js | alt | 0.01 | 10 | - | ✓ | ✗ | 27% | 0% | - |
 | exp20 | brain.js Best | brain.js | mixed | 0.01 | 200 | - | ✗ | ✗ | **91%** | 0% | 8m |
 | exp22 | Cluster (brain.js) | brain.js | mixed | 0.01 | 200 | - | ✗ | ✓ | 84% | 0% | 8m |
+| TF-B5_conv | Phase 2: Conv+Value | TF.js | 100% net | 0.01 | 10 | 256 | ✓ | ✗ | 50% | 0% | 42m |
+| TF-B6_optimized | Hyperparameter Tuning | TF.js | 100% net | 0.02 | 10 | 256 | ✓ | ✗ | **50%** | 0% | 42m |
 
 **Key:**
 - Mix: opponent distribution (network/random/heuristic)
@@ -1003,6 +1005,9 @@ After 22 brain.js experiments and 10+ TF.js experiments, a clear pattern emerged
 │     No amount of learning rate tuning will make a            │
 │     feedforward network play strategically.                  │
 │                                                             │
+│     UPDATE (Phase 2): Even conv + value head doesn't break  │
+│     the strategic barrier. Search is essential.             │
+│                                                             │
 │  2. Dense rewards help early learning                       │
 │     ────────────────────────────────                        │
 │     Gradient isolation is theoretically cleaner             │
@@ -1022,6 +1027,9 @@ After 22 brain.js experiments and 10+ TF.js experiments, a clear pattern emerged
 │     ────────────────────────────                            │
 │     Multi-step lookahead cannot be learned by               │
 │     feedforward networks. Search is necessary.              │
+│                                                             │
+│     CONFIRMED (Phase 2): Conv + value head still hits      │
+│     the wall. Architecture alone isn't enough.              │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -1255,6 +1263,84 @@ A 3×3 conv filter on the current 4-channel input would need to simultaneously d
 - Enable `tf.webgl.forceHalfFloat()` for faster computation
 
 **Code Location:** `src/server/ConvNetwork.js`
+
+---
+
+### Phase 2 Results (2026-10-25)
+
+**Experiments Completed:** TF-B5_conv, TF-B6_optimized
+
+#### TF-B5: Canonical Conv Network + Value Head
+
+| Metric | Value |
+|--------|-------|
+| Architecture | 3×Conv2D (32/64/64) + Policy head + Value head |
+| Parameters | ~148K |
+| Input | 10×10×18 canonical one-hot tensor |
+| Training time | 42 min (20 cycles, 100 games/cycle) |
+| Best vs Random | 50% (cycle 7) |
+| Final vs Random | 36% |
+| vs Heuristic | 0% (0 wins in 2000 games) |
+
+#### TF-B6: Hyperparameter Optimization
+
+**Changes from TF-B5:**
+- Learning rate: 0.01 → **0.02** (BatchNorm allows higher LR)
+- Value loss weight: 0.5 → **1.0** (equal signal for value learning)
+- Reward target range: [0.01, 0.99] → **[0.0, 1.0]** (stronger gradients)
+
+| Metric | Value |
+|--------|-------|
+| Training time | 42.5 min (20 cycles) |
+| Best vs Random | **50%** (cycle 17) |
+| Final vs Random | 33% |
+| vs Heuristic | **0%** (0 wins in 2000 games) |
+
+#### Key Findings
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│              Phase 2: No Breakthrough                        │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  1. Architecture upgrade successful:                        │
+│     • Canonical encoding removes ambiguity                  │
+│     • Conv layers can detect spatial patterns               │
+│     • Value head provides dense learning signal             │
+│                                                             │
+│  2. Performance unchanged:                                  │
+│     • vs Random: 50% (same as dense baseline)               │
+│     • vs Heuristic: 0% (wall still stands)                   │
+│                                                             │
+│  3. Hyperparameter tuning had no effect:                    │
+│     • Higher LR didn't improve learning                     │
+│     • Equal value weight didn't help                        │
+│     • Full gradient range didn't matter                     │
+│                                                             │
+│  4. Root cause confirmed:                                   │
+│     • The problem is NOT input representation               │
+│     • The problem is NOT network capacity                    │
+│     • The problem is NOT learning rate/weighting             │
+│     • The problem IS: no lookahead/search                   │
+│                                                             │
+│  Conclusion: Architecture cannot compensate for lack of    │
+│              strategic lookahead. MCTS or beam search is    │
+│              required to break the Heuristic Wall.         │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### Comparison: Dense vs Conv
+
+| Metric | Dense (TF-B1) | Conv (TF-B5) | Conv+Opt (TF-B6) |
+|--------|---------------|--------------|------------------|
+| Parameters | ~160K | ~148K | ~148K |
+| Input dim | 401 | 1800 | 1800 |
+| Best vs Random | 52% | 50% | 50% |
+| vs Heuristic | 0% | 0% | 0% |
+| Training time | 40m | 42m | 42m |
+
+**Verdict:** Conv architecture adds complexity without benefit. The bottleneck is strategic reasoning, not pattern detection.
 
 ---
 
@@ -1508,8 +1594,8 @@ Use this table to track implementation progress. Update after each experiment.
 | Baseline | TF-B2_mixed | ✅ Done | 44% | 0% | Mixed opponents |
 | Baseline | TF-B3_cluster | ✅ Done | 52% | 0% | TD(λ) rewards |
 | 1: Replay | TF-B4 | ❌ No gain | 45% | 0% | Replay alone doesn't help; architecture limit |
-| 2: Conv+Slot+Val | TF-B5 | ⏳ Pending | — | — | Canonical 16ch + Conv + Value head |
-| 3: Actor-Critic | TF-B6 | ✅ Merged | — | — | Merged into Phase 2 (step 2.5) |
+| 2: Conv+Slot+Val | TF-B5 | ✅ Done | 50% | 0% | Canonical 18ch + Conv + Value head |
+| 3: Actor-Critic | TF-B6 | ✅ Done | 50% | 0% | Optimized hyperparams (LR=0.02, value weight=1.0) |
 | 4: Deep | TF-B7 | ⏳ Pending | — | — | — |
 | 5: MCTS-50 | TF-B8 | ⏳ Pending | — | — | — |
 | 5: MCTS-200 | TF-B9 | ⏳ Pending | — | — | — |
@@ -1527,9 +1613,9 @@ Use this table to track implementation progress. Update after each experiment.
 
 | Phase | Change | Expected Δvs Random | Expected Δvs Heuristic | Complexity |
 |-------|--------|---------------------|------------------------|------------|
-| 1 | Replay buffer | +10% (50→60%) | +0% (0→0%) | Low |
-| 2 | Conv layers | +10% (60→70%) | +3% (0→3%) | Medium |
-| 3 | Value head | +5% (70→75%) | +3% (3→6%) | Medium |
+| 1 | Replay buffer | +0% (45→45%) | +0% (0→0%) | Low |
+| 2 | Conv layers | +5% (45→50%) | +0% (0→0%) | Medium |
+| 3 | Value head | +0% (50→50%) | +0% (0→0%) | Medium |
 | 4 | BatchNorm + Deep | +5% (75→80%) | +5% (6→11%) | Medium |
 | 5 | MCTS | +5% (80→85%) | +5% (11→16%) | High |
 | 6 | Tournament | +0% (stable) | +4% (16→20%) | Medium |

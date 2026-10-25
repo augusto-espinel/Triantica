@@ -14,6 +14,12 @@
  * Requires Node v20 LTS for tfjs-node native bindings (Metal GPU on M2 Ultra)
  */
 
+// Patch util module for Node v25 compatibility with TF.js
+const util = require('util');
+if (!util.isNullOrUndefined) {
+  util.isNullOrUndefined = (v) => v === null || v === undefined;
+}
+
 const tf = require('@tensorflow/tfjs-node');
 const fs = require('fs');
 const path = require('path');
@@ -394,7 +400,7 @@ class TFConvNetwork {
     this.model.compile({
       optimizer: tf.train.momentum(0.01, 0.9),
       loss: ['meanSquaredError', 'meanSquaredError'],
-      lossWeights: [1.0, 0.5] // Policy loss weighted higher initially
+      lossWeights: [1.0, 1.0] // Equal weights for policy and value (AlphaGo Zero style)
     });
   }
 
@@ -425,7 +431,7 @@ class TFConvNetwork {
    * @param {number} learningRate - LR
    * @param {number} batchSize - Mini-batch size
    */
-  async trainBatchWithIsolation(inputs, policyTargets, chosenIndices, valueTargets, iterations = 10, learningRate = 0.01, batchSize = 256) {
+  async trainBatchWithIsolation(inputs, policyTargets, chosenIndices, valueTargets, iterations = 10, learningRate = 0.02, batchSize = 256) {
     const optimizer = tf.train.momentum(learningRate, 0.9);
     const start = Date.now();
     const lossHistory = [];
@@ -485,7 +491,7 @@ class TFConvNetwork {
           const policyLoss = policyPred.sub(policyTargetTensor).square().mean();
           const valueLoss = valuePred.sub(valueTargetTensor).square().mean();
           
-          const totalLoss = policyLoss.add(valueLoss.mul(0.5));
+          const totalLoss = policyLoss.add(valueLoss); // Equal weight for policy and value (AlphaGo Zero style)
           
           batchXs.dispose();
           policyTargetTensor.dispose();
@@ -864,7 +870,7 @@ function calculateImmediateRewardVector(grid, player) {
             ? (hypotheticalReward - minImmediateReward) / rewardRange
             : 0.5;
           
-          outputVector[moveIndex] = Math.max(0.01, Math.min(0.99, scaledReward));
+          outputVector[moveIndex] = Math.max(0.0, Math.min(1.0, scaledReward));
         }
       }
     }
@@ -1218,7 +1224,7 @@ async function main() {
         let scaledCombined = combinedRewardRange !== 0
           ? (combinedReward - minCombinedReward) / combinedRewardRange
           : 0.5;
-        scaledCombined = Math.max(0.01, Math.min(0.99, scaledCombined));
+        scaledCombined = Math.max(0.0, Math.min(1.0, scaledCombined));
         
         // Override chosen move with combined signal
         finalOutputVector[step.moveIdx] = scaledCombined;
