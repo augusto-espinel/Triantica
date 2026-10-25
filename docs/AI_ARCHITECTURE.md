@@ -1,8 +1,8 @@
 # AI Architecture Technical Reference
 
-**Version:** 2.0  
-**Last Updated:** 2026-10-24  
-**Status:** TensorFlow.js migration complete
+**Version:** 2.1  
+**Last Updated:** 2026-10-25  
+**Status:** MCTS value perspective bug fixed
 
 ---
 
@@ -548,6 +548,23 @@ node src/server/train_tfjs.cjs --cycles 10 --games 100 --mcts-sims 50 --architec
 # Quick test with 25 simulations
 node src/server/train_tfjs.cjs --cycles 3 --games 10 --mcts-sims 25 --architecture conv
 ```
+
+### Known Issues (Resolved)
+
+**Value Perspective Bug (Fixed in `28ca800`):**
+
+Prior to this fix, MCTS backpropagation incorrectly handled neural network value outputs. The NN evaluates positions from the perspective of the player whose turn it is at the leaf, but backpropagation expected values from the root player's perspective.
+
+```javascript
+// Bug: NN value from leaf.player's perspective passed directly
+this._backpropagate(path, nnValue, rootPlayer);
+
+// Fix: Flip value if leaf is opponent's turn
+const valueFromRootPerspective = leaf.player === rootPlayer ? nnValue : -nnValue;
+this._backpropagate(path, valueFromRootPerspective, rootPlayer);
+```
+
+**Impact:** Network trained on inverted values, learning to play badly (30% win rate vs Random).
 
 ---
 

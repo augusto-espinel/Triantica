@@ -815,6 +815,53 @@ if (winner === aiPlayer) results.wins.ai++;
 
 **Commit:** `b4ffc84`
 
+### Bug 5: MCTS Value Perspective Mismatch (TF-B8)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                   What We Saw                                │
+├─────────────────────────────────────────────────────────────┤
+│   Training converges smoothly (loss: 0.99 → 1.00)          │
+│   But win rate degrades: 40% → 30% → 26%                   │
+│                                                             │
+│   Network IS learning — just learning to LOSE!              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Root cause:** Neural network returns values from the perspective of the player whose turn it is at the leaf node, but MCTS backpropagation expected values from the root player's perspective.
+
+```javascript
+// WRONG: Pass NN value directly to backpropagation
+const { value: nnValue } = await this.network.run(leafState);
+leaf.expand(leafPolicy);
+leafValue = nnValue;  // From leaf.player's perspective!
+this._backpropagate(path, leafValue, rootPlayer);  // Expects rootPlayer's perspective!
+
+// CORRECT: Flip value if from opponent's perspective
+const valueFromRootPerspective = leaf.player === rootPlayer ? leafValue : -leafValue;
+this._backpropagate(path, valueFromRootPerspective, rootPlayer);
+```
+
+**Why This Caused 30% Win Rate:**
+- When P2's position was bad (NN returns -0.7), search thought it was good (+0.7)
+- "Bad" positions got high Q-values → high visit counts → trained as good moves
+- Network learned: "Seek positions where NN outputs negative values"
+- Result: systematic losing behavior
+
+**How we found it:** TF-B8 showed systematic degradation pattern:
+- Started: 40% vs Random
+- Peak: 42% (cycle 2)
+- Worst: 26% (cycle 6)
+- Final: 30% (cycle 10)
+
+The smooth loss curve + consistent degradation = inverted learning signal.
+
+**Key Insight:** "Consistently getting worse is more encouraging than consistently remaining random" — it means the learning mechanism works, just the signal was flipped.
+
+**Commit:** `28ca800`
+
+---
+
 ---
 
 ## 9. The Heuristic Wall: Understanding Architectural Limits {#9-heuristic-wall}
@@ -1422,6 +1469,56 @@ This confirms a **sign flip bug** in the training signal. The network IS learnin
    - ~50x slower than regular self-play
    - 1 game ≈ 50 seconds with MCTS-50
    - Batched evaluation: 2x speedup over sequential
+
+---
+
+#### TF-B9: MCTS-200 with Value Perspective Bug Fix
+
+**Goal:** Test if fixing the MCTS value perspective bug enables proper learning.
+
+**Architecture:** Conv (Phase 2 - same as TF-B8)
+
+**Parameters:**
+- Cycles: 10
+- Games/cycle: 100
+- MCTS sims: 200 (increased from 50 for stronger search)
+- MCTS batch: 8
+- Learning rate: 0.05
+- Batch size: 256
+- Training target: MCTS visit policy π(a)
+
+**Command:**
+```bash
+node src/server/train_tfjs.cjs --cycles 10 --games 100 --mcts-sims 200 --architecture conv --output docs/data/TF-B9.json
+```
+
+**Expected:** vs Random 60-70%, vs Heuristic 5-15%
+
+**Status:** 🔄 Running (started 2026-10-25 ~17:50 CET)
+
+**Bug Fix Applied (Commit `28ca800`):**
+
+The MCTS value perspective bug was identified and fixed in `src/server/MCTS.cjs`:
+
+```javascript
+// Before (WRONG): NN value from leaf.player's perspective
+this._backpropagate(path, leafValue, rootPlayer);
+
+// After (CORRECT): Flip if from opponent's perspective
+const valueFromRootPerspective = leaf.player === rootPlayer ? leafValue : -leafValue;
+this._backpropagate(path, valueFromRootPerspective, rootPlayer);
+```
+
+**Why This Bug Caused 30% Win Rate:**
+- When leaf position was bad for P2 (-0.7), search thought it was good (+0.7)
+- Network learned to seek "good" positions = actually bad positions
+- Result: learned to systematically lose
+
+**Key Difference from TF-B8:**
+- TF-B8: MCTS-50, bug present → 30% vs Random
+- TF-B9: MCTS-200, bug fixed → expected 60%+ vs Random
+
+**Estimated Runtime:** ~30 hours (MCTS-200 is 4x slower than MCTS-50)
 
 ---
 
@@ -2102,8 +2199,8 @@ Use this table to track implementation progress. Update after each experiment.
 | 2: Conv+Slot+Val | TF-B5 | ✅ Done | 50% | 0% | Canonical 18ch + Conv + Value head |
 | 3: Actor-Critic | TF-B6 | ✅ Done | 50% | 0% | Optimized hyperparams (LR=0.02, value weight=1.0) |
 | 4: Deep | TF-B7 | ⏳ Pending | — | — | — |
-| 5: MCTS-50 | TF-B8 | ❌ Failed | 30% | 0% | Sign flip bug: network learned to lose |
-| 5: MCTS-200 | TF-B9 | ⏳ Pending | — | — | — |
+| 5: MCTS-50 | TF-B8 | ❌ Failed | 30% | 0% | Sign flip bug: network learned to lose (fixed in `28ca800`) |
+| 5: MCTS-200 | TF-B9 | 🔄 Running | — | — | Bug fix verification; expected 60%+ vs Random |
 | 6: Tournament | TF-B10 | ⏳ Pending | — | — | — |
 
 **Status Legend:**
