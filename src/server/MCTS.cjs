@@ -65,7 +65,8 @@ class MCTSNode {
   
   /**
    * Select best child using UCT formula
-   * UCT = Q/N + c * P * sqrt(N_parent) / (1 + N)
+   * Q is stored from node's own player's perspective
+   * Since child's player != this.player, we negate to get this node's perspective
    * 
    * @param {number} c - Exploration constant (default 1.5)
    * @returns {MCTSNode|null} Best child node
@@ -77,8 +78,11 @@ class MCTSNode {
     const sqrtParentN = Math.sqrt(this.N);
     
     for (const child of this.children.values()) {
+      // Q is from child's own perspective, negate to get parent's perspective
+      const childValue = -child.Q / Math.max(1, child.N);
+      
       // UCT formula
-      const uct = (child.Q / Math.max(1, child.N)) + 
+      const uct = childValue + 
                   c * child.prior * sqrtParentN / (1 + child.N);
       
       if (uct > bestScore) {
