@@ -65,8 +65,8 @@ class MCTSNode {
   
   /**
    * Select best child using UCT formula
-   * Q is stored from node's own player's perspective
-   * Since child's player != this.player, we negate to get this node's perspective
+   * Q is stored from root player's perspective (AlphaGo Zero style)
+   * So we always maximize Q directly
    * 
    * @param {number} c - Exploration constant (default 1.5)
    * @returns {MCTSNode|null} Best child node
@@ -78,11 +78,8 @@ class MCTSNode {
     const sqrtParentN = Math.sqrt(this.N);
     
     for (const child of this.children.values()) {
-      // Q is from child's own perspective, negate to get parent's perspective
-      const childValue = -child.Q / Math.max(1, child.N);
-      
-      // UCT formula
-      const uct = childValue + 
+      // UCT formula - Q is from root's perspective
+      const uct = (child.Q / Math.max(1, child.N)) + 
                   c * child.prior * sqrtParentN / (1 + child.N);
       
       if (uct > bestScore) {
@@ -419,22 +416,14 @@ class MCTS {
   
   /**
    * Backpropagate value up the tree
+   * Q is stored from ROOT PLAYER's perspective (AlphaGo Zero style)
    */
   _backpropagate(path, value, rootPlayer) {
-    // Flip value for opponent moves
-    let currentValue = value;
-    
+    // Always use value from root's perspective
+    // No flipping based on node.player
     for (let i = path.length - 1; i >= 0; i--) {
       const node = path[i];
-      
-      // Value is from root player's perspective
-      // Node.player is the player to move at that node
-      // If node.player != rootPlayer, flip value
-      if (node.player !== rootPlayer) {
-        node.update(-currentValue);
-      } else {
-        node.update(currentValue);
-      }
+      node.update(value);  // Always use root's perspective
     }
   }
   
