@@ -1140,22 +1140,65 @@ This chapter outlines a prioritized plan to improve AI performance. Each phase b
 
 ---
 
-### Phase 2: Convolutional Layers for Spatial Patterns
+### Phase 2: Canonical Slot Encoding + Convolutional Layers
 
-**Priority:** High (architectural fix for spatial reasoning)
+**Priority:** High (architectural fix for input representation AND spatial reasoning)
 
-**Problem:** Current architecture flattens the board, losing spatial relationships.
+**Two problems, one solution:**
+1. **Encoding is ambiguous** — rotation is a continuous value (0, 0.25, 0.5, 0.75), implying ordinal relationships that don't exist (90° isn't "between" 0° and 180°)
+2. **Architecture flattens the board** — losing spatial relationships that are essential for detecting enclosures
 
-**Current:** `401 inputs → [200 hidden] → 400 outputs` (dense)
+**Current:** `401 inputs → [200 hidden] → 400 outputs` (dense, continuous rotation)
 
-**Proposed:** `10×10×4 input → [Conv layers] → Policy head + Value head`
+**Proposed:** `10×10×16 one-hot input → [Conv layers] → Policy head + Value head`
+
+#### Step 2A: Canonical 1-to-1 Slot Encoding
+
+**Key principle:** Triantica is Markovian — only the current board state matters, not the order moves were played. Each possible placement is a discrete binary fact: present or absent.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│              Current vs Canonical Encoding                   │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  CURRENT (4 values per cell):                               │
+│    [player_t1, rotation_t1, player_t2, rotation_t2]         │
+│    rotation = 0, 0.25, 0.5, 0.75, or -1                    │
+│    ❌ Implies 90° is "between" 0° and 180°                 │
+│    ❌ Player and geometry mixed in same channel             │
+│    ❌ Conv layer can't cleanly detect patterns              │
+│                                                             │
+│  CANONICAL (16 binary channels per cell):                   │
+│    Channel 0: My triangle, top-half, rotation 0°            │
+│    Channel 1: My triangle, top-half, rotation 90°           │
+│    Channel 2: My triangle, top-half, rotation 180°          │
+│    Channel 3: My triangle, top-half, rotation 270°          │
+│    Channel 4: My triangle, bot-half, rotation 0°            │
+│    ... (8 channels for my pieces)                            │
+│    Channel 8: Opp triangle, top-half, rotation 0°           │
+│    ... (8 channels for opponent pieces)                      │
+│    ✅ Each slot is binary: YES/NO                            │
+│    ✅ No implicit ordering between rotations                 │
+│    ✅ Conv filters can directly detect enclosure patterns    │
+│    ✅ Pure board state — no move order information           │
+│                                                             │
+│  Total: 10×10×16 = 1,600 input values                       │
+│  (vs 401 current — still tiny for 64GB M2 Ultra)            │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Why this matters for convolutions:**
+A 3×3 conv filter on the current 4-channel input would need to simultaneously decode player identity AND rotation from mixed signals. On the 16-channel input, a filter simply checks "do I see my triangles at these specific rotations in these positions?" — directly detecting enclosure patterns.
+
+#### Step 2B: Convolutional Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    Convolutional Architecture                │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
-│   Input: 10×10×4 tensor (one channel per triangle corner)  │
+│   Input: 10×10×16 tensor (one-hot slot encoding)           │
 │                      ↓                                      │
 │   Conv2D(32 filters, 3×3, padding='same') + ReLU           │
 │                      ↓                                      │
@@ -1169,36 +1212,40 @@ This chapter outlines a prioritized plan to improve AI performance. Each phase b
 │   (400 outputs)                  (1 output)                 │
 │   Move probabilities            Position score             │
 │                                                             │
-│   Key insight: Conv layers learn "enclosure patterns"      │
-│   that dense layers cannot see.                            │
+│   Key insight: One-hot slots + Conv = pattern detection    │
+│   that dense layers on continuous values can never match.  │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Why convolutions work for Triantica:**
-- Enclosures are local patterns (3-7 cells)
-- Rotational invariance: a triangle at 90° is similar to 0°
-- Territory is defined by contiguous regions → convs detect regions
+**Why convolutions work for Triantica (with proper encoding):**
+- Enclosures are local spatial patterns (3-7 cells)
+- One-hot channels let filters detect exact rotation combinations
+- Territory = contiguous regions → convs naturally detect regions
+- No spurious ordinal relationships between rotations
 
 **Implementation Steps:**
 
 | Step | Task | Estimated Time |
 |------|------|----------------|
-| 2.1 | Design input tensor format (10×10×4 vs 10×10×8) | 30 min |
-| 2.2 | Implement `createConvNetwork()` function | 1 hour |
-| 2.3 | Add policy head (flatten → dense → softmax) | 30 min |
-| 2.4 | Update `getStateForConv()` encoding function | 45 min |
-| 2.5 | Modify training loop to use conv network | 30 min |
-| 2.6 | Test: Single game with conv network, verify output shapes | 20 min |
-| 2.7 | Run experiment TF-B5 (conv, 20 cycles) | 50 min |
-| 2.8 | Compare training time vs dense network | 15 min |
-| 2.9 | Document results in TRAINING_BOOK | 20 min |
+| 2.1 | Implement `getStateCanonical(grid, aiPlayerNumber)` — 16-channel binary encoding | 45 min |
+| 2.2 | Write roundtrip test: encode → decode → verify board state matches | 30 min |
+| 2.3 | Implement `createConvNetwork()` function with 10×10×16 input | 1 hour |
+| 2.4 | Add policy head (flatten → dense → softmax) | 30 min |
+| 2.5 | Add value head (flatten → dense → tanh) — combining Phase 2 + 3 | 30 min |
+| 2.6 | Modify training loop: canonical encoding + conv network | 45 min |
+| 2.7 | Test: Single game with conv network, verify output shapes | 20 min |
+| 2.8 | Run experiment TF-B5 (canonical + conv, 20 cycles) | 50 min |
+| 2.9 | Compare training curves vs dense baseline | 20 min |
+| 2.10 | Document results in TRAINING_BOOK | 20 min |
 
 **Success Criteria:**
+- [ ] Roundtrip test passes: canonical encoding fully captures board state
 - [ ] Network produces valid probability distribution over moves
-- [ ] Training time per cycle < 3 minutes (conv is slower but parallel)
+- [ ] Training time per cycle < 3 minutes
 - [ ] vs Random matches dense baseline (50%) by cycle 5
 - [ ] vs Random exceeds dense baseline (60%+) by cycle 20
+- [ ] vs Heuristic shows first wins (even 1% matters)
 
 **M2 Ultra Optimization:**
 - Use `tf.conv2d` with `tf.memory()` monitoring
@@ -1209,11 +1256,11 @@ This chapter outlines a prioritized plan to improve AI performance. Each phase b
 
 ---
 
-### Phase 3: Value Head (Actor-Critic)
+### Phase 3: Value Head (Actor-Critic) — MERGED INTO PHASE 2
 
-**Priority:** High (enables position evaluation)
+**Status:** ✅ Merged — Value head added as step 2.5 in the combined Phase 2 plan. Canonical slot encoding + conv layers + value head are being implemented together since they're deeply interdependent. A value head on top of the wrong encoding would give misleading signal; the canonical encoding makes the value head's job tractable.
 
-**Problem:** Network only learns "what moves are good" (policy). It doesn't know "how good is my position" (value).
+**Original Problem:** Network only learns "what moves are good" (policy). It doesn't know "how good is my position" (value).
 
 **Current:** Pure policy gradient — only learns from game outcomes.
 
@@ -1459,8 +1506,8 @@ Use this table to track implementation progress. Update after each experiment.
 | Baseline | TF-B2_mixed | ✅ Done | 44% | 0% | Mixed opponents |
 | Baseline | TF-B3_cluster | ✅ Done | 52% | 0% | TD(λ) rewards |
 | 1: Replay | TF-B4 | ❌ No gain | 45% | 0% | Replay alone doesn't help; architecture limit |
-| 2: Conv | TF-B5 | ⏳ Pending | — | — | — |
-| 3: Actor-Critic | TF-B6 | ⏳ Pending | — | — | — |
+| 2: Conv+Slot+Val | TF-B5 | ⏳ Pending | — | — | Canonical 16ch + Conv + Value head |
+| 3: Actor-Critic | TF-B6 | ✅ Merged | — | — | Merged into Phase 2 (step 2.5) |
 | 4: Deep | TF-B7 | ⏳ Pending | — | — | — |
 | 5: MCTS-50 | TF-B8 | ⏳ Pending | — | — | — |
 | 5: MCTS-200 | TF-B9 | ⏳ Pending | — | — | — |
