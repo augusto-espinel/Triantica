@@ -420,6 +420,47 @@ class TFConvNetwork {
   }
 
   /**
+   * Batch prediction for MCTS optimization
+   * Evaluates multiple positions in a single forward pass
+   * 
+   * @param {number[][]} inputs - Array of canonical state vectors (1800 each)
+   * @returns {Object} { policies: number[][], values: number[] }
+   */
+  async batchPredict(inputs) {
+    // Filter out empty inputs
+    const validInputs = inputs.filter(arr => arr && arr.length > 0);
+    
+    if (validInputs.length === 0) {
+      return { policies: [], values: [] };
+    }
+    
+    return tf.tidy(() => {
+      // Build batch tensor
+      const batchData = new Float32Array(validInputs.length * this.rows * this.cols * this.channels);
+      for (let i = 0; i < validInputs.length; i++) {
+        batchData.set(new Float32Array(validInputs[i]), i * this.rows * this.cols * this.channels);
+      }
+      const batchTensor = tf.tensor4d(batchData, [validInputs.length, this.rows, this.cols, this.channels]);
+      
+      // Batch prediction
+      const [policyOut, valueOut] = this.model.predict(batchTensor);
+      
+      // Extract results
+      const policies = [];
+      const policyData = policyOut.dataSync();
+      const valueData = valueOut.dataSync();
+      
+      for (let i = 0; i < validInputs.length; i++) {
+        policies.push(Array.from(policyData.slice(i * 400, (i + 1) * 400)));
+      }
+      
+      const values = Array.from(valueData);
+      
+      return { policies, values };
+    });
+  }
+
+  /**
    * Train on a batch with gradient isolation (only update chosen move in policy)
    * Also trains value head toward the game outcome.
    * 
@@ -1519,7 +1560,13 @@ async function waitForGridManager() {
   await importPromise;
 }
 
-waitForGridManager().then(() => main()).catch(e => {
-  console.error('Training failed:', e);
-  process.exit(1);
-});
+// Only run main if this is the entry point (not when imported)
+if (require.main === module) {
+  waitForGridManager().then(() => main()).catch(e => {
+    console.error('Training failed:', e);
+    process.exit(1);
+  });
+}
+
+// Export for MCTS and testing
+module.exports = { TFConvNetwork, TFNeuralNetwork };
