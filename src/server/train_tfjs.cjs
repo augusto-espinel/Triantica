@@ -24,6 +24,7 @@ const tf = require('@tensorflow/tfjs-node');
 const fs = require('fs');
 const path = require('path');
 const { ReplayBuffer } = require('./ReplayBuffer.cjs');
+const { MCTS } = require('./MCTS.cjs');
 
 // Dynamic imports for ES modules (must be awaited)
 let GridManager, GameAuditor, HeuristicPlayer;
@@ -816,6 +817,29 @@ function getAIMove(network, grid, exploration, aiPlayerNumber = 1, useConv = fal
   return getRandomMove(grid);
 }
 
+/**
+ * MCTS-enhanced move selection
+ * Uses Monte Carlo Tree Search with neural network evaluation
+ * Returns both move and improved policy for training
+ */
+async function getMCTSMove(network, grid, simulations, aiPlayerNumber = 1, batchSize = 8) {
+  const mcts = new MCTS(network, {
+    c: 1.5,
+    alpha: 0.03,
+    epsilon: 0.25,
+    batchSize: batchSize,
+    temperature: 1.0,
+    encodeState: (g, p) => getStateCanonical(g, p)
+  });
+  
+  const result = await mcts.searchBatched(grid, simulations);
+  return {
+    move: result.move,
+    policy: result.policy,  // Improved policy from visit counts
+    value: result.value    // Position evaluation
+  };
+}
+
 function computeMedian(arr) {
   if (!arr.length) return 0;
   const s = [...arr].sort((a, b) => a - b);
@@ -954,6 +978,8 @@ async function main() {
   const replayBatchSize = parseInt(getArg('replay-batch-size', '256'));
   const replayRatio = parseFloat(getArg('replay-ratio', '2.0')); // How many replay batches per cycle vs new data batches
   const architecture = getArg('architecture', 'dense'); // 'dense' or 'conv'
+  const mctsSims = parseInt(getArg('mcts-sims', '0')); // MCTS simulations per move (0 = disabled)
+  const mctsBatchSize = parseInt(getArg('mcts-batch-size', '8')); // Batch size for parallel MCTS evaluation
   
   console.log('🧪  TF.js Training Pipeline');
   console.log('='.repeat(60));
@@ -986,6 +1012,10 @@ async function main() {
     console.log(`  Replay ratio:     ${replayRatio}x`);
   }
   console.log(`  Architecture:     ${architecture}`);
+  if (mctsSims > 0) {
+    console.log(`  MCTS sims/move:  ${mctsSims}`);
+    console.log(`  MCTS batch size: ${mctsBatchSize}`);
+  }
   console.log(`  Audit mode:       ${audit ? 'ENABLED' + (audit ? ' (' + (auditRate * 100).toFixed(0) + '% sample rate)' : '') : 'disabled'}`);
   console.log(`  Start from:      ${startFrom || 'fresh'}`);
   console.log(`  Output:          ${output}`);
@@ -1108,7 +1138,10 @@ async function main() {
     
     let p1Wins = 0, p2Wins = 0, draws = 0;
     
+    // Self-play loop (sync version for non-MCTS mode)
     for (let g = 0; g < games; g++) {
+      // MCTS mode uses async version below
+      if (mctsSims > 0) continue;
       grid.reset();
       let curP = 1, m = 0;
       const maxM = grid.rows * grid.cols * 3;
@@ -1277,6 +1310,105 @@ async function main() {
       }
       
       if ((g + 1) % 10 === 0) process.stdout.write(`${g + 1}/${games} games done\r`);
+    }
+    
+    // MCTS self-play (when enabled)
+    if (mctsSims > 0) {
+      console.log(`🌳 MCTS self-play with ${mctsSims} simulations/move...`);
+      const mctsStart = Date.now();
+      
+      for (let g = 0; g < games; g++) {
+        grid.reset();
+        let curP = 1;
+        let m = 0;
+        const maxM = grid.rows * grid.cols * 3;
+        const hist = [];
+        
+        // AI alternates which player it plays as
+        const aiPlayerNumber = (g % 2 === 0) ? 1 : 2;
+        const opponentType = 'network'; // MCTS training is self-play only
+        
+        while (!grid.isGridFull() && m < maxM) {
+          grid.currentPlayer = curP;
+          
+          const state = getStateCanonical(grid, aiPlayerNumber);
+          const isAI = curP === aiPlayerNumber;
+          
+          let move, mctsPolicy;
+          
+          if (isAI) {
+            // AI's turn - use MCTS
+            const result = await getMCTSMove(network, grid, mctsSims, aiPlayerNumber, mctsBatchSize);
+            move = result.move;
+            mctsPolicy = result.policy;
+          } else {
+            // Opponent (self-play: also uses MCTS but from their perspective)
+            const result = await getMCTSMove(network, grid, mctsSims, curP, mctsBatchSize);
+            move = result.move;
+            mctsPolicy = result.policy;
+          }
+          
+          if (!move) break;
+          
+          // Track first move
+          if (m === 0) {
+            firstMoves.push(`${move.x},${move.y},r${move.rotation}`);
+          }
+          
+          // Store MCTS result for training
+          const moveIdx = (move.y * grid.cols + move.x) * 4 + move.rotation;
+          hist.push({
+            state,
+            moveIdx,
+            player: curP,
+            aiPlayerNumber,
+            mctsPolicy,  // Store MCTS policy directly
+            move
+          });
+          
+          // Make move
+          grid.selectedRotation = move.rotation;
+          if (!grid.placeTriangle(move.x, move.y)) break;
+          
+          const claimed = grid.claimEnclosedTriangles();
+          grid.extraTurns += Math.floor((1 + claimed) / 2);
+          if (grid.extraTurns > 0) grid.extraTurns--;
+          else curP = curP === 1 ? 2 : 1;
+          
+          m++;
+        }
+        
+        // Determine winner
+        let winner = 0;
+        if (grid.isGridFull()) {
+          const s1 = grid.getLargestContiguous(1);
+          const s2 = grid.getLargestContiguous(2);
+          winner = s1 > s2 ? 1 : (s2 > s1 ? 2 : 0);
+        }
+        
+        if (winner === 1) p1Wins++;
+        else if (winner === 2) p2Wins++;
+        else draws++;
+        
+        // Process MCTS training data
+        const rewardForWinner = winner === 0 ? 0 : (winner === 1 ? 1 : -1);
+        
+        for (const step of hist) {
+          const rewardForPlayer = step.player === 1 ? rewardForWinner : -rewardForWinner;
+          const rewardForAI = step.aiPlayerNumber === 1 ? rewardForWinner : -rewardForWinner;
+          
+          // For MCTS: policy target is the visit distribution, value target is outcome
+          allInputs.push(step.state);
+          allOutputs.push(step.mctsPolicy);  // MCTS policy as target
+          allChosenIndices.push(step.moveIdx);
+          allValueTargets.push(rewardForAI);
+        }
+        
+        if ((g + 1) % 10 === 0) process.stdout.write(`${g + 1}/${games} MCTS games done\r`);
+      }
+      
+      console.log(`✅ MCTS self-play: ${games} games, ${allInputs.length} samples, ${Date.now() - mctsStart}ms`);
+      console.log(`   Wins: P1=${p1Wins} P2=${p2Wins} Draws=${draws}`);
     }
     
     console.log(`✅ Self-play: ${games} games, ${allInputs.length} samples, ${Date.now() - cycleStart}ms`);

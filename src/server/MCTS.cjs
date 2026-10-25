@@ -408,9 +408,9 @@ class MCTS {
    * Get terminal game value
    */
   _getTerminalValue(node, rootPlayer) {
-    // Count scores
-    const score1 = node.grid.calculateScore(1);
-    const score2 = node.grid.calculateScore(2);
+    // Count scores using getLargestContiguous
+    const score1 = node.grid.getLargestContiguous(1);
+    const score2 = node.grid.getLargestContiguous(2);
     
     if (score1 === score2) return 0; // Draw
     
