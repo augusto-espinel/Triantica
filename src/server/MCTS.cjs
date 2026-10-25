@@ -98,6 +98,11 @@ class MCTSNode {
   expand(policy) {
     if (!this.isLeaf()) return; // Already expanded
     
+    if (!policy || policy.length < 400) {
+      console.error(`⚠️  Expand called with invalid policy: length=${policy?.length || 'undefined'}`);
+      return;
+    }
+    
     const validMoves = this.getValidMoves();
     
     for (const move of validMoves) {
@@ -321,25 +326,24 @@ class MCTS {
     
     // Batch evaluate all leaves
     const states = [];
-    const terminalIndices = [];
-    const terminalValues = [];
+    const leafIndices = [];  // Track which leaves are non-terminal
+    const terminalResults = new Map();  // Map leaf index -> terminal value
     
     for (let i = 0; i < leaves.length; i++) {
       const leaf = leaves[i];
       
       if (leaf.isTerminal()) {
-        terminalIndices.push(i);
-        terminalValues.push(this._getTerminalValue(leaf, rootPlayer));
-        states.push([]); // Placeholder
+        terminalResults.set(i, this._getTerminalValue(leaf, rootPlayer));
       } else {
         const state = this.encodeState ?
           this.encodeState(leaf.grid, leaf.player) :
           this._defaultEncode(leaf.grid, leaf.player);
         states.push(state);
+        leafIndices.push(i);
       }
     }
     
-    // Single batched NN call
+    // Single batched NN call (only for non-terminal leaves)
     const { policies, values } = await this.network.batchPredict(states);
     
     // Process results
@@ -353,11 +357,25 @@ class MCTS {
       }
       
       let leafValue;
-      if (terminalIndices.includes(i)) {
-        leafValue = terminalValues[terminalIndices.indexOf(i)];
+      if (terminalResults.has(i)) {
+        // Terminal node - use actual outcome
+        leafValue = terminalResults.get(i);
       } else {
-        leaf.expand(policies[i]);
-        leafValue = values[i];
+        // Non-terminal - expand with NN policy
+        const stateIdx = leafIndices.indexOf(i);
+        if (stateIdx >= 0 && policies[stateIdx]) {
+          const policy = policies[stateIdx];
+          if (policy.length !== 400) {
+            console.error(`⚠️  Invalid policy length: ${policy.length} (expected 400)`);
+            leafValue = 0;
+          } else {
+            leaf.expand(policy);
+            leafValue = values[stateIdx];
+          }
+        } else {
+          console.error(`⚠️  Missing policy for state ${i}, stateIdx=${stateIdx}`);
+          leafValue = 0;  // Fallback
+        }
       }
       
       this._backpropagate(path, leafValue, rootPlayer);

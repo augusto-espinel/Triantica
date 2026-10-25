@@ -432,11 +432,18 @@ class TFConvNetwork {
     const validInputs = inputs.filter(arr => arr && arr.length > 0);
     
     if (validInputs.length === 0) {
+      // Return empty arrays with proper structure
       return { policies: [], values: [] };
     }
     
+    // Track mapping from original indices to valid indices
+    const validIndices = [];
+    inputs.forEach((inp, i) => {
+      if (inp && inp.length > 0) validIndices.push(i);
+    });
+    
     return tf.tidy(() => {
-      // Build batch tensor
+      // Build batch tensor from valid inputs only
       const batchData = new Float32Array(validInputs.length * this.rows * this.cols * this.channels);
       for (let i = 0; i < validInputs.length; i++) {
         batchData.set(new Float32Array(validInputs[i]), i * this.rows * this.cols * this.channels);
@@ -446,16 +453,17 @@ class TFConvNetwork {
       // Batch prediction
       const [policyOut, valueOut] = this.model.predict(batchTensor);
       
-      // Extract results
-      const policies = [];
+      // Extract results - map back to original indices
+      const policies = new Array(inputs.length).fill(null);
+      const values = new Array(inputs.length).fill(0);
       const policyData = policyOut.dataSync();
       const valueData = valueOut.dataSync();
       
       for (let i = 0; i < validInputs.length; i++) {
-        policies.push(Array.from(policyData.slice(i * 400, (i + 1) * 400)));
+        const origIdx = validIndices[i];
+        policies[origIdx] = Array.from(policyData.slice(i * 400, (i + 1) * 400));
+        values[origIdx] = valueData[i];
       }
-      
-      const values = Array.from(valueData);
       
       return { policies, values };
     });
