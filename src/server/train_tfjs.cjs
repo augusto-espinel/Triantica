@@ -1346,8 +1346,8 @@ async function main() {
         while (!grid.isGridFull() && m < maxM) {
           grid.currentPlayer = curP;
           
-          // BUGFIX: Encode state from current player's perspective (not AI's)
-          // This ensures state encoding matches what MCTS saw during search
+          // State encoded from current player's perspective (AlphaGo Zero style)
+          // Network learns: "my pieces = +1, opponent = -1"
           const state = getStateCanonical(grid, curP);
           const isAI = curP === aiPlayerNumber;
           
@@ -1428,6 +1428,7 @@ async function main() {
         
         for (const step of hist) {
           // Value target from the perspective of the player who made the move
+          // (matches state encoding which is from mover's perspective)
           const rewardForPlayer = step.player === 1 ? rewardForWinner : -rewardForWinner;
           
           // For MCTS: policy target is the visit distribution, value target is outcome
