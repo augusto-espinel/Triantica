@@ -17,14 +17,12 @@
     header { display: flex; justify-content: space-between; align-items: center; padding: 16px 0; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
     header h1 { font-size: 24px; color: var(--text-bright); }
     header h1 span { color: var(--accent); }
-    header a { color: var(--accent); text-decoration: none; font-size: 14px; }
-    header a:hover { text-decoration: underline; }
-
+    
     .tabs { display: flex; gap: 4px; margin-bottom: 20px; background: var(--card); border-radius: 8px; padding: 4px; border: 1px solid var(--border); }
     .tab { padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; color: var(--text-muted); border: none; background: none; }
     .tab:hover { color: var(--text); }
     .tab.active { background: var(--accent); color: var(--bg); font-weight: 600; }
-
+    
     .overview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
     .exp-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; cursor: pointer; position: relative; }
     .exp-card:hover { border-color: var(--accent); transform: translateY(-2px); }
@@ -39,278 +37,534 @@
     .exp-card .delta.positive { color: var(--green); }
     .exp-card .delta.negative { color: var(--red); }
     .heuristic-badge { position: absolute; top: 12px; right: 12px; font-size: 11px; padding: 2px 8px; border-radius: 4px; background: rgba(248,81,73,0.15); color: var(--red); }
-
+    
     .detail-panel { display: none; }
     .detail-panel.active { display: block; }
     .detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
     .detail-header h2 { font-size: 20px; color: var(--text-bright); }
     .back-btn { background: var(--card); border: 1px solid var(--border); color: var(--text); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; }
-
+    
     .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
     .detail-grid.full { grid-template-columns: 1fr; }
     .section { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
     .section h3 { font-size: 14px; color: var(--accent); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
-
+    
     .params-table { width: 100%; border-collapse: collapse; }
     .params-table td { padding: 4px 8px; font-size: 13px; border-bottom: 1px solid var(--border); }
     .params-table td:first-child { color: var(--text-muted); width: 45%; }
     .params-table td:last-child { color: var(--text-bright); font-family: monospace; }
-
+    .params-table tr.changed { background: rgba(88,166,255,0.08); }
+    .params-table tr.changed td:last-child { color: var(--accent); }
+    
+    .summary-text { font-size: 14px; margin-bottom: 12px; }
+    .change-list, .bug-list { list-style: none; font-size: 13px; }
+    .change-list li::before { content: '🔧 '; }
+    .bug-list li::before { content: '🐛 '; }
+    
     .chart-container { position: relative; height: 260px; margin: 8px 0; }
-
+    .chart-container.tall { height: 340px; }
+    
     .compare-selector { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
     .exp-checkbox { display: flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--card); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 13px; }
     .exp-checkbox:hover { border-color: var(--accent); }
     .exp-checkbox input { accent-color: var(--accent); }
-
+    
+    .comparison-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px; }
+    .comp-metric { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px; text-align: center; }
+    .comp-metric .label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; }
+    .comp-metric .value { font-size: 22px; font-weight: 700; color: var(--text-bright); margin: 4px 0; }
     .score-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 16px; }
     .score-stat { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; text-align: center; }
     .score-stat .label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.3px; }
     .score-stat .value { font-size: 20px; font-weight: 700; margin: 2px 0; }
-
-    .loading { text-align: center; padding: 40px; color: var(--text-muted); }
-    .error { text-align: center; padding: 40px; color: var(--red); }
+    .score-stat .sub { font-size: 11px; color: var(--text-muted); }
+    .score-stat.heuristic .value { color: var(--red); }
+    .score-stat.network .value { color: var(--yellow); }
+    .score-stat.random .value { color: var(--green); }
   </style>
 </head>
 <body>
   <div class="container">
-    <header>
-      <h1>🔺 <span>Triantica</span> Training Dashboard</h1>
-      <a href="../">← Back to Game</a>
-    </header>
-    <div id="content"><div class="loading">Loading experiments...</div></div>
+    <header><h1>🔺 <span>Triantica</span> Training Dashboard</h1><a href="../" style="color:var(--accent);text-decoration:none;font-size:14px">← Back to Game</a></header>
+    
+    <div class="tabs">
+      <button class="tab active" data-view="overview">Overview</button>
+      <button class="tab" data-view="compare">Compare</button>
+    </div>
+    
+    <div id="view-overview"><div class="overview-grid" id="exp-cards"></div></div>
+    
+    <div id="view-detail" class="detail-panel">
+      <div class="detail-header">
+        <button class="back-btn" onclick="showView('overview')">← Back</button>
+        <h2 id="detail-title"></h2>
+      </div>
+      <div class="detail-grid">
+        <div class="section"><h3>Parameters</h3><table class="params-table" id="params-table"></table></div>
+        <div class="section">
+          <h3>Summary</h3><p class="summary-text" id="summary-text"></p>
+          <h3>Changes</h3><ul class="change-list" id="change-list"></ul>
+          <h3 style="margin-top:12px;">Bugs Fixed</h3><ul class="bug-list" id="bug-list"></ul>
+        </div>
+      </div>
+      <div class="detail-grid full" id="score-stats-row">
+        <div class="section"><h3>Score Stats vs Opponents (Last Cycle)</h3><div class="score-stats" id="score-stats"></div></div>
+      </div>
+      <div class="detail-grid full">
+        <div class="section"><h3>Opponent Mix Per Cycle</h3><div class="chart-container tall"><canvas id="chart-opponents"></canvas></div></div>
+      </div>
+      <div class="detail-grid full">
+        <div class="section"><h3>Win Rate Over Cycles</h3><div class="chart-container"><canvas id="chart-winrate"></canvas></div></div>
+      </div>
+      <div class="detail-grid full">
+        <div class="section"><h3>Game Scores Per Cycle (AI perspective)</h3><div class="chart-container tall"><canvas id="chart-scores"></canvas></div></div>
+      </div>
+      <div class="detail-grid">
+        <div class="section"><h3>Training Error</h3><div class="chart-container"><canvas id="chart-error"></canvas></div></div>
+        <div class="section"><h3>vs Heuristic (Win Rate & Score Trend)</h3><div class="chart-container tall"><canvas id="chart-heuristic"></canvas></div></div>
+      </div>
+      <div class="detail-grid full">
+        <div class="section"><h3>Diversity Metrics</h3><div class="chart-container"><canvas id="chart-diversity"></canvas></div></div>
+      </div>
+    </div>
+    
+    <div id="view-compare" class="detail-panel">
+      <h2 style="margin-bottom:16px;color:var(--text-bright)">Cross-Experiment Comparison</h2>
+      <div class="compare-selector" id="compare-selector"></div>
+      <div class="comparison-grid" id="comp-metrics"></div>
+      <div class="section" style="margin-top:16px"><h3>Win Rate Comparison</h3><div class="chart-container tall"><canvas id="chart-compare-winrate"></canvas></div></div>
+      <div class="section" style="margin-top:16px"><h3>Error Trend Comparison</h3><div class="chart-container tall"><canvas id="chart-compare-error"></canvas></div></div>
+    </div>
   </div>
+
   <script>
-    const COLORS = ['#58a6ff','#3fb950','#d29922','#f85149','#bc8cff','#79c0ff','#56d364','#e3b341','#ff7b72','#d2a8ff'];
-
-    let experiments = [];
-    let expData = {};
-    let selectedExp = null;
-    let charts = {};
-
-    async function loadExperiments() {
-      try {
-        const resp = await fetch('experiments.json?_' + Date.now());
-        experiments = await resp.json();
-
-        const promises = experiments.map(async (exp) => {
-          if (exp.dataFile) {
-            try {
-              const r = await fetch('data/' + exp.dataFile + '?_' + Date.now());
-              expData[exp.id] = await r.json();
-            } catch(e) { console.warn('Failed to load', exp.id, e); }
-          }
-        });
-        await Promise.all(promises);
-        renderOverview();
-      } catch(e) {
-        document.getElementById('content').innerHTML = '<div class="error">Failed to load experiments: ' + e.message + '</div>';
+    let experiments = [], cycleData = {}, charts = {}, selectedCompare = new Set();
+    const PALETTE = ['#58a6ff','#3fb950','#f85149','#d29922','#bc8cff','#db6d28','#79c0ff','#56d364'];
+    
+    async function init() {
+      const resp = await fetch('experiments.json?_' + Date.now());
+      experiments = await resp.json();
+      
+      for (const exp of experiments) {
+        if (exp.dataFile) {
+          try {
+            const r = await fetch(`data/${exp.dataFile}?_` + Date.now());
+            cycleData[exp.id] = await r.json();
+          } catch(e) { console.warn(`No cycle data for ${exp.id}`); }
+        }
       }
+      
+      renderOverview();
+      renderCompareSelector();
+      document.querySelectorAll('.tab').forEach(t => t.onclick = () => showView(t.dataset.view));
     }
-
-    function winRateClass(rate) {
-      if (rate >= 60) return 'good';
-      if (rate >= 40) return 'mid';
-      return 'bad';
-    }
-
+    
     function renderOverview() {
-      const sorted = [...experiments].sort((a, b) => (b.result?.endWinRate || 0) - (a.result?.endWinRate || 0));
-      const cards = sorted.map(exp => {
+      document.getElementById('exp-cards').innerHTML = experiments.map(exp => {
         const r = exp.result || {};
-        const rate = r.vsRandom || 0;
-        const delta = r.improvement || 0;
-        const deltaStr = delta >= 0 ? `+${delta}` : `${delta}`;
-        return `<div class="exp-card" onclick="showDetail('${exp.id}')">
-          ${r.vsHeuristic === 0 ? '<span class="heuristic-badge">0% vs Heuristic</span>' : ''}
+        const wrClass = (r.peakWinRate || 0) >= 85 ? 'good' : (r.peakWinRate || 0) >= 70 ? 'mid' : 'bad';
+        const deltaClass = (r.improvement || 0) >= 0 ? 'positive' : 'negative';
+        const d = cycleData[exp.id];
+        const lastCycle = d?.cycles?.slice(-1)[0];
+        const hWins = lastCycle?.selfPlay?.winsByOpponent?.heuristic;
+        const hCount = lastCycle?.selfPlay?.opponentTypeCounts?.heuristic || 0;
+        const hRate = hWins && hCount ? Math.round((hWins['1'] / hCount) * 100) : null;
+        const hBadge = hRate !== null ? `${hRate}% vs Heuristic` : '';
+        // Score stats from last cycle
+        const lastCycScores = lastCycle?.selfPlay?.scoresByOpponent?.heuristic?.p1;
+        const scoreBadge = lastCycScores ? `P1 med ${lastCycScores.median} / max ${lastCycScores.max} vs H` : '';
+        // Opponent mix badge
+        const oppCounts = lastCycle?.selfPlay?.opponentTypeCounts || {};
+        const oppTotal = Object.values(oppCounts).reduce((a,b)=>a+b, 0);
+        const oppMix = oppTotal > 0 ? Object.entries(oppCounts).map(([k,v]) => `${k[0].toUpperCase()}:${Math.round(v/oppTotal*100)}%`).join(' ') : '';
+        return `<div class="exp-card" onclick="showDetail('${exp.id}')" id="card-${exp.id}">
+          ${hBadge ? `<span class="heuristic-badge">${hBadge}</span>` : ''}
+          ${scoreBadge ? `<span class="heuristic-badge" style="top:${hBadge?'32px':'12px'};font-size:10px;background:rgba(210,153,34,0.15);color:var(--yellow)">${scoreBadge}</span>` : ''}
           <h3>${exp.name}</h3>
           <div class="date">${exp.date}</div>
-          <div class="win-rate ${winRateClass(rate)}">${rate}%</div>
-          <div class="delta ${delta >= 0 ? 'positive' : 'negative'}">${deltaStr}% vs start</div>
+          ${oppMix ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px">${oppMix}</div>` : ''}
+          <div class="win-rate ${wrClass}">${r.peakWinRate ?? '—'}%</div>
+          <div class="delta ${deltaClass}">${r.improvement != null ? (r.improvement>=0?'+':'')+r.improvement+'pp' : 'N/A'}</div>
         </div>`;
       }).join('');
-
-      document.getElementById('content').innerHTML = `
-        <div class="tabs">
-          <button class="tab active" onclick="renderOverview()">Overview</button>
-          <button class="tab" onclick="renderCompare()">Compare</button>
-        </div>
-        <div class="overview-grid">${cards}</div>`;
     }
-
-    function renderCompare() {
-      const checkboxes = experiments.map((exp, i) => {
-        const r = exp.result || {};
-        return `<label class="exp-checkbox">
-          <input type="checkbox" value="${exp.id}" onchange="updateComparison()" ${i < 3 ? 'checked' : ''}>
-          ${exp.name} (${r.vsRandom || 0}%)
-        </label>`;
+    
+    function showView(view) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.view === view));
+      document.getElementById('view-overview').style.display = view === 'overview' ? 'block' : 'none';
+      document.getElementById('view-detail').style.display = view === 'detail' ? 'block' : 'none';
+      document.getElementById('view-detail').classList.toggle('active', view === 'detail');
+      document.getElementById('view-compare').style.display = view === 'compare' ? 'block' : 'none';
+      document.getElementById('view-compare').classList.toggle('active', view === 'compare');
+    }
+    
+    function showDetail(expId) {
+      const exp = experiments.find(e => e.id === expId);
+      if (!exp) return;
+      document.querySelectorAll('.exp-card').forEach(c => c.classList.remove('selected'));
+      document.getElementById(`card-${expId}`).classList.add('selected');
+      showView('detail');
+      
+      document.getElementById('detail-title').textContent = exp.name;
+      const prevIdx = experiments.indexOf(exp) - 1;
+      const prevParams = prevIdx >= 0 ? experiments[prevIdx].parameters : {};
+      
+      document.getElementById('params-table').innerHTML = Object.entries(exp.parameters).map(([k,v]) => {
+        const changed = prevParams[k] !== undefined && prevParams[k] !== v;
+        const valStr = typeof v === 'boolean' ? (v ? '✅' : '❌') : v;
+        return `<tr class="${changed?'changed':''}"><td>${k}</td><td>${valStr}</td></tr>`;
       }).join('');
-
-      document.getElementById('content').innerHTML = `
-        <div class="tabs">
-          <button class="tab" onclick="renderOverview()">Overview</button>
-          <button class="tab active" onclick="renderCompare()">Compare</button>
-        </div>
-        <div class="compare-selector">${checkboxes}</div>
-        <div class="score-stats" id="compStats"></div>
-        <div class="section">
-          <h3>Win Rate Over Training</h3>
-          <div class="chart-container" style="height:340px"><canvas id="compChart"></canvas></div>
-        </div>`;
-
-      updateComparison();
+      
+      document.getElementById('summary-text').textContent = exp.summary;
+      document.getElementById('change-list').innerHTML = exp.changes.split('. ').filter(s=>s).map(s=>`<li>${s}</li>`).join('');
+      document.getElementById('bug-list').innerHTML = (exp.bugsFixed||[]).map(b=>`<li>${b}</li>`).join('')||'<li>None</li>';
+      
+      renderDetailCharts(exp);
     }
-
-    function updateComparison() {
-      const selected = [...document.querySelectorAll('.exp-checkbox input:checked')].map(cb => cb.value);
-      const stats = document.getElementById('compStats');
-      if (stats) {
-        stats.innerHTML = selected.map(id => {
-          const exp = experiments.find(e => e.id === id);
-          const r = exp?.result || {};
-          return `<div class="score-stat">
-            <div class="label">${exp?.id || id}</div>
-            <div class="value" style="color:var(--accent)">${r.vsRandom || 0}%</div>
-            <div style="font-size:11px;color:var(--text-muted)">vs Random</div>
-          </div>`;
-        }).join('');
+    
+    function renderDetailCharts(exp) {
+      const data = cycleData[exp.id];
+      Object.keys(charts).forEach(k => charts[k]?.destroy());
+      
+      const opts = {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: '#c9d1d9' } } },
+        scales: { x: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } },
+                  y: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } } }
+      };
+      
+      const labels = data?.cycles ? data.cycles.map(c => `C${c.cycle}`) : [];
+      
+      if (data?.cycles) {
+        
+        // Evaluation win rates - handle both old and new format
+        const evalVsRandom = data.cycles.map(c => {
+          if (c.evaluation?.vsRandom?.aiWinRate) return c.evaluation.vsRandom.aiWinRate;
+          if (c.evaluation?.aiWinRate) return c.evaluation.aiWinRate;
+          return null;
+        });
+        const evalVsHeuristic = data.cycles.map(c => c.evaluation?.vsHeuristic?.aiWinRate ?? null);
+        
+        // Self-play win rates
+        const selfPlayVsRandom = data.cycles.map(c => {
+          const rw = c.selfPlay?.winsByOpponent?.random;
+          const rc = c.selfPlay?.opponentTypeCounts?.random || 0;
+          return (rw && rc) ? (rw['1'] / rc * 100) : null;
+        });
+        const selfPlayVsNetwork = data.cycles.map(c => {
+          const nw = c.selfPlay?.winsByOpponent?.network;
+          const nc = c.selfPlay?.opponentTypeCounts?.network || 0;
+          return (nw && nc) ? (nw['1'] / nc * 100) : null;
+        });
+        
+        const datasets = [
+          { label: 'vs Random (eval, %)', data: evalVsRandom, borderColor: '#3fb950', backgroundColor: 'rgba(63,185,80,0.1)', fill: true, tension: 0.3 },
+          { label: 'vs Heuristic (eval, %)', data: evalVsHeuristic, borderColor: '#f85149', backgroundColor: 'rgba(248,81,73,0.1)', fill: true, tension: 0.3 },
+          { label: 'vs Random (self-play, %)', data: selfPlayVsRandom, borderColor: '#58a6ff', backgroundColor: 'transparent', borderDash: [5,3], tension: 0.3 },
+          { label: 'vs Network (self-play, %)', data: selfPlayVsNetwork, borderColor: '#d29922', backgroundColor: 'transparent', borderDash: [5,3], tension: 0.3 }
+        ].filter(d => d.data.some(v => v !== null));
+        
+        charts.winrate = new Chart(document.getElementById('chart-winrate'), {
+          type: 'line',
+          data: { labels, datasets },
+          options: { ...opts, scales: { ...opts.scales, y: { ...opts.scales.y, min: 0, max: 100 } } }
+        });
+        
+        // Error: initial (start of cycle) and final (end of cycle)
+        const initialErrors = data.cycles.map(c => c.training?.initialError);
+        const finalErrors = data.cycles.map(c => c.training?.finalError);
+        
+        charts.error = new Chart(document.getElementById('chart-error'), {
+          type: 'line',
+          data: { labels, datasets: [
+            { label: 'Initial Error (cycle start)', data: initialErrors, borderColor: '#f85149', backgroundColor: 'transparent', borderDash: [5,3], tension: 0.3 },
+            { label: 'Final Error (cycle end)', data: finalErrors, borderColor: '#3fb950', backgroundColor: 'rgba(63,185,80,0.1)', fill: true, tension: 0.3 }
+          ] },
+          options: opts
+        });
       }
-
-      // Destroy old chart
-      if (charts.comp) charts.comp.destroy();
-
-      const ctx = document.getElementById('compChart');
-      if (!ctx) return;
-
-      const datasets = selected.map((id, i) => {
-        const data = expData[id];
-        const cycles = data?.cycles || [];
-        const cycleResults = data?.result?.cycleResults || [];
-        const points = cycleResults.map(c => c.vsRandom);
-        // If no cycleResults, try to extract from cycles array
-        const fallback = points.length ? points : cycles.map((_, ci) => {
-          const evals = cycles[ci]?.evaluation || {};
-          return evals.vsRandomWinRate || null;
-        }).filter(v => v !== null);
-
+      
+      // Score stats row
+      const lastCycle = data?.cycles?.slice(-1)[0];
+      const sbo = lastCycle?.selfPlay?.scoresByOpponent || {};
+      const oppTypesForStats = ['heuristic', 'network', 'random'];
+      const statColors = { heuristic: 'heuristic', network: 'network', random: 'random' };
+      if (Object.keys(sbo).length > 0) {
+        document.getElementById('score-stats').innerHTML = oppTypesForStats.flatMap(type => {
+          const p1 = sbo[type]?.p1;
+          const p2 = sbo[type]?.p2;
+          if (!p1) return [];
+          const cls = statColors[type] || '';
+          return [
+            `<div class="score-stat ${cls}"><div class="label">vs ${type[0].toUpperCase()+type.slice(1)} P1</div><div class="value">${p1.median ?? '—'}</div><div class="sub">max: ${p1.max ?? '—'}</div></div>`,
+            `<div class="score-stat ${cls}"><div class="label">vs ${type[0].toUpperCase()+type.slice(1)} P2</div><div class="value">${p2?.median ?? '—'}</div><div class="sub">max: ${p2?.max ?? '—'}</div></div>`,
+          ];
+        }).join('');
+        document.getElementById('score-stats-row').style.display = '';
+      } else {
+        document.getElementById('score-stats-row').style.display = 'none';
+      }
+      
+      // Heuristic chart — win rate + P1 score trend vs heuristic
+      const heuristicWinRates = data?.cycles?.map(c => {
+        const hw = c.selfPlay?.winsByOpponent?.heuristic;
+        const hCount = c.selfPlay?.opponentTypeCounts?.heuristic || 1;
+        return hw ? ((hw['1'] / hCount) * 100) : null;
+      }) || [];
+      const heuristicP1Median = data?.cycles?.map(c => c.selfPlay?.scoresByOpponent?.heuristic?.p1?.median ?? null) || [];
+      const heuristicP1Max = data?.cycles?.map(c => c.selfPlay?.scoresByOpponent?.heuristic?.p1?.max ?? null) || [];
+      const heuristicP2Median = data?.cycles?.map(c => c.selfPlay?.scoresByOpponent?.heuristic?.p2?.median ?? null) || [];
+      const hasHeuristicScores = heuristicP1Median.some(v => v !== null);
+      const heuristicDatasets = [
+        { label: 'Win Rate vs Heuristic (%)', data: heuristicWinRates, borderColor: '#f85149', backgroundColor: 'rgba(248,81,73,0.1)', fill: true, tension: 0.3, yAxisID: 'y' },
+      ];
+      if (hasHeuristicScores) {
+        heuristicDatasets.push(
+          { label: 'P1 Median Score', data: heuristicP1Median, borderColor: '#ff9800', backgroundColor: 'transparent', borderDash: [5,3], tension: 0.3, yAxisID: 'y1' },
+          { label: 'P1 Max Score', data: heuristicP1Max, borderColor: '#ff9800', backgroundColor: 'transparent', borderDash: [2,2], tension: 0.3, yAxisID: 'y1' },
+          { label: 'P2 (Heuristic) Median Score', data: heuristicP2Median, borderColor: '#f85149', backgroundColor: 'transparent', borderDash: [5,3], tension: 0.3, yAxisID: 'y1' },
+        );
+      }
+      charts.heuristic = new Chart(document.getElementById('chart-heuristic'), {
+        type: 'line',
+        data: { labels, datasets: heuristicDatasets },
+        options: {
+          ...opts,
+          scales: {
+            ...opts.scales,
+            y: { ...opts.scales.y, min: 0, max: 50, position: 'left', title: { display: true, text: 'Win Rate %', color: '#8b949e' } },
+            ...(hasHeuristicScores ? { y1: { ...opts.scales.y, min: 0, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Score', color: '#8b949e' } } } : {})
+          }
+        }
+      });
+      
+      // Opponent mix stacked bar chart
+      const oppTypes = ['network', 'heuristic', 'random'];
+      const oppColors = { network: '#d29922', heuristic: '#f85149', random: '#58a6ff' };
+      const oppLabels = { network: 'Network', heuristic: 'Heuristic', random: 'Random' };
+      const oppDatasets = oppTypes.map(type => ({
+        label: oppLabels[type],
+        data: data?.cycles?.map(c => c.selfPlay?.opponentTypeCounts?.[type] || 0) || [],
+        backgroundColor: oppColors[type],
+        borderRadius: 2
+      }));
+      charts.opponents = new Chart(document.getElementById('chart-opponents'), {
+        type: 'bar',
+        data: { labels, datasets: oppDatasets },
+        options: {
+          ...opts,
+          scales: {
+            x: { ...opts.scales.x, stacked: true },
+            y: { ...opts.scales.y, stacked: true, title: { display: true, text: 'Games', color: '#8b949e' } }
+          }
+        }
+      });
+      
+      // Scores per cycle - use scoresByOpponent if available, else fall back to aggregate scores
+      // Show scores from ACTOR's perspective (AI), not player number, since roles alternate
+      const hasScoresByOpp = data?.cycles?.[0]?.selfPlay?.scoresByOpponent;
+      let scoreDatasets;
+      if (hasScoresByOpp) {
+        const scoreTypes = ['network', 'heuristic', 'random'];
+        const scoreColors = { network: '#d29922', heuristic: '#f85149', random: '#58a6ff' };
+        scoreDatasets = scoreTypes.flatMap(type => {
+          // Prefer AI scores (new format), fall back to P1 scores (old format)
+          const hasAiScores = data.cycles[0]?.selfPlay?.scoresByOpponent?.[type]?.ai;
+          const medianKey = hasAiScores ? 'ai' : 'p1';
+          return [
+            {
+              label: `${type[0].toUpperCase()}${type.slice(1)} (AI med)`,
+              data: data.cycles.map(c => c.selfPlay?.scoresByOpponent?.[type]?.[medianKey]?.median ?? null),
+              borderColor: scoreColors[type],
+              backgroundColor: 'transparent',
+              tension: 0.3
+            },
+            {
+              label: `${type[0].toUpperCase()}${type.slice(1)} (AI max)`,
+              data: data.cycles.map(c => c.selfPlay?.scoresByOpponent?.[type]?.[medianKey]?.max ?? null),
+              borderColor: scoreColors[type],
+              backgroundColor: 'transparent',
+              borderDash: [3,3],
+              tension: 0.3
+            }
+          ];
+        });
+      } else {
+        // Fallback: aggregate AI scores (if available) or P1 scores
+        const hasAiScores = data?.cycles?.[0]?.selfPlay?.scores?.ai;
+        const scoreKey = hasAiScores ? 'ai' : 'p1';
+        const label = hasAiScores ? 'AI' : 'P1';
+        scoreDatasets = [
+          {
+            label: `${label} Median`,
+            data: data?.cycles?.map(c => c.selfPlay?.scores?.[scoreKey]?.median ?? null) || [],
+            borderColor: '#3fb950',
+            backgroundColor: 'transparent',
+            tension: 0.3
+          },
+          {
+            label: `${label} Max`,
+            data: data?.cycles?.map(c => c.selfPlay?.scores?.[scoreKey]?.max ?? null) || [],
+            borderColor: '#3fb950',
+            backgroundColor: 'transparent',
+            borderDash: [3,3],
+            tension: 0.3
+          }
+        ];
+      }
+      charts.scores = new Chart(document.getElementById('chart-scores'), {
+        type: 'line',
+        data: { labels, datasets: scoreDatasets },
+        options: { ...opts, plugins: { ...opts.plugins, legend: { labels: { color: '#c9d1d9' } } } }
+      });
+      
+      // Diversity metrics (opening + board diversity)
+      const openingDiv = data.cycles.map(c => c.selfPlay?.openingDiversity ?? null);
+      const boardDiv = data.cycles.map(c => c.selfPlay?.boardDiversity ?? null);
+      charts.diversity = new Chart(document.getElementById('chart-diversity'), {
+        type: 'line',
+        data: { labels, datasets: [
+          { label: 'Opening Diversity', data: openingDiv, borderColor: '#a371f7', backgroundColor: 'transparent', tension: 0.3 },
+          { label: 'Board Diversity', data: boardDiv, borderColor: '#3fb950', backgroundColor: 'transparent', tension: 0.3 }
+        ] },
+        options: opts
+      });
+    }
+    
+    function renderCompareSelector() {
+      document.getElementById('compare-selector').innerHTML = experiments.map(exp => 
+        `<label class="exp-checkbox"><input type="checkbox" onchange="toggleCompare('${exp.id}')"> ${exp.name}</label>`
+      ).join('');
+    }
+    
+    function toggleCompare(expId) {
+      if (selectedCompare.has(expId)) selectedCompare.delete(expId);
+      else selectedCompare.add(expId);
+      renderComparison();
+    }
+    
+    function renderComparison() {
+      const ids = [...selectedCompare];
+      if (ids.length === 0) {
+        document.getElementById('comp-metrics').innerHTML = '<div class="comp-metric"><div class="value">Select experiments to compare</div></div>';
+        return;
+      }
+      
+      const exps = ids.map(id => experiments.find(e => e.id === id));
+      const avgWin = exps.reduce((s,e) => s + e.result.peakWinRate, 0) / exps.length;
+      const avgImp = exps.reduce((s,e) => s + e.result.improvement, 0) / exps.length;
+      
+      document.getElementById('comp-metrics').innerHTML = `
+        <div class="comp-metric"><div class="label">Experiments</div><div class="value">${exps.length}</div></div>
+        <div class="comp-metric"><div class="label">Avg Peak Win Rate</div><div class="value">${avgWin.toFixed(1)}%</div></div>
+        <div class="comp-metric"><div class="label">Avg Improvement</div><div class="value">${avgImp>=0?'+':''}${avgImp.toFixed(1)}pp</div></div>
+        <div class="comp-metric"><div class="label">Heuristic Wall</div><div class="value" style="color:var(--red)">0%</div></div>
+      `;
+      
+      // Win rate comparison chart
+      Object.keys(charts).forEach(k => charts[k]?.destroy());
+      
+      const maxCycles = Math.max(...exps.map(e => cycleData[e.id]?.cycles?.length || 0));
+      const labels = Array.from({length: maxCycles}, (_, i) => `C${i+1}`);
+      
+      const datasets = exps.map((exp, i) => {
+        const data = cycleData[exp.id];
+        const winRates = data?.cycles?.map(c => {
+          if (c.evaluation?.vsRandom?.aiWinRate) return c.evaluation.vsRandom.aiWinRate;
+          if (c.evaluation?.aiWinRate) return c.evaluation.aiWinRate * 100;
+          return null;
+        }) || [];
         return {
-          label: id,
-          data: fallback,
-          borderColor: COLORS[i % COLORS.length],
-          backgroundColor: COLORS[i % COLORS.length] + '20',
-          tension: 0.3,
-          pointRadius: 4,
-          fill: false
+          label: exp.name + ' (vs Random)',
+          data: winRates,
+          borderColor: PALETTE[i % PALETTE.length],
+          backgroundColor: 'transparent',
+          tension: 0.3
         };
       });
-
-      const maxLen = Math.max(...datasets.map(d => d.data.length), 1);
-      charts.comp = new Chart(ctx, {
+      
+      // Add vs Heuristic datasets
+      const heurDatasets = exps.map((exp, i) => {
+        const data = cycleData[exp.id];
+        const rates = data?.cycles?.map(c => c.evaluation?.vsHeuristic?.aiWinRate ?? null) || [];
+        return {
+          label: exp.name + ' (vs Heuristic)',
+          data: rates,
+          borderColor: PALETTE[i % PALETTE.length],
+          backgroundColor: 'transparent',
+          borderDash: [5, 3],
+          tension: 0.3
+        };
+      }).filter(d => d.data.some(v => v !== null));
+      
+      // Also add self-play vs network as dashed lines
+      const spDatasets = exps.map((exp, i) => {
+        const data = cycleData[exp.id];
+        const rates = data?.cycles?.map(c => {
+          const nw = c.selfPlay?.winsByOpponent?.network;
+          const nc = c.selfPlay?.opponentTypeCounts?.network || 0;
+          return (nw && nc) ? (nw['1'] / nc * 100) : null;
+        }) || [];
+        const hasNetwork = rates.some(r => r !== null);
+        return {
+          label: exp.name + ' (vs net)',
+          data: hasNetwork ? rates : [],
+          borderColor: PALETTE[i % PALETTE.length],
+          backgroundColor: 'transparent',
+          borderDash: [5,3],
+          tension: 0.3
+        };
+      });
+      
+      charts.compareWinrate = new Chart(document.getElementById('chart-compare-winrate'), {
         type: 'line',
-        data: { labels: Array.from({length: maxLen}, (_, i) => `Cycle ${i+1}`), datasets },
+        data: { labels, datasets: [...datasets, ...heurDatasets, ...spDatasets] },
         options: {
           responsive: true, maintainAspectRatio: false,
           plugins: { legend: { labels: { color: '#c9d1d9' } } },
           scales: {
             x: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } },
-            y: { min: 0, max: 100, ticks: { color: '#8b949e', callback: v => v+'%' }, grid: { color: '#21262d' } }
+            y: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' }, min: 0, max: 100 }
+          }
+        }
+      });
+      
+      const errorDatasets = exps.flatMap((exp, i) => {
+        const data = cycleData[exp.id];
+        return [
+          {
+            label: exp.name + ' (initial)',
+            data: data?.cycles?.map(c => c.training?.initialError) || [],
+            borderColor: PALETTE[i % PALETTE.length],
+            backgroundColor: 'transparent',
+            borderDash: [5,3],
+            tension: 0.3
+          },
+          {
+            label: exp.name + ' (final)',
+            data: data?.cycles?.map(c => c.training?.finalError) || [],
+            borderColor: PALETTE[i % PALETTE.length],
+            backgroundColor: 'transparent',
+            tension: 0.3
+          }
+        ];
+      });
+      
+      charts.compareError = new Chart(document.getElementById('chart-compare-error'), {
+        type: 'line',
+        data: { labels, datasets: errorDatasets },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { labels: { color: '#c9d1d9' } } },
+          scales: {
+            x: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } },
+            y: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } }
           }
         }
       });
     }
-
-    function showDetail(id) {
-      const exp = experiments.find(e => e.id === id);
-      const data = expData[id];
-      if (!exp) return;
-
-      const r = exp.result || {};
-      const params = exp.parameters || {};
-      const cycles = data?.cycles || [];
-      const cycleResults = r.cycleResults || [];
-
-      const paramsHtml = Object.entries(params).map(([k, v]) =>
-        `<tr><td>${k}</td><td>${v === null ? '—' : v}</td></tr>`
-      ).join('');
-
-      const bugsHtml = (exp.bugsFixed || []).map(b => `<li>${b}</li>`).join('');
-
-      // Win rate chart
-      const winRates = cycleResults.map(c => c.vsRandom);
-      const heuristicRates = cycleResults.map(c => c.vsHeuristic || 0);
-
-      const detailHtml = `
-        <div class="detail-header">
-          <h2>${exp.name}</h2>
-          <button class="back-btn" onclick="renderOverview()">← Back</button>
-        </div>
-
-        <div class="score-stats">
-          <div class="score-stat"><div class="label">vs Random</div><div class="value" style="color:var(--${winRateClass(r.vsRandom||0) === 'good' ? 'green' : winRateClass(r.vsRandom||0) === 'mid' ? 'yellow' : 'red'})">${r.vsRandom || 0}%</div></div>
-          <div class="score-stat"><div class="label">vs Heuristic</div><div class="value" style="color:var(--${(r.vsHeuristic||0) > 0 ? 'green' : 'red'})">${r.vsHeuristic || 0}%</div></div>
-          <div class="score-stat"><div class="label">Peak vs Random</div><div class="value" style="color:var(--accent)">${r.peakWinRate || 0}%</div></div>
-          <div class="score-stat"><div class="label">Training Time</div><div class="value" style="color:var(--text-bright)">${r.trainingTimeMin ? r.trainingTimeMin.toFixed(1) + ' min' : '—'}</div></div>
-        </div>
-
-        <div class="detail-grid">
-          <div class="section">
-            <h3>Win Rate by Cycle</h3>
-            <div class="chart-container"><canvas id="detailChart"></canvas></div>
-          </div>
-          <div class="section">
-            <h3>Parameters</h3>
-            <table class="params-table">${paramsHtml}</table>
-          </div>
-        </div>
-
-        ${bugsHtml ? `<div class="section" style="margin-bottom:20px"><h3>Bugs Fixed</h3><ul style="list-style:none;font-size:13px">${bugsHtml}</ul></div>` : ''}
-
-        <div class="section full">
-          <h3>Summary</h3>
-          <p style="font-size:14px;line-height:1.6">${exp.summary || 'No summary available.'}</p>
-        </div>`;
-
-      document.getElementById('content').innerHTML = `<div class="detail-panel active">${detailHtml}</div>`;
-
-      // Render chart
-      const ctx = document.getElementById('detailChart');
-      if (ctx && winRates.length) {
-        if (charts.detail) charts.detail.destroy();
-        charts.detail = new Chart(ctx, {
-          type: 'line',
-          data: {
-            labels: winRates.map((_, i) => `Cycle ${i+1}`),
-            datasets: [
-              {
-                label: 'vs Random',
-                data: winRates,
-                borderColor: '#58a6ff',
-                backgroundColor: '#58a6ff20',
-                tension: 0.3, pointRadius: 5, fill: true
-              },
-              {
-                label: 'vs Heuristic',
-                data: heuristicRates,
-                borderColor: '#f85149',
-                backgroundColor: '#f8514920',
-                tension: 0.3, pointRadius: 5, fill: true
-              }
-            ]
-          },
-          options: {
-            responsive: true, maintainAspectRatio: false,
-            plugins: { legend: { labels: { color: '#c9d1d9' } } },
-            scales: {
-              x: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } },
-              y: { min: 0, max: 100, ticks: { color: '#8b949e', callback: v => v+'%' }, grid: { color: '#21262d' } }
-            }
-          }
-        });
-      }
-    }
-
-    loadExperiments();
+    
+    init();
   </script>
 </body>
 </html>
