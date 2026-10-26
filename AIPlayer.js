@@ -6,6 +6,181 @@
 // we'll assume brain.js is loaded globally via a <script> tag in index.html for simplicity in this context.
 // <script src="https://cdn.jsdelivr.net/npm/brain.js@2.0.0-beta.23/dist/browser.min.js"></script>
 
+// Global TF.js Convolutional Network wrapper for browser inference
+class BrowserConvNetwork {
+    constructor(jsonData = null) {
+        this.type = 'ConvNetwork';
+        this.rows = 10;
+        this.cols = 10;
+        this.channels = 18;
+        this.numFilters = [32, 64, 64];
+        this.policySize = 400;
+        this.model = null;
+        this.rawJSON = null;
+        if (jsonData) {
+            this.fromJSON(jsonData);
+        }
+    }
+
+    _buildModel() {
+        const input = tf.input({ shape: [this.rows, this.cols, this.channels] });
+        let x = input;
+        for (let i = 0; i < this.numFilters.length; i++) {
+            x = tf.layers.conv2d({
+                filters: this.numFilters[i],
+                kernelSize: 3,
+                padding: 'same',
+                kernelInitializer: 'glorotUniform',
+                biasInitializer: 'zeros'
+            }).apply(x);
+            x = tf.layers.batchNormalization().apply(x);
+            x = tf.layers.reLU().apply(x);
+        }
+
+        const policyConv = tf.layers.conv2d({
+            filters: 2,
+            kernelSize: 1,
+            padding: 'same',
+            kernelInitializer: 'glorotUniform'
+        }).apply(x);
+        const policyFlat = tf.layers.flatten().apply(policyConv);
+        const policyDense = tf.layers.dense({
+            units: this.policySize,
+            activation: 'sigmoid',
+            kernelInitializer: 'glorotUniform'
+        }).apply(policyFlat);
+
+        const valueConv = tf.layers.conv2d({
+            filters: 1,
+            kernelSize: 1,
+            padding: 'same',
+            kernelInitializer: 'glorotUniform'
+        }).apply(x);
+        const valueFlat = tf.layers.flatten().apply(valueConv);
+        const valueDense1 = tf.layers.dense({
+            units: 64,
+            activation: 'relu',
+            kernelInitializer: 'glorotUniform'
+        }).apply(valueFlat);
+        const valueDense2 = tf.layers.dense({
+            units: 1,
+            activation: 'tanh',
+            kernelInitializer: 'glorotUniform'
+        }).apply(valueDense1);
+
+        this.model = tf.model({
+            inputs: input,
+            outputs: [policyDense, valueDense2]
+        });
+    }
+
+    fromJSON(json) {
+        if (typeof tf === 'undefined') {
+            throw new Error('TensorFlow.js (tf) is not loaded in the browser.');
+        }
+        this.rawJSON = json;
+        tf.tidy(() => {
+            this.rows = json.architecture?.rows || 10;
+            this.cols = json.architecture?.cols || 10;
+            this.channels = json.architecture?.channels || 18;
+            this.numFilters = json.architecture?.numFilters || [32, 64, 64];
+            this.policySize = json.architecture?.policySize || 400;
+
+            this._buildModel();
+
+            if (json.weights) {
+                let weightIdx = 0;
+                for (const layer of this.model.layers) {
+                    const layerWeights = layer.getWeights();
+                    if (layerWeights.length > 0 && weightIdx < json.weights.length) {
+                        const saved = json.weights[weightIdx];
+                        const restored = saved.data.map((arr, i) => {
+                            const original = layerWeights[i];
+                            return tf.tensor(arr, original.shape);
+                        });
+                        try {
+                            layer.setWeights(restored);
+                        } catch (e) {
+                            console.warn('ConvNetwork layer weight shape mismatch:', e);
+                        }
+                        restored.forEach(t => t.dispose());
+                        weightIdx++;
+                    }
+                }
+            }
+        });
+    }
+
+    toJSON() {
+        return this.rawJSON;
+    }
+
+    run(input1d) {
+        return tf.tidy(() => {
+            const inputTensor = tf.tensor4d(new Float32Array(input1d), [1, this.rows, this.cols, this.channels]);
+            const [policyOut, valueOut] = this.model.predict(inputTensor);
+            return {
+                policy: Array.from(policyOut.dataSync()),
+                value: valueOut.dataSync()[0]
+            };
+        });
+    }
+}
+
+class BrowserFFNetwork {
+    constructor(jsonData = null) {
+        this.type = 'TFNetwork';
+        this.sizes = [401, 200, 400];
+        this.model = null;
+        this.rawJSON = null;
+        if (jsonData) {
+            this.fromJSON(jsonData);
+        }
+    }
+
+    fromJSON(json) {
+        if (typeof tf === 'undefined') {
+            throw new Error('TensorFlow.js (tf) is not loaded in the browser.');
+        }
+        this.rawJSON = json;
+        tf.tidy(() => {
+            this.sizes = json.sizes || [401, 200, 400];
+            this.model = tf.sequential();
+            for (let i = 1; i < this.sizes.length; i++) {
+                this.model.add(tf.layers.dense({
+                    inputShape: i === 1 ? [this.sizes[0]] : undefined,
+                    units: this.sizes[i],
+                    activation: 'sigmoid'
+                }));
+            }
+            if (json.layers) {
+                for (let i = 0; i < this.model.layers.length; i++) {
+                    const layerData = json.layers[i + 1];
+                    if (layerData && layerData.weights && layerData.biases) {
+                        const w = tf.tensor2d(layerData.weights).transpose();
+                        const b = tf.tensor1d(layerData.biases);
+                        this.model.layers[i].setWeights([w, b]);
+                        w.dispose();
+                        b.dispose();
+                    }
+                }
+            }
+        });
+    }
+
+    toJSON() {
+        return this.rawJSON;
+    }
+
+    run(input1d) {
+        return tf.tidy(() => {
+            const inputTensor = tf.tensor2d([input1d]);
+            const out = this.model.predict(inputTensor);
+            return Array.from(out.dataSync());
+        });
+    }
+}
+
 class AIPlayer {
     constructor(gridManager, difficulty = 'medium', playerNumber = 2) {
         if (typeof brain === 'undefined') {
@@ -92,6 +267,56 @@ class AIPlayer {
         return state;
     }
 
+    // Convert current grid state into 10x10x18 canonical one-hot representation (1800 floats) for ConvNetwork
+    _getCanonicalStateRepresentation() {
+        const rows = this.gridManager.rows;
+        const cols = this.gridManager.cols;
+        const state = new Float32Array(rows * cols * 18);
+
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                const cell = this.gridManager.grid[r][c];
+                const cellOffset = (r * cols + c) * 18;
+
+                for (let group = 0; group < 2; group++) {
+                    const groupOffset = cellOffset + group * 9;
+                    const tri = cell.triangles.find(t => this.gridManager.getDiagonalGroup(t.rotation) === group);
+
+                    if (!tri) {
+                        state[groupOffset] = 1;
+                    } else {
+                        const ownerOffset = tri.player === this.playerNumber ? 0 : 4;
+                        state[groupOffset + 1 + ownerOffset + tri.rotation] = 1;
+                    }
+                }
+            }
+        }
+        return Array.from(state);
+    }
+
+    loadNetworkJSON(jsonData) {
+        if (!jsonData) return false;
+        if (jsonData.type === 'ConvNetwork') {
+            this.network = new BrowserConvNetwork(jsonData);
+            this.networkType = 'ConvNetwork';
+            this.isNetworkLoaded = true;
+            return true;
+        } else if (jsonData.type === 'TFNetwork') {
+            this.network = new BrowserFFNetwork(jsonData);
+            this.networkType = 'TFNetwork';
+            this.isNetworkLoaded = true;
+            return true;
+        } else {
+            if (!this.network || typeof this.network.fromJSON !== 'function' || this.networkType === 'ConvNetwork' || this.networkType === 'TFNetwork') {
+                this.network = this._createNetwork(this.difficulty);
+            }
+            this.network.fromJSON(jsonData);
+            this.networkType = 'brain';
+            this.isNetworkLoaded = true;
+            return true;
+        }
+    }
+
     // Predict the best move based on the current state
     predictMove() {
         if (!this.network) {
@@ -105,9 +330,17 @@ class AIPlayer {
             // console.log("AI Exploration: Choosing random valid move.");
             return this.getRandomValidMove(this.gridManager); // EXPLORE: Choose randomly
         } else {
-
-            const state = this._getStateRepresentation();
-            const output = this.network.run(state); // Get probabilities/scores for each move
+            let output;
+            if (this.networkType === 'ConvNetwork' || this.network.type === 'ConvNetwork') {
+                const state = this._getCanonicalStateRepresentation();
+                const res = this.network.run(state);
+                output = res.policy;
+                this.lastPredictedValue = res.value;
+                console.log(`ConvNetwork Value Estimate (P${this.playerNumber}): ${res.value?.toFixed(4)}`);
+            } else {
+                const state = this._getStateRepresentation();
+                output = this.network.run(state); // Get probabilities/scores for each move
+            }
 
             // Map output index to move {x, y, rotation}
             const moves = [];
@@ -667,8 +900,8 @@ class AIPlayer {
         // --- If data was loaded from either source, apply it ---
         if (jsonData) {
             try {
-                this.network.fromJSON(jsonData); // Apply the loaded data
-                console.log(`AI Network state loaded successfully from ${sourceUsed}.`);
+                this.loadNetworkJSON(jsonData); // Supports ConvNetwork, TFNetwork, and brain.js JSON
+                console.log(`AI Network state (${jsonData.type || 'brain.js'}) loaded successfully from ${sourceUsed}.`);
                 this.isNetworkLoaded = true; // <<< SET FLAG TO TRUE ON SUCCESS
                 return true; // Indicate success
             } catch (applyError) {

@@ -535,7 +535,7 @@ class GameScene extends Phaser.Scene {
                   const networkState = tempAI.exportNetwork();
                   if (networkState) {
                         // Apply the preloaded state to the actual game AI instance
-                      newAI.network.fromJSON(networkState);
+                      newAI.loadNetworkJSON(networkState);
                       newAI.isNetworkLoaded = true; // Mark this instance as ready
                       loadedSuccessfully = true;
                   } else {
@@ -1177,7 +1177,14 @@ triggerAIMove() {
     const openingRandomFactor = isOpeningPhase ? 0.50 : 0;
     
     const rand = Math.random();
-    if (rand < openingRandomFactor) {
+    if (aiInstance.networkType === 'ConvNetwork') {
+      aiInstance.explorationFactor = 0.0; // Pure network play for ConvNetwork inspection
+      console.log(`AI Player ${currentPlayerNum} ConvNetwork prediction...`);
+      move = aiInstance.predictMove();
+      if (aiInstance.lastPredictedValue !== undefined) {
+        this.debugText.setText(`Mode: ${this.gameMode} | P${currentPlayerNum} ConvNet Val: ${aiInstance.lastPredictedValue.toFixed(2)}`);
+      }
+    } else if (rand < openingRandomFactor) {
       // Opening diversity: random move
       console.log(`AI Player ${currentPlayerNum} opening random move...`);
       const validMoves = this.gridManager.getValidMoves();
@@ -1683,7 +1690,7 @@ class MenuScene extends Phaser.Scene {
                           const networkState = tempAI.exportNetwork();
                           if (networkState) {
                                 // Apply the preloaded state to the actual game AI instance
-                              trainingAI.network.fromJSON(networkState);
+                              trainingAI.loadNetworkJSON(networkState);
                               trainingAI.isNetworkLoaded = true; // Mark this instance as ready
                               loadedSuccessfully = true;
                           } else {
