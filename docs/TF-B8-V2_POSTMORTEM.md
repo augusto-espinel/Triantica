@@ -264,3 +264,31 @@ Inspecting the trained `TF-B8_network.json` weights after Cycle 10 revealed why 
    - Because the Value Head `[256, 1]` is only divided by `256` (400× stronger gradient than the Policy Head) and trained with an aggressive `LR = 0.05, momentum = 0.9`, the Value Head overshoots in Cycle 1 Epoch 1 and saturates `tanh` at **`-1.0` or `+1.0`** (`1 - tanh^2(x) ≈ 0`), locking the Value Head with MSE $\approx 2.0$ and rendering MCTS leaf value evaluations constant (`-1.0`).
 3. **Fix for Next Experiment (`TF-B9`):**
    - Sum the policy cross-entropy over the 400 actions before averaging over the batch (`.neg().sum(-1).mean()`), and use `tf.train.adam(0.001)` (or lower LR `0.005`) so the Policy Head receives full-strength gradients and the `tanh` Value Head does not saturate.
+
+---
+
+## `TF-B9` Final Verification Results (`292.6` min — 84.0% Peak / 79.0% Final vs Random)
+
+Applying the policy cross-entropy sum (`.neg().sum(-1).mean()`), persistent `tf.train.adam(0.001)`, and root-player MCTS value backpropagation on top of the consolidated `TF-B8` baseline produced a dramatic breakthrough across all 10 cycles:
+
+| Cycle | vs Random (Overall) | AI as P1 (1st Move) | AI as P2 (2nd Move) | vs Heuristic | Eval AI Cluster (`Mean / Med / Max`) | Training Loss (`Start → End`) | Self-Play (`P1/P2/D`) |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Cycle 1** | **52.0%** (`52W/47L/1D`) | 58.0% | 46.0% | 0.0% | `41.5 / 35 / 96` | `3.672 → 2.577` | `55 / 44 / 1` |
+| **Cycle 2** | **55.0% ⬆️** (`55W/45L/0D`) | 58.0% | 52.0% ⬆️ | 0.0% | `45.0 / 36 / 111` | `3.324 → 2.387` | `49 / 48 / 3` |
+| **Cycle 3** | **63.0% ⬆️** (`63W/37L/0D`) | 58.0% | 68.0% ⬆️ | 0.0% | `52.7 / 45 / 132` | `3.205 → 2.375` | `55 / 45 / 0` |
+| **Cycle 4** | **64.0% ⬆️** (`64W/35L/1D`) | 60.0% ⬆️ | 68.0% | 0.0% | `55.4 / 47 / 148` | `3.154 → 2.371` | `50 / 49 / 1` |
+| **Cycle 5** | **74.0% 🚀** (`74W/25L/1D`) | **80.0% 🚀** | 68.0% | 0.0% | `58.4 / 56 / 124` | `3.260 → 2.392` | `53 / 44 / 3` |
+| **Cycle 6** | **72.0%** (`72W/26L/2D`) | **80.0%** | 64.0% | 0.0% | `65.7 / 63 / 135` | `3.193 → 2.373` | `59 / 41 / 0` |
+| **Cycle 7** | **84.0% 🚀** (`84W/16L/0D`) | **88.0% 🚀** | **80.0% 🚀** | 0.0% | `66.2 / 63 / 132` | `3.249 → 2.375` | `59 / 41 / 0` |
+| **Cycle 8** | **79.0%** (`79W/19L/2D`) | **84.0%** | **74.0%** | 0.0% | `66.2 / 64 / 135` | `3.151 → 2.357` | `60 / 39 / 1` |
+| **Cycle 9** | **77.0%** (`77W/22L/1D`) | **82.0%** | **72.0%** | 0.0% | **`66.5 / 61 / 138`** | `2.997 → 2.366` | **`50 / 50 / 0`** |
+| **Cycle 10** | **79.0% ✅** (`79W/21L/0D`) | **84.0%** | **74.0%** | 0.0% | `66.2 / 63 / 136` | `3.095 → 2.367` | `61 / 37 / 2` |
+
+### Summary Comparison Across Phase 5 MCTS Runs
+| Metric | `TF-B8 (Original)` | `TF-B8-V2` | `TF-B8 (Clean Re-Run)` | **`TF-B9 (Cross-Entropy + Adam)`** |
+| :--- | :--- | :--- | :--- | :--- |
+| **Avg Win Rate vs Random** | `30.0%` | `35.4%` | `43.0%` | **`69.9%` (+26.9 pts)** |
+| **Peak Win Rate vs Random** | `30.0%` | `54.0%` | `49.0%` | **`84.0%` (+35.0 pts)** |
+| **Final (Cycle 10) vs Random** | `30.0%` | `38.0%` (C9: `15%`) | `47.0%` (`48% P1 / 46% P2`) | **`79.0%` (`84% P1 / 74% P2`)** |
+| **Mean Contiguous Cluster Size** | `~18` | `18.4 – 26.5` | `33.6 – 40.4` | **`66.2 – 66.5` ($3.1\times$ larger)** |
+| **Late-Cycle Collapse?** | Degraded | Yes (`15%` in C9) | None (`41%–49%`) | **None (`77%–84%` in C7–C10)** |
