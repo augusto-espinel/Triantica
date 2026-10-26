@@ -36,6 +36,7 @@ class ReplayBuffer {
     this.inputs = [];
     this.outputs = [];
     this.chosenIndices = [];
+    this.valueTargets = [];
     
     // Priority tree (SumTree for O(log n) sampling)
     this.priorities = [];
@@ -58,15 +59,17 @@ class ReplayBuffer {
    * @param {number[][]} outputs - Target output vectors  
    * @param {number[]} chosenIndices - Index of chosen move per sample
    */
-  add(inputs, outputs, chosenIndices) {
+  add(inputs, outputs, chosenIndices, valueTargets = null) {
     const count = inputs.length;
     
     for (let i = 0; i < count; i++) {
+      const valTarget = valueTargets ? valueTargets[i] : 0;
       if (this.size < this.maxSize) {
         // Buffer not yet full — append
         this.inputs.push(inputs[i]);
         this.outputs.push(outputs[i]);
         this.chosenIndices.push(chosenIndices[i]);
+        this.valueTargets.push(valTarget);
         this.priorities.push(this.maxPriority);
         this.size++;
       } else {
@@ -74,6 +77,7 @@ class ReplayBuffer {
         this.inputs[this.position] = inputs[i];
         this.outputs[this.position] = outputs[i];
         this.chosenIndices[this.position] = chosenIndices[i];
+        this.valueTargets[this.position] = valTarget;
         this.priorities[this.position] = this.maxPriority;
       }
       
@@ -143,6 +147,7 @@ class ReplayBuffer {
     const sampledInputs = indices.map(i => this.inputs[i]);
     const sampledOutputs = indices.map(i => this.outputs[i]);
     const sampledChosen = indices.map(i => this.chosenIndices[i]);
+    const sampledValueTargets = indices.map(i => this.valueTargets[i] ?? 0);
     
     this.totalSampled += actualBatchSize;
     
@@ -150,6 +155,7 @@ class ReplayBuffer {
       inputs: sampledInputs,
       outputs: sampledOutputs,
       chosenIndices: sampledChosen,
+      valueTargets: sampledValueTargets,
       weights,
       indices
     };
@@ -216,6 +222,7 @@ class ReplayBuffer {
     this.inputs = [];
     this.outputs = [];
     this.chosenIndices = [];
+    this.valueTargets = [];
     this.priorities = [];
     this.position = 0;
     this.size = 0;

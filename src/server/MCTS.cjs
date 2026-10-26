@@ -65,22 +65,26 @@ class MCTSNode {
   
   /**
    * Select best child using UCT formula
-   * Q is stored from root player's perspective (AlphaGo Zero style)
-   * So we always maximize Q directly
+   * Q is stored from root player's perspective (AlphaGo Zero style).
+   * When this node's player === rootPlayer, maximize Q;
+   * when this node's player !== rootPlayer (opponent's turn), minimize Q (maximize -Q).
    * 
    * @param {number} c - Exploration constant (default 1.5)
+   * @param {number} rootPlayer - Player at the root of the MCTS search
    * @returns {MCTSNode|null} Best child node
    */
-  select(c = 1.5) {
+  select(c = 1.5, rootPlayer = this.player) {
     let bestScore = -Infinity;
     let bestChild = null;
     
-    const sqrtParentN = Math.sqrt(this.N);
+    const sqrtParentN = Math.sqrt(Math.max(1, this.N));
+    const sign = this.player === rootPlayer ? 1 : -1;
     
     for (const child of this.children.values()) {
-      // UCT formula - Q is from root's perspective
-      const uct = (child.Q / Math.max(1, child.N)) + 
-                  c * child.prior * sqrtParentN / (1 + child.N);
+      // UCT formula: sign flips Q when opponent is choosing at this node
+      const exploitation = sign * (child.Q / Math.max(1, child.N));
+      const exploration = c * child.prior * sqrtParentN / (1 + child.N);
+      const uct = exploitation + exploration;
       
       if (uct > bestScore) {
         bestScore = uct;
@@ -111,13 +115,21 @@ class MCTSNode {
       const idx = this._moveToIndex(move);
       const prior = policy[idx] || 0.01; // Small prior for unranked moves
       
-      // Create child node
+      // Create child node using canonical executeMove (places triangle, claims enclosures, updates extraTurns & currentPlayer)
       const newGrid = this.grid.clone();
-      newGrid.currentPlayer = this.player;
-      newGrid.placeTriangle(move.x, move.y, move.rotation, this.player);
-      
-      // Switch player for child
-      newGrid.currentPlayer = this.player === 1 ? 2 : 1;
+      if (typeof newGrid.executeMove === 'function') {
+        newGrid.executeMove(move.x, move.y, move.rotation, this.player);
+      } else {
+        newGrid.currentPlayer = this.player;
+        newGrid.placeTriangle(move.x, move.y, move.rotation, this.player);
+        const claimed = newGrid.claimEnclosedTriangles(this.player);
+        newGrid.extraTurns += Math.floor((1 + claimed) / 2);
+        if (newGrid.extraTurns > 0) {
+          newGrid.extraTurns--;
+        } else {
+          newGrid.currentPlayer = this.player === 1 ? 2 : 1;
+        }
+      }
       
       const moveKey = this._moveKey(move);
       this.children.set(moveKey, new MCTSNode(newGrid, move, this, prior));
@@ -137,11 +149,14 @@ class MCTSNode {
   
   /**
    * Apply virtual loss for parallel search
-   * Makes node temporarily look worse to other threads
+   * Makes node temporarily look worse to other threads from the parent chooser's perspective
    */
-  applyVirtualLoss() {
+  applyVirtualLoss(rootPlayer) {
     this._virtualLoss = true;
-    this.Q -= 1;
+    const parentPlayer = this.parent ? this.parent.player : rootPlayer;
+    const penaltySign = parentPlayer === rootPlayer ? -1 : 1;
+    this._virtualLossDelta = penaltySign;
+    this.Q += penaltySign;
     this.N += 1;
   }
   
@@ -150,9 +165,10 @@ class MCTSNode {
    */
   revertVirtualLoss() {
     if (this._virtualLoss) {
-      this.Q += 1;
+      this.Q -= this._virtualLossDelta;
       this.N -= 1;
       this._virtualLoss = false;
+      this._virtualLossDelta = 0;
     }
   }
   
@@ -320,7 +336,7 @@ class MCTS {
       
       // Apply virtual loss
       for (const node of path) {
-        node.applyVirtualLoss();
+        node.applyVirtualLoss(rootPlayer);
       }
       
       paths.push(path);
@@ -400,10 +416,11 @@ class MCTS {
    */
   _selectPath(root) {
     const path = [root];
+    const rootPlayer = root.player;
     let node = root;
     
     while (!node.isLeaf() && !node.isTerminal()) {
-      node = node.select(this.c);
+      node = node.select(this.c, rootPlayer);
       if (node) {
         path.push(node);
       } else {
@@ -571,30 +588,27 @@ class MCTS {
    * Default encoding if no encoder provided
    */
   _defaultEncode(grid, player) {
-    // Simple canonical encoding
+    if (typeof grid.getCanonicalState === 'function') {
+      return grid.getCanonicalState(player);
+    }
+    // Fallback canonical encoding matching GridManager.getCanonicalState
     const state = new Array(1800).fill(0);
-    const opponent = player === 1 ? 2 : 1;
-    
     for (let y = 0; y < 10; y++) {
       for (let x = 0; x < 10; x++) {
         const cell = grid.grid[y][x];
-        const baseIdx = (y * 10 + x) * 18;
-        
-        // Encode each triangle
-        for (let t = 0; t < Math.min(2, cell.triangles.length); t++) {
-          const tri = cell.triangles[t];
-          const channel = t * 9 + (tri.player === player ? 0 : 9);
-          state[baseIdx + channel + tri.rotation] = 1;
-        }
-        
-        // Encode empty slots
-        for (let t = cell.triangles.length; t < 2; t++) {
-          const channel = t * 9 + 8; // Empty channel
-          state[baseIdx + channel] = 1;
+        const cellOffset = (y * 10 + x) * 18;
+        for (let slot = 0; slot < 2; slot++) {
+          const slotOffset = cellOffset + slot * 9;
+          const tri = cell.triangles.find(t => (slot === 0 ? t.rotation < 2 : t.rotation >= 2));
+          if (!tri) {
+            state[slotOffset] = 1;
+          } else {
+            const ownerOffset = tri.player === player ? 0 : 4;
+            state[slotOffset + 1 + ownerOffset + tri.rotation] = 1;
+          }
         }
       }
     }
-    
     return state;
   }
   

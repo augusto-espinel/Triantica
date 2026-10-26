@@ -77,16 +77,9 @@ async function main() {
     return state;
   };
 
-  // Move validation
+  // Move validation - delegate to GridManager
   const isValid = (grid, x, y, rot) => {
-    const cell = grid.grid[y][x];
-    if (cell.triangles.length >= 2) return false;
-    if (!grid.isValidPlacement(x, y)) return false;
-    if (cell.triangles.length === 1) {
-      const existing = cell.triangles[0].rotation;
-      if (existing !== rot && grid.getDiagonalGroup(existing) === grid.getDiagonalGroup(rot)) return false;
-    }
-    return true;
+    return grid.isValidMove(x, y, rot);
   };
 
   const getRandomMove = (grid) => {
@@ -129,12 +122,9 @@ async function main() {
       grid.currentPlayer = cur;
       const move = cur === 1 ? getAIMove(grid) : getRandomMove(grid);
       if (!move) break;
-      grid.selectedRotation = move.rotation;
-      if (!grid.placeTriangle(move.x, move.y)) break;
-      const claimed = grid.claimEnclosedTriangles();
-      grid.extraTurns += Math.floor((1 + claimed) / 2);
-      if (grid.extraTurns > 0) grid.extraTurns--;
-      else cur = cur === 1 ? 2 : 1;
+      const execRes = grid.executeMove(move.x, move.y, move.rotation, cur);
+      if (!execRes.success) break;
+      cur = execRes.nextPlayer;
       m++;
     }
     const s1 = grid.getLargestContiguous(1);

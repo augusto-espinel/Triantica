@@ -92,15 +92,7 @@ function getStateRelative(grid) {
 }
 
 function isValidMove(grid, x, y, rotation) {
-  const cell = grid.grid[y][x];
-  if (cell.triangles.length >= 2) return false;
-  if (cell.triangles.length === 0) return true;
-  
-  const existingRot = cell.triangles[0].rotation;
-  const existingGroup = grid.getDiagonalGroup(existingRot);
-  const newGroup = grid.getDiagonalGroup(rotation);
-  
-  return existingGroup !== newGroup && existingRot !== rotation;
+  return grid.isValidMove(x, y, rotation);
 }
 
 function getAIMove(grid, output) {
@@ -170,13 +162,9 @@ async function main() {
       
       if (!move) break;
       
-      grid.selectedRotation = move.rotation;
-      if (!grid.placeTriangle(move.x, move.y)) break;
-      
-      const claimed = grid.claimEnclosedTriangles();
-      grid.extraTurns += Math.floor((1 + claimed) / 2);
-      if (grid.extraTurns > 0) grid.extraTurns--;
-      else cur = cur === 1 ? 2 : 1;
+      const execRes = grid.executeMove(move.x, move.y, move.rotation, cur);
+      if (!execRes.success) break;
+      cur = execRes.nextPlayer;
       m++;
     }
     

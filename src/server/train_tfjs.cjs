@@ -739,8 +739,10 @@ function getStateFixed(grid, aiPlayerNumber) {
  * @returns {number[]} - 1,800-element flat array (reshape to 10×10×18 for conv)
  */
 function getStateCanonical(grid, aiPlayerNumber) {
+  if (typeof grid.getCanonicalState === 'function') {
+    return grid.getCanonicalState(aiPlayerNumber);
+  }
   const { rows, cols } = grid;
-  const opponent = aiPlayerNumber === 1 ? 2 : 1;
   const channels = rows * cols * 18;
   const state = new Float32Array(channels);
   
@@ -749,20 +751,16 @@ function getStateCanonical(grid, aiPlayerNumber) {
       const cell = grid.grid[r][c];
       const cellOffset = (r * cols + c) * 18;
       
-      // Process each diagonal group (0 = ╱-type: rotations 0,2; 1 = ╲-type: rotations 1,3)
-      for (let group = 0; group < 2; group++) {
-        const groupOffset = cellOffset + group * 9;
-        
-        // Find triangle in this group (if any)
-        const tri = cell.triangles.find(t => grid.getDiagonalGroup(t.rotation) === group);
+      // Process each non-overlapping slot (0 = rotations 0,1; 1 = rotations 2,3)
+      for (let slot = 0; slot < 2; slot++) {
+        const slotOffset = cellOffset + slot * 9;
+        const tri = cell.triangles.find(t => (slot === 0 ? t.rotation < 2 : t.rotation >= 2));
         
         if (!tri) {
-          // Empty slot: channel 0 = 1, all others = 0
-          state[groupOffset] = 1;
+          state[slotOffset] = 1;
         } else {
-          // Piece present: channel = 1 + rotation + (opponent ? 4 : 0)
           const ownerOffset = tri.player === aiPlayerNumber ? 0 : 4;
-          state[groupOffset + 1 + ownerOffset + tri.rotation] = 1;
+          state[slotOffset + 1 + ownerOffset + tri.rotation] = 1;
         }
       }
     }
@@ -1179,7 +1177,7 @@ async function main() {
       
       opponentTypeCounts[opponentType] = (opponentTypeCounts[opponentType] || 0) + 1;
       if (!winsByOpponent[opponentType]) {
-        winsByOpponent[opponentType] = { 1: 0, 2: 0, draws: 0 };
+        winsByOpponent[opponentType] = { 1: 0, 2: 0, draws: 0, aiWins: 0, aiLosses: 0, aiDraws: 0, aiAsP1Wins: 0, aiAsP1Games: 0, aiAsP2Wins: 0, aiAsP2Games: 0 };
         scoresByOpponent[opponentType] = { p1: [], p2: [], ai: [], opponent: [] };
       }
       
@@ -1218,10 +1216,9 @@ async function main() {
           firstMoves.push(`${move.x},${move.y},r${move.rotation}`);
         }
         
-        grid.selectedRotation = move.rotation;
-        if (!grid.placeTriangle(move.x, move.y)) break;
+        const execRes = grid.executeMove(move.x, move.y, move.rotation, curP);
+        if (!execRes.success) break;
         
-        const claimed = grid.claimEnclosedTriangles();
         const moveIdx = (move.y * grid.cols + move.x) * 4 + move.rotation;
         
         // Store the immediate reward value at the CHOSEN move index
@@ -1239,11 +1236,7 @@ async function main() {
           opponentType
         });
         
-        // Extra turn logic
-        grid.extraTurns += Math.floor((1 + claimed) / 2);
-        if (grid.extraTurns > 0) grid.extraTurns--;
-        else curP = curP === 1 ? 2 : 1;
-        
+        curP = execRes.nextPlayer;
         m++;
       }
       
@@ -1260,6 +1253,17 @@ async function main() {
       else draws++;
       
       winsByOpponent[opponentType][winner === 0 ? 'draws' : (winner === 1 ? 1 : 2)]++;
+      if (aiPlayerNumber === 1) {
+        winsByOpponent[opponentType].aiAsP1Games = (winsByOpponent[opponentType].aiAsP1Games || 0) + 1;
+        if (winner === 1) { winsByOpponent[opponentType].aiWins = (winsByOpponent[opponentType].aiWins || 0) + 1; winsByOpponent[opponentType].aiAsP1Wins = (winsByOpponent[opponentType].aiAsP1Wins || 0) + 1; }
+        else if (winner === 2) { winsByOpponent[opponentType].aiLosses = (winsByOpponent[opponentType].aiLosses || 0) + 1; }
+        else { winsByOpponent[opponentType].aiDraws = (winsByOpponent[opponentType].aiDraws || 0) + 1; }
+      } else {
+        winsByOpponent[opponentType].aiAsP2Games = (winsByOpponent[opponentType].aiAsP2Games || 0) + 1;
+        if (winner === 2) { winsByOpponent[opponentType].aiWins = (winsByOpponent[opponentType].aiWins || 0) + 1; winsByOpponent[opponentType].aiAsP2Wins = (winsByOpponent[opponentType].aiAsP2Wins || 0) + 1; }
+        else if (winner === 1) { winsByOpponent[opponentType].aiLosses = (winsByOpponent[opponentType].aiLosses || 0) + 1; }
+        else { winsByOpponent[opponentType].aiDraws = (winsByOpponent[opponentType].aiDraws || 0) + 1; }
+      }
       scoresByOpponent[opponentType].p1.push(grid.getLargestContiguous(1));
       scoresByOpponent[opponentType].p2.push(grid.getLargestContiguous(2));
       // Also capture scores from AI's perspective (for role-alternation experiments)
@@ -1339,7 +1343,7 @@ async function main() {
         // Initialize tracking for this opponent type (Fix for observation #5)
         opponentTypeCounts[opponentType] = (opponentTypeCounts[opponentType] || 0) + 1;
         if (!winsByOpponent[opponentType]) {
-          winsByOpponent[opponentType] = { 1: 0, 2: 0, draws: 0 };
+          winsByOpponent[opponentType] = { 1: 0, 2: 0, draws: 0, aiWins: 0, aiLosses: 0, aiDraws: 0, aiAsP1Wins: 0, aiAsP1Games: 0, aiAsP2Wins: 0, aiAsP2Games: 0 };
           scoresByOpponent[opponentType] = { p1: [], p2: [], ai: [], opponent: [] };
         }
         
@@ -1383,14 +1387,10 @@ async function main() {
             move
           });
           
-          // Make move
-          grid.selectedRotation = move.rotation;
-          if (!grid.placeTriangle(move.x, move.y)) break;
-          
-          const claimed = grid.claimEnclosedTriangles();
-          grid.extraTurns += Math.floor((1 + claimed) / 2);
-          if (grid.extraTurns > 0) grid.extraTurns--;
-          else curP = curP === 1 ? 2 : 1;
+          // Make move using consolidated executeMove
+          const execRes = grid.executeMove(move.x, move.y, move.rotation, curP);
+          if (!execRes.success) break;
+          curP = execRes.nextPlayer;
           
           m++;
         }
@@ -1409,6 +1409,19 @@ async function main() {
         
         // Track wins by opponent type (Fix for observation #5)
         winsByOpponent['network'][winner === 0 ? 'draws' : winner]++;
+        if (aiPlayerNumber === 1) {
+          winsByOpponent['network'].aiAsP1Games = (winsByOpponent['network'].aiAsP1Games || 0) + 1;
+          if (winner === 1) { winsByOpponent['network'].aiWins = (winsByOpponent['network'].aiWins || 0) + 1; winsByOpponent['network'].aiAsP1Wins = (winsByOpponent['network'].aiAsP1Wins || 0) + 1; }
+          else if (winner === 2) { winsByOpponent['network'].aiLosses = (winsByOpponent['network'].aiLosses || 0) + 1; }
+          else { winsByOpponent['network'].aiDraws = (winsByOpponent['network'].aiDraws || 0) + 1; }
+        } else {
+          winsByOpponent['network'].aiAsP2Games = (winsByOpponent['network'].aiAsP2Games || 0) + 1;
+          if (winner === 2) { winsByOpponent['network'].aiWins = (winsByOpponent['network'].aiWins || 0) + 1; winsByOpponent['network'].aiAsP2Wins = (winsByOpponent['network'].aiAsP2Wins || 0) + 1; }
+          else if (winner === 1) { winsByOpponent['network'].aiLosses = (winsByOpponent['network'].aiLosses || 0) + 1; }
+          else { winsByOpponent['network'].aiDraws = (winsByOpponent['network'].aiDraws || 0) + 1; }
+        }
+        scoresByOpponent['network'].p1.push(grid.getLargestContiguous(1));
+        scoresByOpponent['network'].p2.push(grid.getLargestContiguous(2));
         
         // Track scores from AI's perspective (Bug #4 fix)
         const aiFinalScore = grid.getLargestContiguous(aiPlayerNumber);
@@ -1424,12 +1437,14 @@ async function main() {
         })));
         
         // Process MCTS training data
-        const rewardForWinner = winner === 0 ? 0 : (winner === 1 ? 1 : -1);
-        
         for (const step of hist) {
+          // Only train on AI's moves to avoid dual-perspective conflict
+          // (Bug #1 fix: see docs/TF-B8-V2_POSTMORTEM.md for analysis)
+          if (step.player !== aiPlayerNumber) continue;
+          
           // Value target from the perspective of the player who made the move
           // (matches state encoding which is from mover's perspective)
-          const rewardForPlayer = step.player === 1 ? rewardForWinner : -rewardForWinner;
+          const rewardForPlayer = winner === step.player ? 1.0 : (winner === 0 ? 0.0 : -1.0);
           
           // For MCTS: policy target is the visit distribution, value target is outcome
           allInputs.push(step.state);
@@ -1450,7 +1465,7 @@ async function main() {
 
     // Add new samples to replay buffer
     if (useReplayBuffer && allInputs.length > 0) {
-      replayBuffer.add(allInputs, allOutputs, allChosenIndices);
+      replayBuffer.add(allInputs, allOutputs, allChosenIndices, allValueTargets);
       const bufStats = replayBuffer.getStats();
       console.log(`🗄️  Buffer: ${bufStats.size.toLocaleString()}/${bufStats.maxSize.toLocaleString()} samples (${(bufStats.utilization * 100).toFixed(1)}% full)`);
     }
@@ -1496,8 +1511,7 @@ async function main() {
 
       for (let rb = 0; rb < totalBatches; rb++) {
         const batch = replayBuffer.sample(replayBatchSize);
-        // For replay data, value targets aren't stored — approximate with 0 (neutral)
-        const replayValueTargets = new Array(replayBatchSize).fill(0);
+        const replayValueTargets = batch.valueTargets || new Array(replayBatchSize).fill(0);
         const replayResult = await trainOnData(batch.inputs, batch.outputs, batch.chosenIndices, replayValueTargets, halfIters);
         
         replayLossTotal += replayResult.finalError;
@@ -1549,6 +1563,8 @@ async function main() {
     
     // Evaluation vs Random
     let evalWins = 0, evalLosses = 0, evalDraws = 0;
+    let evalP1Wins = 0, evalP1Losses = 0, evalP1Draws = 0, evalP1Games = 0;
+    let evalP2Wins = 0, evalP2Losses = 0, evalP2Draws = 0, evalP2Games = 0;
     let evalAIScores = [], evalRandScores = [];
     
     for (let g = 0; g < evalGames; g++) {
@@ -1563,13 +1579,9 @@ async function main() {
         const move = cur === evalAIPlayerNumber ? getAIMove(network, grid, 0, evalAIPlayerNumber, useConv) : getRandomMove(grid);
         if (!move) break;
         
-        grid.selectedRotation = move.rotation;
-        if (!grid.placeTriangle(move.x, move.y)) break;
-        
-        const claimed = grid.claimEnclosedTriangles();
-        grid.extraTurns += Math.floor((1 + claimed) / 2);
-        if (grid.extraTurns > 0) grid.extraTurns--;
-        else cur = cur === 1 ? 2 : 1;
+        const exec = grid.executeMove(move.x, move.y, move.rotation, cur);
+        if (!exec.success) break;
+        cur = exec.nextPlayer;
         m++;
       }
       
@@ -1577,21 +1589,31 @@ async function main() {
       const s2 = grid.getLargestContiguous(2);
       // Score from AI's perspective
       if (evalAIPlayerNumber === 1) {
-        if (s1 > s2) evalWins++; else if (s2 > s1) evalLosses++; else evalDraws++;
+        evalP1Games++;
+        if (s1 > s2) { evalWins++; evalP1Wins++; }
+        else if (s2 > s1) { evalLosses++; evalP1Losses++; }
+        else { evalDraws++; evalP1Draws++; }
         evalAIScores.push(s1);
         evalRandScores.push(s2);
       } else {
-        if (s2 > s1) evalWins++; else if (s1 > s2) evalLosses++; else evalDraws++;
+        evalP2Games++;
+        if (s2 > s1) { evalWins++; evalP2Wins++; }
+        else if (s1 > s2) { evalLosses++; evalP2Losses++; }
+        else { evalDraws++; evalP2Draws++; }
         evalAIScores.push(s2);
         evalRandScores.push(s1);
       }
     }
     
     const evalRate = evalWins / evalGames * 100;
-    console.log(`📊 Eval vs Random: ${evalRate.toFixed(1)}% (${evalWins}W / ${evalLosses}L / ${evalDraws}D)`);
+    const evalP1Rate = evalP1Games > 0 ? (evalP1Wins / evalP1Games * 100) : 0;
+    const evalP2Rate = evalP2Games > 0 ? (evalP2Wins / evalP2Games * 100) : 0;
+    console.log(`📊 Eval vs Random: ${evalRate.toFixed(1)}% (${evalWins}W / ${evalLosses}L / ${evalDraws}D) [as P1: ${evalP1Rate.toFixed(1)}%, as P2: ${evalP2Rate.toFixed(1)}%]`);
     
     // Evaluation vs Heuristic
     let heurWins = 0, heurLosses = 0, heurDraws = 0;
+    let heurP1Wins = 0, heurP1Losses = 0, heurP1Draws = 0, heurP1Games = 0;
+    let heurP2Wins = 0, heurP2Losses = 0, heurP2Draws = 0, heurP2Games = 0;
     let heurAIScores = [], heurOppScores = [];
     
     for (let g = 0; g < evalGames; g++) {
@@ -1610,13 +1632,9 @@ async function main() {
           : heuristicEval.getMove(grid);
         if (!move) break;
         
-        grid.selectedRotation = move.rotation;
-        if (!grid.placeTriangle(move.x, move.y)) break;
-        
-        const claimed = grid.claimEnclosedTriangles();
-        grid.extraTurns += Math.floor((1 + claimed) / 2);
-        if (grid.extraTurns > 0) grid.extraTurns--;
-        else cur = cur === 1 ? 2 : 1;
+        const exec = grid.executeMove(move.x, move.y, move.rotation, cur);
+        if (!exec.success) break;
+        cur = exec.nextPlayer;
         m++;
       }
       
@@ -1624,18 +1642,26 @@ async function main() {
       const s2 = grid.getLargestContiguous(2);
       // Score from AI's perspective
       if (heurAIPlayerNumber === 1) {
-        if (s1 > s2) heurWins++; else if (s2 > s1) heurLosses++; else heurDraws++;
+        heurP1Games++;
+        if (s1 > s2) { heurWins++; heurP1Wins++; }
+        else if (s2 > s1) { heurLosses++; heurP1Losses++; }
+        else { heurDraws++; heurP1Draws++; }
         heurAIScores.push(s1);
         heurOppScores.push(s2);
       } else {
-        if (s2 > s1) heurWins++; else if (s1 > s2) heurLosses++; else heurDraws++;
+        heurP2Games++;
+        if (s2 > s1) { heurWins++; heurP2Wins++; }
+        else if (s1 > s2) { heurLosses++; heurP2Losses++; }
+        else { heurDraws++; heurP2Draws++; }
         heurAIScores.push(s2);
         heurOppScores.push(s1);
       }
     }
     
     const heurRate = heurWins / evalGames * 100;
-    console.log(`📊 Eval vs Heuristic: ${heurRate.toFixed(1)}% (${heurWins}W / ${heurLosses}L / ${heurDraws}D)`);
+    const heurP1Rate = heurP1Games > 0 ? (heurP1Wins / heurP1Games * 100) : 0;
+    const heurP2Rate = heurP2Games > 0 ? (heurP2Wins / heurP2Games * 100) : 0;
+    console.log(`📊 Eval vs Heuristic: ${heurRate.toFixed(1)}% (${heurWins}W / ${heurLosses}L / ${heurDraws}D) [as P1: ${heurP1Rate.toFixed(1)}%, as P2: ${heurP2Rate.toFixed(1)}%]`);
     
     // Compute diversity metrics
     const openingDiversity = computeOpeningDiversity(firstMoves);
@@ -1682,6 +1708,16 @@ async function main() {
           aiWins: evalWins,
           losses: evalLosses,
           draws: evalDraws,
+          p1WinRate: evalP1Rate,
+          p2WinRate: evalP2Rate,
+          p1Wins: evalP1Wins,
+          p1Losses: evalP1Losses,
+          p1Draws: evalP1Draws,
+          p1Games: evalP1Games,
+          p2Wins: evalP2Wins,
+          p2Losses: evalP2Losses,
+          p2Draws: evalP2Draws,
+          p2Games: evalP2Games,
           aiScores: evalAIScores,
           opponentScores: evalRandScores
         },
@@ -1690,14 +1726,24 @@ async function main() {
           aiWins: heurWins,
           losses: heurLosses,
           draws: heurDraws,
+          p1WinRate: heurP1Rate,
+          p2WinRate: heurP2Rate,
+          p1Wins: heurP1Wins,
+          p1Losses: heurP1Losses,
+          p1Draws: heurP1Draws,
+          p1Games: heurP1Games,
+          p2Wins: heurP2Wins,
+          p2Losses: heurP2Losses,
+          p2Draws: heurP2Draws,
+          p2Games: heurP2Games,
           aiScores: heurAIScores,
           opponentScores: heurOppScores
         }
       }
     });
     
-    // Save intermediate
-    if (cycle % 5 === 0 || cycle === cycles) {
+    // Save after every cycle for live dashboard tracking
+    {
       const outputPath = path.resolve(output);
       const outputDir = path.dirname(outputPath);
       if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
@@ -1708,7 +1754,11 @@ async function main() {
       log.endedAt = new Date().toISOString();
       log.finalResult = { 
         vsRandom: evalRate, 
-        vsHeuristic: heurRate 
+        vsHeuristic: heurRate,
+        vsRandomP1: evalP1Rate,
+        vsRandomP2: evalP2Rate,
+        vsHeuristicP1: heurP1Rate,
+        vsHeuristicP2: heurP2Rate
       };
       fs.writeFileSync(outputPath, JSON.stringify(log, null, 2));
       

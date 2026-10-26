@@ -116,6 +116,9 @@
       <div class="detail-grid full">
         <div class="section"><h3>Win Rate Over Cycles</h3><div class="chart-container"><canvas id="chart-winrate"></canvas></div></div>
       </div>
+      <div class="detail-grid full" id="role-winrate-row" style="display:none;">
+        <div class="section"><h3>Win Share by Role (First Mover P1 vs Second Mover P2)</h3><div class="chart-container"><canvas id="chart-role-winrate"></canvas></div></div>
+      </div>
       <div class="detail-grid full">
         <div class="section"><h3>Game Scores Per Cycle (AI perspective)</h3><div class="chart-container tall"><canvas id="chart-scores"></canvas></div></div>
       </div>
@@ -179,12 +182,17 @@
         const oppCounts = lastCycle?.selfPlay?.opponentTypeCounts || {};
         const oppTotal = Object.values(oppCounts).reduce((a,b)=>a+b, 0);
         const oppMix = oppTotal > 0 ? Object.entries(oppCounts).map(([k,v]) => `${k[0].toUpperCase()}:${Math.round(v/oppTotal*100)}%`).join(' ') : '';
+        // Role P1 vs P2 badge (when roleAlternation is active and P1/P2 win rates exist)
+        const p1wr = lastCycle?.evaluation?.vsRandom?.p1WinRate ?? r.p1WinRate;
+        const p2wr = lastCycle?.evaluation?.vsRandom?.p2WinRate ?? r.p2WinRate;
+        const roleBadge = (p1wr != null && p2wr != null) ? `P1: ${Math.round(p1wr)}% | P2: ${Math.round(p2wr)}% (vs R)` : '';
         return `<div class="exp-card" onclick="showDetail('${exp.id}')" id="card-${exp.id}">
           ${hBadge ? `<span class="heuristic-badge">${hBadge}</span>` : ''}
           ${scoreBadge ? `<span class="heuristic-badge" style="top:${hBadge?'32px':'12px'};font-size:10px;background:rgba(210,153,34,0.15);color:var(--yellow)">${scoreBadge}</span>` : ''}
           <h3>${exp.name}</h3>
           <div class="date">${exp.date}</div>
           ${oppMix ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px">${oppMix}</div>` : ''}
+          ${roleBadge ? `<div style="font-size:11px;color:var(--accent);margin-top:2px;font-weight:500">${roleBadge}</div>` : ''}
           <div class="win-rate ${wrClass}">${r.peakWinRate ?? '—'}%</div>
           <div class="delta ${deltaClass}">${r.improvement != null ? (r.improvement>=0?'+':'')+r.improvement+'pp' : 'N/A'}</div>
         </div>`;
@@ -291,8 +299,18 @@
           return (nw && nc) ? (nw['1'] / nc * 100) : null;
         });
         
+        const evalVsRandomP1 = data.cycles.map(c => c.evaluation?.vsRandom?.p1WinRate ?? null);
+        const evalVsRandomP2 = data.cycles.map(c => c.evaluation?.vsRandom?.p2WinRate ?? null);
+        const evalVsHeuristicP1 = data.cycles.map(c => c.evaluation?.vsHeuristic?.p1WinRate ?? null);
+        const evalVsHeuristicP2 = data.cycles.map(c => c.evaluation?.vsHeuristic?.p2WinRate ?? null);
+        const spTotalGames = data.cycles.map(c => c.selfPlay?.games || 100);
+        const spP1Share = data.cycles.map((c, idx) => c.selfPlay?.wins?.['1'] != null ? (c.selfPlay.wins['1'] / spTotalGames[idx] * 100) : null);
+        const spP2Share = data.cycles.map((c, idx) => c.selfPlay?.wins?.['2'] != null ? (c.selfPlay.wins['2'] / spTotalGames[idx] * 100) : null);
+        
         const datasets = [
           { label: 'vs Random (eval, %)', data: evalVsRandom, borderColor: '#3fb950', backgroundColor: 'rgba(63,185,80,0.1)', fill: true, tension: 0.3 },
+          { label: 'vs Random as P1 (eval, %)', data: evalVsRandomP1, borderColor: '#56d364', backgroundColor: 'transparent', borderDash: [4,2], tension: 0.3 },
+          { label: 'vs Random as P2 (eval, %)', data: evalVsRandomP2, borderColor: '#2ea043', backgroundColor: 'transparent', borderDash: [2,2], tension: 0.3 },
           { label: 'vs Heuristic (eval, %)', data: evalVsHeuristic, borderColor: '#f85149', backgroundColor: 'rgba(248,81,73,0.1)', fill: true, tension: 0.3 },
           { label: 'vs Random (self-play, %)', data: selfPlayVsRandom, borderColor: '#58a6ff', backgroundColor: 'transparent', borderDash: [5,3], tension: 0.3 },
           { label: 'vs Network (self-play, %)', data: selfPlayVsNetwork, borderColor: '#d29922', backgroundColor: 'transparent', borderDash: [5,3], tension: 0.3 }
@@ -303,6 +321,27 @@
           data: { labels, datasets },
           options: { ...opts, scales: { ...opts.scales, y: { ...opts.scales.y, min: 0, max: 100 } } }
         });
+
+        // Role Win Rate Chart (P1 vs P2 breakdown when role alternation or self-play P1/P2 data is available)
+        const roleDatasets = [
+          { label: 'Eval vs Random — AI as P1 (1st Move %)', data: evalVsRandomP1, borderColor: '#3fb950', backgroundColor: 'rgba(63,185,80,0.08)', fill: false, tension: 0.3 },
+          { label: 'Eval vs Random — AI as P2 (2nd Move %)', data: evalVsRandomP2, borderColor: '#58a6ff', backgroundColor: 'rgba(88,166,255,0.08)', fill: false, tension: 0.3 },
+          { label: 'Eval vs Heuristic — AI as P1 (%)', data: evalVsHeuristicP1, borderColor: '#f85149', backgroundColor: 'transparent', borderDash: [4,2], tension: 0.3 },
+          { label: 'Eval vs Heuristic — AI as P2 (%)', data: evalVsHeuristicP2, borderColor: '#bc8cff', backgroundColor: 'transparent', borderDash: [4,2], tension: 0.3 },
+          { label: 'Self-Play — P1 Win Share (%)', data: spP1Share, borderColor: '#d29922', backgroundColor: 'transparent', borderDash: [2,2], tension: 0.3 },
+          { label: 'Self-Play — P2 Win Share (%)', data: spP2Share, borderColor: '#8b949e', backgroundColor: 'transparent', borderDash: [2,2], tension: 0.3 }
+        ].filter(d => d.data.some(v => v !== null));
+
+        if (roleDatasets.length > 0 && exp.parameters?.roleAlternation) {
+          document.getElementById('role-winrate-row').style.display = '';
+          charts.roleWinrate = new Chart(document.getElementById('chart-role-winrate'), {
+            type: 'line',
+            data: { labels, datasets: roleDatasets },
+            options: { ...opts, scales: { ...opts.scales, y: { ...opts.scales.y, min: 0, max: 100, title: { display: true, text: 'Win Rate / Share %', color: '#8b949e' } } } }
+          });
+        } else {
+          document.getElementById('role-winrate-row').style.display = 'none';
+        }
         
         // Error: initial (start of cycle) and final (end of cycle)
         const initialErrors = data.cycles.map(c => c.training?.initialError);
@@ -336,6 +375,14 @@
         return cards;
       });
       if (statCards.length > 0) {
+        if (lastCycle?.evaluation?.vsRandom?.p1WinRate != null) {
+          const r = lastCycle.evaluation.vsRandom;
+          statCards.push(`<div class="score-stat random"><div class="label">vs Random Role Split</div><div class="value">P1: ${Math.round(r.p1WinRate)}%</div><div class="sub">P2: ${Math.round(r.p2WinRate)}% (${r.p1Wins||0}/${r.p1Games||50} vs ${r.p2Wins||0}/${r.p2Games||50})</div></div>`);
+        }
+        if (lastCycle?.evaluation?.vsHeuristic?.p1WinRate != null) {
+          const h = lastCycle.evaluation.vsHeuristic;
+          statCards.push(`<div class="score-stat heuristic"><div class="label">vs Heuristic Role Split</div><div class="value">P1: ${Math.round(h.p1WinRate)}%</div><div class="sub">P2: ${Math.round(h.p2WinRate)}% (${h.p1Wins||0}/${h.p1Games||50} vs ${h.p2Wins||0}/${h.p2Games||50})</div></div>`);
+        }
         document.getElementById('score-stats').innerHTML = statCards.join('');
         document.getElementById('score-stats-row').style.display = '';
       } else {

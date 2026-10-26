@@ -49,21 +49,21 @@ class GridManager {
     return moves;
   }
 
-  isValidMove(x, y, rotation) {
+  isValidMove(x, y, rotation = null) {
+    if (x < 0 || x >= this.cols || y < 0 || y >= this.rows) return false;
+    const rot = rotation !== null ? rotation : this.selectedRotation;
     const cell = this.grid[y][x];
     if (cell.triangles.length >= 2) return false;
-    if (cell.triangles.length === 1) {
-      const newGroup = this.getDiagonalGroup(rotation);
+    if (cell.triangles.length > 0) {
+      const newGroup = this.getDiagonalGroup(rot);
       const existingGroup = this.getDiagonalGroup(cell.triangles[0].rotation);
-      if (newGroup === existingGroup || cell.triangles[0].rotation === rotation) {
+      // Second triangle in a cell MUST share the same diagonal group (╱ with ╱, ╲ with ╲)
+      // and have the opposite rotation (not identical)
+      if (newGroup !== existingGroup || cell.triangles[0].rotation === rot) {
         return false;
       }
     }
-    const originalRotation = this.selectedRotation;
-    this.selectedRotation = rotation;
-    const valid = this.isValidPlacement(x, y);
-    this.selectedRotation = originalRotation;
-    return valid;
+    return this.isValidPlacement(x, y, rot);
   }
 
   createGrid() {
@@ -74,10 +74,11 @@ class GridManager {
       );
     }
 
-  isValidPlacement(x, y) {
+  isValidPlacement(x, y, rotation = null) {
       if (this.isFirstMove()) return true;
+      const rot = rotation !== null ? rotation : this.selectedRotation;
       // Check if any corner of the new triangle touches existing triangles
-      const corners = this.getTriangleCorners(x, y, this.selectedRotation);
+      const corners = this.getTriangleCorners(x, y, rot);
       return corners.some(([cx, cy]) => this.hasCorner(cx, cy));
   }
 
@@ -118,22 +119,10 @@ class GridManager {
     const rot = rotation !== null ? rotation : this.selectedRotation;
     const pl = player !== null ? player : this.currentPlayer;
     
+    // Single source of truth for move legality
+    if (!this.isValidMove(x, y, rot)) return false;
+
     const cell = this.grid[y][x];
-    let hasOverlap = false;
-    
-    // Check if the cell is full (max 2 triangles)
-    if (cell.triangles.length >= 2) return false;
-
-    if (cell.triangles.length > 0)  {
-      // Check if new triangle overlaps existing ones
-      const newTriangleGroup = this.getDiagonalGroup(rot);
-      hasOverlap = !(this.getDiagonalGroup(cell.triangles[0].rotation) === newTriangleGroup) || 
-      cell.triangles[0].rotation === rot;
-    } 
-
-    // Check adjacency rule and overlaps
-    if (!this.isValidPlacement(x, y) || hasOverlap) return false;
-
     cell.triangles.push({
       player: pl,
       rotation: rot
@@ -143,6 +132,33 @@ class GridManager {
     this.updateClustersForNewTriangle(x, y, rot, pl);
 
     return true;
+  }
+
+  executeMove(x, y, rotation = null, player = null) {
+    const rot = rotation !== null ? rotation : this.selectedRotation;
+    const pl = player !== null ? player : this.currentPlayer;
+    this.currentPlayer = pl;
+    this.selectedRotation = rot;
+
+    if (!this.placeTriangle(x, y, rot, pl)) {
+      return { success: false, claimed: 0, nextPlayer: this.currentPlayer, extraTurns: this.extraTurns };
+    }
+
+    const claimed = this.claimEnclosedTriangles(pl);
+    this.extraTurns += Math.floor((1 + claimed) / 2);
+
+    if (this.extraTurns > 0) {
+      this.extraTurns--;
+    } else {
+      this.currentPlayer = pl === 1 ? 2 : 1;
+    }
+
+    return {
+      success: true,
+      claimed,
+      nextPlayer: this.currentPlayer,
+      extraTurns: this.extraTurns
+    };
   }
 
   updateClustersForNewTriangle(x, y, rotation, player) {
@@ -477,6 +493,29 @@ class GridManager {
     cloned.nextClusterId = this.nextClusterId;
     
     return cloned;
+  }
+
+  getCanonicalState(forPlayer = this.currentPlayer) {
+    const state = new Float32Array(this.rows * this.cols * 18);
+    for (let r = 0; r < this.rows; r++) {
+      for (let c = 0; c < this.cols; c++) {
+        const cell = this.grid[r][c];
+        const cellOffset = (r * this.cols + c) * 18;
+
+        for (let slot = 0; slot < 2; slot++) {
+          const slotOffset = cellOffset + slot * 9;
+          const tri = cell.triangles.find(t => (slot === 0 ? t.rotation < 2 : t.rotation >= 2));
+
+          if (!tri) {
+            state[slotOffset] = 1;
+          } else {
+            const ownerOffset = tri.player === forPlayer ? 0 : 4;
+            state[slotOffset + 1 + ownerOffset + tri.rotation] = 1;
+          }
+        }
+      }
+    }
+    return Array.from(state);
   }
 }
 
@@ -997,8 +1036,8 @@ class GameScene extends Phaser.Scene {
       const totalClaimed = placedTriangles + enclosedTriangles;
 
       if (enclosedTriangles > 0) {
-        this.gridManager.extraTurns += 1; // Add one extra turn for the successful enclosure
-        console.log(`Player ${this.gridManager.currentPlayer} enclosed ${enclosedTriangles} triangle(s) and gets an extra turn.`);
+        this.gridManager.extraTurns += Math.floor((1 + enclosedTriangles) / 2);
+        console.log(`Player ${this.gridManager.currentPlayer} enclosed ${enclosedTriangles} triangle(s) and gets extra turn(s).`);
       }
 
       // Update UI and turn logic
@@ -1250,8 +1289,8 @@ triggerAIMove() {
                   this.totalMovesPlayed++;
                   const enclosed = this.gridManager.claimEnclosedTriangles(); // [cite: 139, 217]
                   if (enclosed > 0) {
-                    this.gridManager.extraTurns += 1;
-                    console.log(`AI Player ${this.gridManager.currentPlayer} enclosed ${enclosed} triangle(s) and gets an extra turn.`);
+                    this.gridManager.extraTurns += Math.floor((1 + enclosed) / 2);
+                    console.log(`AI Player ${this.gridManager.currentPlayer} enclosed ${enclosed} triangle(s) and gets extra turn(s).`);
                   }
                   this.redrawTriangles(); // [cite: 231]
                   this.updateScore(); // [cite: 250]
@@ -1368,8 +1407,8 @@ triggerAIMove() {
           if (success) {
             const enclosed = this.gridManager.claimEnclosedTriangles();
             if (enclosed > 0) {
-              this.gridManager.extraTurns += 1;
-              console.log(`${playerType} Player ${this.gridManager.currentPlayer} enclosed ${enclosed} triangle(s) and gets an extra turn.`);
+              this.gridManager.extraTurns += Math.floor((1 + enclosed) / 2);
+              console.log(`${playerType} Player ${this.gridManager.currentPlayer} enclosed ${enclosed} triangle(s) and gets extra turn(s).`);
             }
             this.redrawTriangles();
             this.updateScore();

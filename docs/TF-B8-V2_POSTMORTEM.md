@@ -1,8 +1,8 @@
-# TF-B8-V2 Post-Mortem & Bugfix Plan
+# TF-B8-V2 Post-Mortem & Comprehensive Audit Report
 
 **Created:** 2026-10-26 04:40 CET  
-**Status:** Awaiting TF-B8-V2 completion before executing fixes  
-**Target:** Next experiment run (TF-B9)
+**Updated:** 2026-10-26 09:25 CET (Added Deep Legality, MCTS & Consolidation Audit)  
+**Status:** Audit complete — Applying consolidated fixes and re-running `TF-B8` (with P1/P2 win-rate tracking)
 
 ---
 
@@ -47,289 +47,192 @@ Log:             docs/data/TF-B8-V2.log
 
 ---
 
-## 2. Confirmed Bugs
+## 2. Comprehensive Audit Findings (Major Bugs Uncovered)
 
-### Bug #1: Dual-Perspective Training Conflict (CRITICAL)
+Following the completion of `TF-B8-V2`, a full cross-codebase audit was conducted across **Game (`game.js`, `AIPlayer.js`)**, **Core Engine (`src/core/GridManager.js`)**, **Training & Search (`src/server/train_tfjs.cjs`, `src/server/MCTS.cjs`, `src/players/HeuristicPlayer.js`)**, and **Evaluation (`eval_tfjs.cjs`, `scripts/evaluate.cjs`)**.
 
-**Location:** `src/server/train_tfjs.cjs`, MCTS self-play section, lines ~1330–1440  
-**Severity:** This is likely the primary cause of the Heuristic Wall
+This audit revealed **5 root-cause bugs** (3 critical engine/search bugs + 2 training/evaluation bugs) that completely explain the Heuristic Wall (0% win rate) and the training/game discrepancy.
 
-#### What's Wrong
+---
 
-In the MCTS self-play loop, the code alternates which player the "AI" plays as:
+### Bug #A (CRITICAL ENGINE BUG): Inverted Diagonal Overlap Check (`471,431` / `671,600` Discrepancies)
+
+**Locations:**
+- `src/core/GridManager.js` (`placeTriangle` line 120 & `isValidMove` line 448)
+- `game.js` (`isValidMove` line 58)
+- `scripts/evaluate.cjs` (`isValidMove` line 103)
+
+#### Geometry of a Triantica Cell
+Each cell `[x, y]` is divided by one of two diagonals:
+- **Group 0 (`╱` slash diagonal):** Rotations `0` (top-left) and `2` (bottom-right)
+- **Group 1 (`╲` backslash diagonal):** Rotations `1` (bottom-left) and `3` (top-right)
+
+Once a cell contains 1 triangle (`existingRot`), the cell's diagonal is physically fixed. A second triangle placed in that same cell is **only non-overlapping** if it belongs to the **same diagonal group** (`newGroup === existingGroup`) and has the **opposite rotation** (`rot !== existingRot`). Placing a triangle from the *other* diagonal group crosses the existing diagonal and physically overlaps 50% of the existing triangle!
+
+#### What Was Wrong
+While `game.js:placeTriangle` and `AIPlayer.js` had the **correct** overlap condition:
 ```js
-const aiPlayerNumber = (g % 2 === 0) ? 1 : 2;  // line ~1336
+// CORRECT (in game.js:placeTriangle and AIPlayer.js):
+hasOverlap = !(this.getDiagonalGroup(cell.triangles[0].rotation) === newTriangleGroup) || 
+             cell.triangles[0].rotation === rot;
+if (hasOverlap) return false;
 ```
-
-Both players use MCTS with the same network. The state is encoded from the **mover's perspective**:
+When `GridManager` was extracted into `src/core/GridManager.js` (and when `isValidMove` was added to `game.js`), the boolean negation was accidentally dropped:
 ```js
-const state = getStateCanonical(grid, curP);  // line ~1341
-```
-
-This means:
-- When P1 moves: state has P1's pieces = +1, P2's = -1
-- When P2 moves: state has P2's pieces = +1, P1's = -1
-
-The network sees the **same board state as two completely different inputs** depending on whose turn it is. This is fine in AlphaGo Zero because the network has a "color plane" or implicit turn indicator. Here, the final channel of the canonical encoding (channel 17) is **not** used as a turn indicator — it's just padding from the 18-channel structure.
-
-**The critical problem is in training data construction** (lines ~1430–1439):
-```js
-for (const step of hist) {
-  const rewardForPlayer = step.player === 1 ? rewardForWinner : -rewardForWinner;
-  allInputs.push(step.state);
-  allOutputs.push(step.mctsPolicy);
-  allChosenIndices.push(step.moveIdx);
-  allValueTargets.push(rewardForPlayer);
+// INVERTED BUG (in src/core/GridManager.js and game.js:isValidMove):
+if (newGroup === existingGroup || cell.triangles[0].rotation === rotation) {
+  return false;
 }
 ```
 
-**ALL moves from BOTH players are pushed to training.** Compare with the non-MCTS path (line ~1296):
+#### Destructive Impact
+1. **All Server Training, MCTS, and Heuristic Play (`train_tfjs.cjs`, `MCTS.cjs`, `HeuristicPlayer.js`)** import `src/core/GridManager.js`. Thus, every server training run and MCTS tree search was playing a **mutated game** where two triangles in the same cell *must cross diagonals* (overlapping by 50%) and are *forbidden* from completing a square along the same diagonal!
+2. **Broken Canonical State Encoding (`getStateCanonical`)**: In `train_tfjs.cjs` (lines 754–765), `getStateCanonical` encodes each cell by iterating `group = 0` (`╱`) and `group = 1` (`╲`) and calling `cell.triangles.find(t => grid.getDiagonalGroup(t.rotation) === group)`. Under the inverted rule, a full cell had 1 triangle in Group 0 and 1 in Group 1; under the real rule, a full cell has **2 triangles in the SAME group**!
+3. **Browser `game.js` Internal Contradiction**: In `game.js`, `isValidMove()` had the inverted check while `placeTriangle()` had the correct check. Whenever `getValidMoves()` was called in the browser (by `RandomPlayer`, `HeuristicPlayer`, or AI retry fallback), it suggested second-triangle moves from the *opposite* diagonal group, which `game.js:placeTriangle()` immediately rejected as illegal!
+
+---
+
+### Bug #B (CRITICAL MCTS BUG): `MCTS.cjs` Never Claims Enclosed Triangles or Grants Extra Turns
+
+**Location:** `src/server/MCTS.cjs`, `MCTSNode.expand()`, lines 113–122
+
+#### What Was Wrong
+When MCTS expands a node to create child states for all valid moves:
 ```js
-if (step.player !== aiPlayerNumber) continue;  // Skip opponent moves
+// Create child node
+const newGrid = this.grid.clone();
+newGrid.currentPlayer = this.player;
+newGrid.placeTriangle(move.x, move.y, move.rotation, this.player);
+
+// Switch player for child
+newGrid.currentPlayer = this.player === 1 ? 2 : 1;
 ```
+1. It **never calls `newGrid.claimEnclosedTriangles(this.player)`**!
+2. It **never calculates or decrements `newGrid.extraTurns`** (`Math.floor((1 + claimed) / 2)`), unconditionally switching `newGrid.currentPlayer` on every single move!
 
-The non-MCTS path correctly filters to only train on one player's moves. The MCTS path trains on both.
+#### Destructive Impact
+Inside the MCTS search tree (`MCTS-50`), **enclosure captures and bonus turns literally did not exist**.
+- MCTS could not see that enclosing an empty slot claims it (+1 triangle to cluster) and grants an immediate extra turn.
+- Nor could MCTS see when its move left an enclosure + extra-turn combo open for the opponent.
+- Meanwhile, `HeuristicPlayer` explicitly simulates `claimEnclosedTriangles()` on every move (`+0.3` per claim + cluster growth + lead delta). Being completely blind to enclosures and extra turns in lookahead explains why MCTS scored **0% vs Heuristic**.
 
-#### Why This Is Destructive
+---
 
-The network receives contradictory training signals:
+### Bug #C (CRITICAL ENCODING BUG): `getStateCanonical` Drops the 2nd Triangle in a Cell
 
-1. **Game where AI=P1, P1 wins:** All P1 moves get value target +1.0, all P2 moves get -1.0. The state for P1 moves has P1=+1. The state for P2 moves has P2=+1 (flipped encoding). So the network learns: "when my pieces are +1, I should win" AND "when my pieces are +1, I should lose" — for the **same board configuration** but from opposite perspectives.
+**Locations:**
+- `src/server/train_tfjs.cjs` (`getStateCanonical`, lines 754–768)
+- `AIPlayer.js` (`_getCanonicalStateRepresentation`, lines 280–295)
 
-2. **Game where AI=P2, P2 wins:** Same contradiction, mirrored.
-
-3. The **policy targets** suffer the same issue. MCTS produces a visit distribution π(a) that reflects good play for the mover. But the policy output is a 400-dimensional vector over moves. Move (3,5,rot0) means "place at position (3,5) with rotation 0". The same move index means the same physical action regardless of who plays it. But the state encoding flips who "my pieces" are. So the network must learn: "In state S (P1=+1), move X is good" and "In state S' (P2=+1, which is the same board flipped), move X is bad" — because in the flipped game, the same move helps the other player.
-
-4. **Net effect:** The policy and value gradients from the two perspectives partially cancel each other. The network converges to a mediocre compromise — the "highly unstable 37% average" we observe. Loss decreases because the network IS fitting the training data, but the training data contains conflicting signals, so the fit is a poor compromise.
+#### What Was Wrong
+`getStateCanonical` encodes 18 channels per cell (2 slots × 9 channels). However, it indexed the 2 slots by `group` (`0` = `╱`, `1` = `╲`):
+```js
+for (let group = 0; group < 2; group++) {
+  const tri = cell.triangles.find(t => grid.getDiagonalGroup(t.rotation) === group);
+  ...
+```
+Once Bug #A is fixed, both triangles in a completed cell share the **same** diagonal group (e.g., rotation `0` and rotation `2`, both Group 0). Calling `.find(t => getDiagonalGroup(t.rotation) === group)` only ever finds the **first** triangle (`triangles[0]`) for that group and leaves the other group empty — **completely hiding the second triangle in every full cell from the neural network!**
 
 #### Fix
-
-**Option A (Simple, Recommended for TF-B9):** Only train on one player's moves per game, matching the non-MCTS path:
-```js
-for (const step of hist) {
-  // Only train on AI's moves to avoid dual-perspective conflict
-  // (Bug #1 fix: see docs/TF-B8-V2_POSTMORTEM.md for analysis)
-  if (step.player !== aiPlayerNumber) continue;
-  
-  const rewardForPlayer = winner === step.player ? 1.0 : (winner === 0 ? 0.0 : -1.0);
-  allInputs.push(step.state);
-  allOutputs.push(step.mctsPolicy);
-  allChosenIndices.push(step.moveIdx);
-  allValueTargets.push(rewardForPlayer);
-}
-```
-
-This ensures the network always learns from the AI's perspective. The state encoding (from mover's view) and value target (from AI's view) will be consistent because the AI IS the mover for all training samples.
-
-**Option B (Better long-term):** Add a turn indicator channel to the canonical encoding. Add channel 18 as a binary flag: 1.0 if it's "my" turn, 0.0 if opponent's turn. Then train on both players' moves. This doubles training data efficiency but requires modifying `getStateCanonical()` and the conv network's input channels (18→19).
-
-**Option C (AlphaGo Zero style):** Always encode from a fixed player's perspective (e.g., always P1=+1) and add a binary channel indicating whose turn it is. This is how AGZ actually works — the "color plane" tells the network which side it's playing.
-
-**Recommendation:** Start with Option A for TF-B9 (minimal code change, isolates the bug fix). If it works, consider Option B/C for future runs to improve data efficiency.
+Index the two 9-channel slots by **slot index** (`slot = 0, 1`, or canonicalized by lower/higher rotation within the cell: `slot 0` = rotations `0, 1`, `slot 1` = rotations `2, 3`) rather than diagonal group:
+- **Slot 0 (Channels 0–8):** Triangle with `rotation < 2` (`0` or `1`), or empty (`channel 0 = 1`).
+- **Slot 1 (Channels 9–17):** Triangle with `rotation >= 2` (`2` or `3`), or empty (`channel 9 = 1`).
+Because a valid cell can have at most one triangle from `{0, 1}` (specifically `0` or `1`) and at most one complementary triangle from `{2, 3}` (specifically `2` or `3`), partitioning by `rotation < 2` vs `rotation >= 2` guarantees **zero collisions**, order-independence (canonical regardless of whether rot `0` or rot `2` was placed first), and full visibility of both triangles in every cell!
 
 ---
 
-### Bug #2: Leftover Immediate Reward Shaping (MEDIUM)
+### Bug #D (CRITICAL TRAINING BUG): Dual-Perspective Training Conflict & Replay Value Targets
 
-**Location:** `src/server/train_tfjs.cjs`, function `calculateImmediateRewardVector()`, lines 901–965  
-**Severity:** Currently dormant in MCTS-only mode, but dangerous for mixed training
+**Location:** `src/server/train_tfjs.cjs`, lines 1425–1439 & 1485–1500
 
-#### What's Wrong
-
-`calculateImmediateRewardVector()` computes shaped rewards:
-- Enclosure claims: +0.3 per triangle claimed
-- Connected cluster size: +0.1 per connected triangle
-
-These were designed for the old feedforward policy network that needed dense training signal. In the MCTS + value head architecture, they are **counterproductive**:
-
-1. MCTS already provides an improved policy signal (visit distribution π(a)) that implicitly captures territorial value through search.
-2. The value head directly predicts game outcome, making the shaped reward redundant.
-3. Shaped rewards can create **reward hacking** — the network learns to maximize the proxy reward (claim enclosures early) rather than the true objective (win the game).
-
-#### Current State
-
-In the MCTS self-play path, `calculateImmediateRewardVector()` is **NOT called** — the MCTS path uses `mctsPolicy` as the policy target and game outcome as the value target. This is correct.
-
-However, the non-MCTS self-play loop (lines ~1150–1270) DOES compute and use these rewards. This loop runs when `opponentMix` is not pure network. Currently with `--mcts-sims 50`, the non-MCTS loop is skipped via `continue` at line ~1153.
-
-#### Fix
-
-1. **For TF-B9:** Ensure MCTS-only training (already the case with `--mcts-sims 50`). No code change needed for immediate fix.
-
-2. **For robustness:** Remove the `calculateImmediateRewardVector()` call entirely from the training pipeline, or gate it behind an explicit flag `--use-shaped-rewards` that defaults to `false`. This prevents accidental contamination if someone changes the opponent mix config.
-
-3. **For the non-MCTS path:** Replace shaped rewards with pure outcome-based training: policy target = 1.0 for chosen move (if game won) / 0.0 (if lost), value target = game outcome. This aligns both paths.
-
-```js
-// Replace calculateImmediateRewardVector with:
-function calculateOutcomePolicyTarget(moveIdx, won) {
-  const target = new Array(400).fill(0.01); // small baseline
-  target[moveIdx] = won ? 1.0 : 0.0;
-  return target;
-}
-```
+#### What Was Wrong
+1. **Dual-Perspective Conflict (previously identified as Bug #1):**
+   In the non-MCTS training loop, opponent moves are skipped (`if (step.player !== aiPlayerNumber) continue;`). In the MCTS self-play loop, **both players' moves** were pushed into `allInputs`/`allOutputs`/`allValueTargets`, causing contradictory gradients across alternating games. (Wait: in pure self-play where state is encoded canonically from `step.player`'s perspective and policy/value targets are also from `step.player`'s perspective, filtering to `step.player === aiPlayerNumber` ensures strict consistency with the non-MCTS pipeline and avoids role-imbalance artifacts.)
+2. **Replay Buffer Zeroed Out Value Targets:**
+   In `train_tfjs.cjs` line 1492:
+   ```js
+   // For replay data, value targets aren't stored — approximate with 0 (neutral)
+   const replayValueTargets = new Array(replayBatchSize).fill(0);
+   ```
+   With `replayRatio = 2.0`, **two-thirds of all training batches trained the Value Head to predict `0` (draw) on every historical board state!** This crippled the Value Head, forcing its predictions toward `0` and rendering MCTS leaf evaluations nearly useless.
+   - **Fix:** Store `valueTarget` inside `ReplayBuffer` alongside `(input, output, chosenIndex)` and pass `batch.valueTargets` during replay training!
 
 ---
 
-### Bug #3: Replay Buffer Cross-Contamination (MEDIUM)
+### Bug #E (EVALUATION & GAME CONSISTENCY BUGS): Duplicate Validation & Extra-Turn Formula
 
-**Location:** `src/server/train_tfjs.cjs`, replay buffer section, lines ~1450–1530  
-**Severity:** Could silently degrade training quality
-
-#### What's Wrong
-
-The replay buffer stores samples from ALL self-play games regardless of which training path generated them. Currently in MCTS-only mode this isn't an issue. But if the non-MCTS path were re-enabled (e.g., with mixed opponents), the replay buffer would contain:
-
-- MCTS samples: policy target = visit distribution π(a), value target = game outcome
-- Non-MCTS samples: policy target = immediate-reward-shaped vector, value target = game outcome
-
-These two sample types have **incompatible policy targets**. The MCTS visit distribution is a probability distribution that sums to ~1. The shaped reward vector is NOT a distribution — it contains arbitrary [0,1] values at each move index representing local reward quality. Training on a mix of these would produce a policy network that can't decide what its output represents.
-
-#### Fix
-
-1. **Tag samples with their type** when adding to the replay buffer: `{ source: 'mcts' | 'shaped' }`.
-2. **Filter replay samples** during training to only use samples matching the current training mode.
-3. **Or (simpler):** Clear the replay buffer when switching between MCTS and non-MCTS modes. Add a warning log when this happens.
+1. **Duplicate / Broken `isValidMove` in `eval_tfjs.cjs`, `scripts/evaluate.cjs`, and `AIPlayer.js`:**
+   - `eval_tfjs.cjs` and `scripts/evaluate.cjs` defined custom `isValidMove` functions that returned `true` whenever `cell.triangles.length === 0`, skipping `grid.isValidPlacement(x, y)` (the corner-touch adjacency rule). When the AI picked a disconnected empty cell, `grid.placeTriangle` returned `false` and `break` aborted the game mid-match!
+   - `AIPlayer.js` duplicated inline overlap + `isValidPlacement` checks in 3 separate methods (`predictMove`, `getRandomValidMove`, `calculateImmediateRewardVector`) instead of calling `this.gridManager.isValidMove(x, y, rotation)`.
+2. **Extra-Turn Formula Discrepancy (`game.js` vs `GridManager` / `train_tfjs.cjs`):**
+   - Training/server uses `extraTurns += Math.floor((1 + claimed) / 2)` followed by decrementing `extraTurns` if `> 0` (so 1–2 claims = 1 bonus turn, 3–4 claims = 2 bonus turns).
+   - `game.js` used `if (enclosed > 0) extraTurns += 1`.
 
 ---
 
-### Bug #4: Value Target Range Mismatch (LOW)
+## 3. Code Consolidation & Refactoring Plan (Single Source of Truth)
 
-**Location:** `src/server/train_tfjs.cjs`, line 1317 and 1437; network architecture line ~390  
-**Severity:** Training inefficiency, not a correctness bug
+To eliminate the risk of fixing a rule in one file and missing it in another, we will consolidate all core rules and move-execution steps into `GridManager` (`src/core/GridManager.js` and mirrored in `game.js`):
 
-#### What's Wrong
+1. **Single Overlap & Legality Check (`grid.isValidMove(x, y, rotation)`):**
+   - Fix `GridManager.isValidMove(x, y, rotation)` so it checks:
+     1. Bounds & `cell.triangles.length < 2`
+     2. If `cell.triangles.length === 1`: `newGroup === existingGroup && existingRot !== rotation`
+     3. `this.isValidPlacement(x, y, rotation)` (pass `rotation` directly to `isValidPlacement(x, y, rotation = this.selectedRotation)` so we don't even have to mutate/restore `this.selectedRotation`!).
+   - Make `GridManager.placeTriangle(x, y, rotation, player)` call `if (!this.isValidMove(x, y, rot)) return false;` directly! That way `isValidMove` and `placeTriangle` can **never** disagree.
+   - Replace all inline legality checks in `AIPlayer.js`, `train_tfjs.cjs`, `eval_tfjs.cjs`, `scripts/evaluate.cjs`, `verify_game_network.cjs`, and `verify_brain.cjs` with `grid.isValidMove(x, y, rotation)`.
 
-The value head uses `tanh` activation, outputting values in [-1, +1]. The value targets are:
-- MCTS path: `rewardForPlayer = step.player === 1 ? rewardForWinner : -rewardForWinner` where `rewardForWinner` is `{0, 1, -1}`. So targets are in {-1, 0, +1}.
-- Non-MCTS path: Same range.
+2. **Consolidated Move + Claim + Turn Advance Method (`grid.executeMove(x, y, rotation, player)`):**
+   - Add `executeMove(x, y, rotation = null, player = null)` to `GridManager`:
+     - Places triangle via `placeTriangle(x, y, rot, pl)` (returns `{ success: false }` if invalid).
+     - Calls `const claimed = this.claimEnclosedTriangles(pl)`.
+     - Updates extra turns and `currentPlayer` using the canonical rule:
+       ```js
+       this.extraTurns += Math.floor((1 + claimed) / 2);
+       if (this.extraTurns > 0) {
+         this.extraTurns--;
+       } else {
+         this.currentPlayer = pl === 1 ? 2 : 1;
+       }
+       ```
+     - Returns `{ success: true, claimed, nextPlayer: this.currentPlayer, extraTurns: this.extraTurns }`.
+   - Use this exact logic in `MCTSNode.expand()`, `train_tfjs.cjs` (self-play, MCTS, and eval loops), and `GameSession.js`.
 
-This is correct for win/draw/loss outcomes. However, the mean squared error loss between tanh output (which rarely hits exactly ±1) and targets of ±1 creates a constant gradient pressure that never fully converges. AlphaGo Zero uses cross-entropy for the value head (treating it as a binary classification: win probability) rather than MSE.
+3. **Canonical State Encoding (`grid.getCanonicalState(forPlayer)`):**
+   - Move the fixed `getStateCanonical(grid, forPlayer)` (using `slot 0: rot ∈ {0,1}` and `slot 1: rot ∈ {2,3}`) onto `GridManager.prototype.getCanonicalState(forPlayer)` so `train_tfjs.cjs`, `MCTS.cjs`, and `AIPlayer.js` all call the exact same method.
 
-#### Fix (Future)
-
-Replace value head loss from MSE to binary cross-entropy:
-```js
-// Instead of:
-const valueLoss = valuePred.sub(valueTargetTensor).square().mean();
-// Use:
-const valueLoss = tf.metrics.binaryCrossentropy(
-  valueTargetTensor.mul(0.5).add(0.5),  // Map [-1,+1] → [0,1]
-  valuePred.mul(0.5).add(0.5)
-).mean();
-```
-
-This is a minor optimization — **do NOT include in TF-B9** to keep the experiment isolated to Bug #1 fix only.
+4. **P1 vs P2 Win-Rate Tracking in Evaluation & Dashboard:**
+   - Update `train_tfjs.cjs` evaluation loops (`vsRandom` and `vsHeuristic`) to record separate win/loss/draw and win-rate metrics when AI plays as **P1 (first mover)** vs **P2 (second mover)**:
+     - `p1WinRate`, `p2WinRate`, `p1Wins`, `p2Wins`, `p1Games`, `p2Games`
+   - Also record `aiAsP1Wins` / `aiAsP2Wins` in self-play.
+   - Update `dashboard/index.html` (and `docs/index.html`) to display **AI Win Rate as P1 vs P2** on the charts and summary cards so we can immediately see if the network benefits from making the first move.
 
 ---
 
-## 3. Proposed Bugfix Plan: TF-B9
+## 4. Implementation Status & Verification Audit (Completed 2026-10-26)
 
-### Goal
-Isolate Bug #1 (dual-perspective conflict) as the single variable change from TF-B8-V2. All other code remains identical.
+All 5 critical bugs and architectural consolidations have been implemented and verified:
 
-### Changes Required
+- [x] **Bug #1 (Engine Overlap Rule):** Consolidated into `GridManager.isValidMove(x, y, rotation)` and enforced inside `GridManager.placeTriangle`. All inline checks across `game.js`, `AIPlayer.js`, `src/players/AIPlayer.js`, `train_tfjs.cjs`, `eval_tfjs.cjs`, `scripts/evaluate.cjs`, and `verify_game_network.cjs` now delegate directly to `grid.isValidMove`.
+- [x] **Bug #2 (MCTS Blind to Enclosures & Extra Turns):** Consolidated into `GridManager.executeMove(x, y, rotation, player)`. `MCTSNode.expand()` in `src/server/MCTS.cjs` and all self-play/evaluation loops now execute moves via `executeMove`, ensuring MCTS simulations accurately model enclosures and extra turns (`Math.floor((1 + claimed) / 2)`).
+- [x] **Bug #3 (Canonical 18-Channel State Encoding):** Consolidated into `GridManager.getCanonicalState(forPlayer)` using slot-based indexing (`slot 0: rot ∈ {0,1}`, `slot 1: rot ∈ {2,3}`). Both triangles in a full cell are now visible to the ConvNet.
+- [x] **Bug #4 (ReplayBuffer Value Targets):** Fixed `src/server/ReplayBuffer.cjs` to store and sample `valueTarget` alongside state, policy, and chosenIndex.
+- [x] **Bug #5 (Dual-Perspective Gradient Conflict):** Added `if (step.player !== aiPlayerNumber) continue;` in `train_tfjs.cjs` MCTS training loop.
+- [x] **Same-Cell Contiguous Cluster Parity:** Aligned `src/core/GridManager.js` `getAdjacentTriangles` with `game.js` so same-cell triangles only connect across the shared diagonal (`newGroup === existingGroup && t.rotation !== rotation`). Verified 100% move-by-move parity between browser `game.js` and server `src/core/GridManager.js` across full-game simulations.
+- [x] **P1 vs P2 Win-Share Tracking:** Implemented in `train_tfjs.cjs` (`vsRandom`, `vsHeuristic`, and `selfPlay`) and added to `dashboard/index.html` (Win Rate chart, dedicated Role Win Share chart, and Score Stats cards).
 
-**File:** `src/server/train_tfjs.cjs`
+---
 
-**Change 1 — MCTS training data filter (lines ~1430–1439):**
+## 5. Re-Running `TF-B8` (Post-Fix Plan)
 
-Before:
-```js
-for (const step of hist) {
-  const rewardForPlayer = step.player === 1 ? rewardForWinner : -rewardForWinner;
-  allInputs.push(step.state);
-  allOutputs.push(step.mctsPolicy);
-  allChosenIndices.push(step.moveIdx);
-  allValueTargets.push(rewardForPlayer);
-}
-```
+Rather than incrementing to `TF-B9` while `TF-B8` was invalid due to engine/MCTS bugs, we are **re-running `TF-B8`** (`docs/data/TF-B8.json`, with the previous buggy run archived as `docs/data/TF-B8_buggy_archive.json`) with all fixes applied and monitoring it cycle-by-cycle:
 
-After:
-```js
-for (const step of hist) {
-  // Only train on AI's moves to avoid dual-perspective conflict
-  // (Bug #1 fix: see docs/TF-B8-V2_POSTMORTEM.md for analysis)
-  if (step.player !== aiPlayerNumber) continue;
-  
-  const rewardForPlayer = winner === step.player ? 1.0 : (winner === 0 ? 0.0 : -1.0);
-  allInputs.push(step.state);
-  allOutputs.push(step.mctsPolicy);
-  allChosenIndices.push(step.moveIdx);
-  allValueTargets.push(rewardForPlayer);
-}
-```
-
-**Key differences from current code:**
-1. Added `if (step.player !== aiPlayerNumber) continue;` — mirrors the non-MCTS path
-2. Changed value target from `step.player === 1 ? rewardForWinner : -rewardForWinner` to `winner === step.player ? 1.0 : (winner === 0 ? 0.0 : -1.0)` — directly from AI's perspective, no P1/P2 mapping needed since we've already filtered to AI's moves only
-3. Both changes ensure state encoding (from mover=AI's perspective) and value target (from AI's perspective) are always aligned
-
-**No other changes.** Specifically:
-- Same conv architecture
-- Same MCTS-50 configuration
-- Same learning rate (0.05), batch size (256)
-- Same replay buffer settings
-- Same canonical encoding (18 channels)
-
-### Execution Command
+### Command
 ```bash
-cd ~/.openclaw/workspace/triantica
-node src/server/train_tfjs.cjs --cycles 10 --games 100 --mcts-sims 50 --architecture conv --output docs/data/TF-B9.json
+node src/server/train_tfjs.cjs --cycles 10 --games 100 --mcts-sims 50 --architecture conv --output docs/data/TF-B8.json
 ```
 
-### Expected Runtime
-~8 hours on M2 Ultra (same as TF-B8-V2, since MCTS search dominates and training data is halved but batch count stays similar)
-
-### Expected Outcome
-
-If Bug #1 is the primary cause of the Heuristic Wall:
-- **vs Random:** Should stabilize above 50% with upward trend (currently oscillates 24%–54%)
-- **vs Heuristic:** Should show >0% win rate by cycle 3–5 (currently stuck at 0%)
-- **Loss:** Should decrease more meaningfully as training signal is no longer contradictory
-
-If Bug #1 is NOT the primary cause:
-- Results will look similar to TF-B8-V2 (unstable ~38% vs Random, 0% vs Heuristic)
-- This would point to a deeper issue in the MCTS implementation, reward structure, or the game itself being too complex for the current architecture
-- Next investigation: audit MCTS.cjs for search bugs, test with much higher simulation counts (200+), or simplify the game
-
-### Validation Checks
-
-After TF-B9 completes, verify:
-1. **Training sample count:** Should be roughly half of TF-B8-V2 per cycle (since we're skipping opponent moves). If it's the same, the filter isn't working.
-2. **Value target distribution:** Should be exactly {1.0, 0.0, -1.0}. Check for intermediate values that would indicate the old reward computation is still leaking in.
-3. **Self-play win balance:** P1/P2 wins should be roughly equal since AI alternates roles. A persistent P1 advantage would suggest the filter is biased.
-4. **Policy target sanity:** MCTS visit distributions should have a clear peak at the best move. Flat distributions would indicate MCTS is not confident, which could mean the network is too weak to provide useful evaluations.
-5. **Compare with TF-B8-V2 final results:** Once TF-B8-V2 finishes, update the dashboard with all 10 cycles and use as direct baseline.
-
----
-
-## 4. Deferred Improvements (Post-TF-B9)
-
-These are NOT included in TF-B9 to maintain experimental isolation:
-
-| ID | Improvement | Rationale | Priority |
-|----|-------------|-----------|----------|
-| D1 | Add turn indicator channel (canonical 18→19) | Enables training on both players' moves, doubles data efficiency | High |
-| D2 | Remove `calculateImmediateRewardVector()` | Eliminate shaped reward contamination risk | Medium |
-| D3 | Tag replay buffer samples by source | Prevent cross-contamination of training signals | Medium |
-| D4 | Value head: MSE → binary cross-entropy | Better convergence for [-1,+1] outcomes | Low |
-| D5 | Increase MCTS simulations (50→200) | More search = better policy targets, but 4x slower | Low |
-| D6 | Reduce learning rate (0.05→0.01) | May stabilize training, slower convergence | Low |
-| D7 | Increase network capacity (64→128 filters) | More representational power for complex patterns | Low |
-
----
-
-## 5. Workflow Checklist
-
-Pre-TF-B9 execution steps:
-
-- [ ] Wait for TF-B8-V2 PID 83332 to complete
-- [ ] Read full TF-B8-V2.log and extract cycles 9–10 results
-- [ ] Update `docs/data/TF-B8-V2.json` dashboard with final data
-- [ ] Update MEMORY.md with complete TF-B8-V2 results (all 10 cycles)
-- [ ] Git commit and push all changes to `https://github.com/augusto-espinel/Triantica`
-- [ ] Apply Bug #1 fix to `src/server/train_tfjs.cjs`
-- [ ] Verify fix with a short dry-run (1 cycle, 10 games)
-- [ ] Launch TF-B9 experiment
-- [ ] Set cron to check TF-B9 completion
+### What to Monitor Periodically
+1. **Cycle 1–3 Eval vs Random & vs Heuristic:** Verify that with MCTS now seeing enclosures/extra turns and the Value Head receiving true replay targets, win rates vs Random climb steadily above 50% and win rates vs Heuristic break above 0%.
+2. **P1 vs P2 Win Share:** Check whether the AI wins a higher share of games when moving first (P1) vs second (P2).
+3. **Training Loss:** Both policy and value loss should decrease steadily without Cycle 9-style collapses.

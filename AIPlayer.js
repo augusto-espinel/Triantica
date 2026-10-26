@@ -269,6 +269,9 @@ class AIPlayer {
 
     // Convert current grid state into 10x10x18 canonical one-hot representation (1800 floats) for ConvNetwork
     _getCanonicalStateRepresentation() {
+        if (typeof this.gridManager.getCanonicalState === 'function') {
+            return this.gridManager.getCanonicalState(this.playerNumber);
+        }
         const rows = this.gridManager.rows;
         const cols = this.gridManager.cols;
         const state = new Float32Array(rows * cols * 18);
@@ -278,15 +281,15 @@ class AIPlayer {
                 const cell = this.gridManager.grid[r][c];
                 const cellOffset = (r * cols + c) * 18;
 
-                for (let group = 0; group < 2; group++) {
-                    const groupOffset = cellOffset + group * 9;
-                    const tri = cell.triangles.find(t => this.gridManager.getDiagonalGroup(t.rotation) === group);
+                for (let slot = 0; slot < 2; slot++) {
+                    const slotOffset = cellOffset + slot * 9;
+                    const tri = cell.triangles.find(t => (slot === 0 ? t.rotation < 2 : t.rotation >= 2));
 
                     if (!tri) {
-                        state[groupOffset] = 1;
+                        state[slotOffset] = 1;
                     } else {
                         const ownerOffset = tri.player === this.playerNumber ? 0 : 4;
-                        state[groupOffset + 1 + ownerOffset + tri.rotation] = 1;
+                        state[slotOffset + 1 + ownerOffset + tri.rotation] = 1;
                     }
                 }
             }
@@ -358,27 +361,7 @@ class AIPlayer {
 
             // Find the highest-scoring valid move
             for (const move of moves) {
-                // Temporarily set selectedRotation to check validity
-                const originalRotation = this.gridManager.selectedRotation;
-                this.gridManager.selectedRotation = move.rotation;
-
-                const cell = this.gridManager.grid[move.y][move.x];
-                let isValid = false;
-                if (cell.triangles.length < 2) {
-                    let hasOverlap = false;
-                    if (cell.triangles.length > 0)  {
-                        const newTriangleGroup = this.gridManager.getDiagonalGroup(move.rotation);
-                        hasOverlap = !(this.gridManager.getDiagonalGroup(cell.triangles[0].rotation) === newTriangleGroup) ||
-                        cell.triangles[0].rotation === move.rotation;
-                    }
-                    isValid = this.gridManager.isValidPlacement(move.x, move.y) && !hasOverlap;
-                }
-
-
-                // Restore original rotation
-                this.gridManager.selectedRotation = originalRotation;
-
-                if (isValid) {
+                if (this.gridManager.isValidMove(move.x, move.y, move.rotation)) {
                     // console.log(`AI Prediction: (${move.x}, ${move.y}), Rot: ${move.rotation}, Score: ${move.score.toFixed(4)}`);
                     return { x: move.x, y: move.y, rotation: move.rotation };
                 }
@@ -391,35 +374,7 @@ class AIPlayer {
     }
 
     getRandomValidMove() {
-        const possibleMoves = [];
-        for (let y = 0; y < this.gridManager.rows; y++) {
-            for (let x = 0; x < this.gridManager.cols; x++) {
-                for (let rotation = 0; rotation < 4; rotation++) {
-                    // Temporarily set selectedRotation to check validity
-                    const originalRotation = this.gridManager.selectedRotation;
-                    this.gridManager.selectedRotation = rotation;
-
-                    const cell = this.gridManager.grid[y][x];
-                     let isValid = false;
-                     if (cell.triangles.length < 2) {
-                          let hasOverlap = false;
-                          if (cell.triangles.length > 0)  {
-                             const newTriangleGroup = this.gridManager.getDiagonalGroup(rotation);
-                             hasOverlap = !(this.gridManager.getDiagonalGroup(cell.triangles[0].rotation) === newTriangleGroup) ||
-                             cell.triangles[0].rotation === rotation;
-                          }
-                          isValid = this.gridManager.isValidPlacement(x, y) && !hasOverlap;
-                     }
-
-                    // Restore original rotation
-                    this.gridManager.selectedRotation = originalRotation;
-
-                    if (isValid) {
-                        possibleMoves.push({ x, y, rotation });
-                    }
-                }
-            }
-        }
+        const possibleMoves = this.gridManager.getValidMoves();
 
         if (possibleMoves.length === 0) {
             console.error("AI: No valid moves found at all!");
@@ -763,21 +718,8 @@ class AIPlayer {
                 for (let rotation = 0; rotation < 4; rotation++) {
                     const moveIndex = (y * cols + x) * 4 + rotation;
 
-                    // --- 1. Check Legality (using currentManager's state) ---
-                    const originalRotation = currentManager.selectedRotation;
-                    currentManager.selectedRotation = rotation;
-                    const cell = currentManager.grid[y]?.[x]; // Add safe navigation for grid access
-                    let isLegal = false;
-                    if (cell && cell.triangles.length < 2) {
-                        let hasOverlap = false;
-                        if (cell.triangles.length > 0) {
-                            const newGroup = currentManager.getDiagonalGroup(rotation);
-                            const existingGroup = currentManager.getDiagonalGroup(cell.triangles[0].rotation);
-                            hasOverlap = !(existingGroup === newGroup) || cell.triangles[0].rotation === rotation;
-                        }
-                        isLegal = currentManager.isValidPlacement(x, y) && !hasOverlap;
-                    }
-                    currentManager.selectedRotation = originalRotation; // Restore
+                    // --- 1. Check Legality (using currentManager's consolidated isValidMove) ---
+                    const isLegal = currentManager.isValidMove(x, y, rotation);
 
                     // --- 2. If Legal, Simulate on a Temporary Manager ---
                     if (isLegal) {

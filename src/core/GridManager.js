@@ -59,9 +59,10 @@ export class GridManager {
     return !this.grid.flat().some(cell => cell.triangles.length > 0);
   }
 
-  isValidPlacement(x, y) {
+  isValidPlacement(x, y, rotation = null) {
     if (this.isFirstMove()) return true;
-    const corners = this.getTriangleCorners(x, y, this.selectedRotation);
+    const rot = rotation !== null ? rotation : this.selectedRotation;
+    const corners = this.getTriangleCorners(x, y, rot);
     return corners.some(([cx, cy]) => this.hasCorner(cx, cy));
   }
 
@@ -108,33 +109,46 @@ export class GridManager {
     const rot = rotation !== null ? rotation : this.selectedRotation;
     const pl = player !== null ? player : this.currentPlayer;
     
+    // Single source of truth for move legality
+    if (!this.isValidMove(x, y, rot)) return false;
+
     const cell = this.grid[y][x];
-    
-    // Check if cell is full
-    if (cell.triangles.length >= 2) return false;
-
-    // Check for overlap
-    if (cell.triangles.length > 0) {
-      const newGroup = this.getDiagonalGroup(rot);
-      const existingGroup = this.getDiagonalGroup(cell.triangles[0].rotation);
-      if (newGroup === existingGroup || cell.triangles[0].rotation === rot) {
-        return false;
-      }
-    }
-
-    // Check placement validity
-    const originalRotation = this.selectedRotation;
-    this.selectedRotation = rot;
-    const valid = this.isValidPlacement(x, y);
-    this.selectedRotation = originalRotation;
-    
-    if (!valid) return false;
-
     // Place the triangle
     cell.triangles.push({ player: pl, rotation: rot });
     this.updateClustersForNewTriangle(x, y, rot, pl);
 
     return true;
+  }
+
+  /**
+   * Canonical full move execution: place triangle, claim enclosed triangles,
+   * and advance turn / extraTurns state.
+   */
+  executeMove(x, y, rotation = null, player = null) {
+    const rot = rotation !== null ? rotation : this.selectedRotation;
+    const pl = player !== null ? player : this.currentPlayer;
+    this.currentPlayer = pl;
+    this.selectedRotation = rot;
+
+    if (!this.placeTriangle(x, y, rot, pl)) {
+      return { success: false, claimed: 0, nextPlayer: this.currentPlayer, extraTurns: this.extraTurns };
+    }
+
+    const claimed = this.claimEnclosedTriangles(pl);
+    this.extraTurns += Math.floor((1 + claimed) / 2);
+
+    if (this.extraTurns > 0) {
+      this.extraTurns--;
+    } else {
+      this.currentPlayer = pl === 1 ? 2 : 1;
+    }
+
+    return {
+      success: true,
+      claimed,
+      nextPlayer: this.currentPlayer,
+      extraTurns: this.extraTurns
+    };
   }
 
   // === Cluster Management ===
@@ -290,19 +304,11 @@ export class GridManager {
       });
     });
 
-    // Same cell, other diagonal - triangles sharing a corner
+    // Check current cell for triangles with matching diagonal (sharing the diagonal edge)
     const currCell = this.grid[y][x];
-    const myCorners = this.getTriangleCorners(x, y, rotation);
     currCell.triangles.forEach(t => {
-      if (t.player === player && t.rotation !== rotation) {
-        const otherCorners = this.getTriangleCorners(x, y, t.rotation);
-        // Check if they share at least one corner
-        const sharesCorner = myCorners.some(([mx, my]) => 
-          otherCorners.some(([ox, oy]) => mx === ox && my === oy)
-        );
-        if (sharesCorner) {
-          adjacents.push({ x, y, rotation: t.rotation });
-        }
+      if (t.player === player && this.getDiagonalGroup(t.rotation) === this.getDiagonalGroup(rotation) && t.rotation !== rotation) {
+        adjacents.push({ x, y, rotation: t.rotation });
       }
     });
 
@@ -437,25 +443,24 @@ export class GridManager {
     return moves;
   }
 
-  isValidMove(x, y, rotation) {
+  isValidMove(x, y, rotation = null) {
+    if (x < 0 || x >= this.cols || y < 0 || y >= this.rows) return false;
+    const rot = rotation !== null ? rotation : this.selectedRotation;
     const cell = this.grid[y][x];
     
     if (cell.triangles.length >= 2) return false;
     
     if (cell.triangles.length > 0) {
-      const newGroup = this.getDiagonalGroup(rotation);
+      const newGroup = this.getDiagonalGroup(rot);
       const existingGroup = this.getDiagonalGroup(cell.triangles[0].rotation);
-      if (newGroup === existingGroup || cell.triangles[0].rotation === rotation) {
+      // Second triangle in a cell MUST share the same diagonal group (╱ with ╱, ╲ with ╲)
+      // and have the opposite rotation (not identical)
+      if (newGroup !== existingGroup || cell.triangles[0].rotation === rot) {
         return false;
       }
     }
 
-    const originalRotation = this.selectedRotation;
-    this.selectedRotation = rotation;
-    const valid = this.isValidPlacement(x, y);
-    this.selectedRotation = originalRotation;
-    
-    return valid;
+    return this.isValidPlacement(x, y, rot);
   }
 
   clone() {
@@ -508,6 +513,39 @@ export class GridManager {
     }
     state.push(this.currentPlayer === forPlayer ? 1 : -1);
     return state;
+  }
+
+  /**
+   * Canonical 10x10x18 one-hot state representation from `forPlayer`'s perspective.
+   * Each cell has 2 non-overlapping triangle slots:
+   * - Slot 0 (channels 0..8): triangle with rotation < 2 (rot 0 or 1), or empty (ch 0 = 1)
+   * - Slot 1 (channels 9..17): triangle with rotation >= 2 (rot 2 or 3), or empty (ch 9 = 1)
+   * Within each 9-channel slot:
+   *   ch 0: empty
+   *   ch 1..4: my piece (rot 0..3)
+   *   ch 5..8: opponent piece (rot 0..3)
+   */
+  getCanonicalState(forPlayer = this.currentPlayer) {
+    const state = new Float32Array(this.rows * this.cols * 18);
+    for (let r = 0; r < this.rows; r++) {
+      for (let c = 0; c < this.cols; c++) {
+        const cell = this.grid[r][c];
+        const cellOffset = (r * this.cols + c) * 18;
+
+        for (let slot = 0; slot < 2; slot++) {
+          const slotOffset = cellOffset + slot * 9;
+          const tri = cell.triangles.find(t => (slot === 0 ? t.rotation < 2 : t.rotation >= 2));
+
+          if (!tri) {
+            state[slotOffset] = 1;
+          } else {
+            const ownerOffset = tri.player === forPlayer ? 0 : 4;
+            state[slotOffset + 1 + ownerOffset + tri.rotation] = 1;
+          }
+        }
+      }
+    }
+    return Array.from(state);
   }
 
   // Export for debugging
