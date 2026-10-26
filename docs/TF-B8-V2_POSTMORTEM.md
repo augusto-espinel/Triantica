@@ -223,16 +223,44 @@ All 5 critical bugs and architectural consolidations have been implemented and v
 
 ---
 
-## 5. Re-Running `TF-B8` (Post-Fix Plan)
+## 5. `TF-B8` Clean Re-Run Results & Post-Run Root Cause Analysis (2026-10-26)
 
-Rather than incrementing to `TF-B9` while `TF-B8` was invalid due to engine/MCTS bugs, we are **re-running `TF-B8`** (`docs/data/TF-B8.json`, with the previous buggy run archived as `docs/data/TF-B8_buggy_archive.json`) with all fixes applied and monitoring it cycle-by-cycle:
+Rather than incrementing to `TF-B9` while `TF-B8` was invalid due to engine/MCTS bugs, we re-ran **`TF-B8`** (`docs/data/TF-B8.json`) across all 10 cycles (309.1 minutes total).
 
-### Command
-```bash
-node src/server/train_tfjs.cjs --cycles 10 --games 100 --mcts-sims 50 --architecture conv --output docs/data/TF-B8.json
-```
+### Cycle-by-Cycle Results (`TF-B8` Post-Fix Re-Run)
+| Cycle | vs Random (Overall) | AI as P1 (1st Move) | AI as P2 (2nd Move) | vs Heuristic | Eval AI Mean Cluster | Training Loss (Start → End) | Self-Play Wins (P1/P2/D) |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **C1** | **42.0%** (42W/57L/1D) | 42.0% | 42.0% | 0.0% | 37.0 (med 32.0) | `1.394 → 2.056` | 55 / 44 / 1 |
+| **C2** | **41.0%** (41W/58L/1D) | 40.0% | 42.0% | 0.0% | 35.7 (med 30.0) | `2.289 → 2.222` | 46 / 53 / 1 |
+| **C3** | **33.0%** (33W/64L/3D) | 26.0% | 40.0% | 0.0% | 33.6 (med 30.0) | `2.272 → 2.252` | 58 / 42 / 0 |
+| **C4** | **49.0%** (49W/49L/2D) | 38.0% | **60.0%** | 0.0% | 38.8 (med 33.5) | `2.116 → 2.177` | 47 / 52 / 1 |
+| **C5** | **41.0%** (41W/58L/1D) | **54.0%** | 28.0% | 0.0% | 35.3 (med 31.5) | `1.764 → 1.976` | 53 / 44 / 3 |
+| **C6** | **47.0%** (47W/50L/3D) | **52.0%** | 42.0% | 0.0% | 37.7 (med 33.0) | `2.206 → 2.149` | 54 / 45 / 1 |
+| **C7** | **42.0%** (42W/55L/3D) | 36.0% | 48.0% | 0.0% | 34.6 (med 31.0) | `1.738 → 1.955` | 49 / 50 / 1 |
+| **C8** | **43.0%** (43W/56L/1D) | 48.0% | 38.0% | 0.0% | **40.4 (med 35.0)** | `2.194 → 2.116` | 49 / 50 / 1 |
+| **C9** | **45.0%** (45W/54L/1D) | **52.0%** | 38.0% | 0.0% | 36.5 (med 33.0) | `1.923 → 2.017` | 49 / 51 / 0 |
+| **C10** | **47.0%** (47W/49L/4D) | **48.0%** | **46.0%** | 0.0% | 37.1 (med 34.0) | `2.104 → 2.075` | 40 / 60 / 0 |
 
-### What to Monitor Periodically
-1. **Cycle 1–3 Eval vs Random & vs Heuristic:** Verify that with MCTS now seeing enclosures/extra turns and the Value Head receiving true replay targets, win rates vs Random climb steadily above 50% and win rates vs Heuristic break above 0%.
-2. **P1 vs P2 Win Share:** Check whether the AI wins a higher share of games when moving first (P1) vs second (P2).
-3. **Training Loss:** Both policy and value loss should decrease steadily without Cycle 9-style collapses.
+### What Improved After Fixing the 5 Engine/Rule Bugs
+1. **Cluster Sizes Increased by 60%–85%:**
+   - Self-play median AI clusters jumped from `19–20` (`TF-B8-V2`) to **`31–35.5`** (`max 118`), and Eval vs Random mean clusters jumped from `18.4–26.5` to **`33.6–40.4`**.
+   - Total manual placements per game dropped from `~167.5` to **`~147.5`** (~73.8 AI moves/game) because MCTS now actively claims ~52.5 enclosed triangles per game (up from ~32.5).
+2. **Eliminated Late-Training Collapses:**
+   - Average win rate vs Random improved from `35.4%` (`TF-B8-V2`) and `30.0%` (`TF-B8 v1`) to **`43.0%`**, finishing at **`47.0%` (`48% P1 / 46% P2`)** in Cycle 10. Cycles 4–10 stayed within a tight `41%–49%` band with zero collapses.
+
+### Why It Still Caps Near ~47% vs Random: The `TFConvNetwork` Loss Scaling & Saturation Bug
+Inspecting the trained `TF-B8_network.json` weights after Cycle 10 revealed why the network still struggles to cleanly beat Random:
+1. **1/400 Policy Loss Dilution (`.mean()` across `[batchSize, 400]`):**
+   - In `TFConvNetwork.trainBatch()` (`src/server/train_tfjs.cjs` line 552):
+     ```js
+     const bce = policyTargetTensor.mul(pClip.log())
+       .add(tf.scalar(1).sub(policyTargetTensor).mul(tf.scalar(1).sub(pClip).log()))
+       .neg().mean();
+     ```
+   - Calling `.mean()` over a `[256, 400]` tensor divides the policy gradient by **`256 * 400 = 102,400`** instead of summing over the 400 actions and averaging over the batch (`256`).
+   - Because the MCTS target distribution $\pi(a)$ sums to `1.0` across all 400 actions, the gradient on the Policy Head is **diluted by a factor of 400×** relative to the Value Head!
+   - As a result, after 10 full cycles of training, the Policy Head output probabilities across the entire board remain stuck in a narrow band of **`0.450 – 0.545`** (barely moved from `0.500` random initialization!).
+2. **Value Head Saturation (`tanh` + `LR=0.05, momentum=0.9`):**
+   - Because the Value Head `[256, 1]` is only divided by `256` (400× stronger gradient than the Policy Head) and trained with an aggressive `LR = 0.05, momentum = 0.9`, the Value Head overshoots in Cycle 1 Epoch 1 and saturates `tanh` at **`-1.0` or `+1.0`** (`1 - tanh^2(x) ≈ 0`), locking the Value Head with MSE $\approx 2.0$ and rendering MCTS leaf value evaluations constant (`-1.0`).
+3. **Fix for Next Experiment (`TF-B9`):**
+   - Sum the policy cross-entropy over the 400 actions before averaging over the batch (`.neg().sum(-1).mean()`), and use `tf.train.adam(0.001)` (or lower LR `0.005`) so the Policy Head receives full-strength gradients and the `tanh` Value Head does not saturate.

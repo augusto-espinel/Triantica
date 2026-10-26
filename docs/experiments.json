@@ -1,7 +1,7 @@
 [
   {
     "id": "TF-B1_v3",
-    "name": "TF-B1 \u2014 Pure Self-Play (v3 Fixed)",
+    "name": "TF-B1 — Pure Self-Play (v3 Fixed)",
     "date": "2026-10-24",
     "logFile": "data/TF-B1_v3.json",
     "dataFile": "TF-B1_v3.json",
@@ -50,7 +50,7 @@
   },
   {
     "id": "TF-B1_pure",
-    "name": "TF-B1 \u2014 Pure Self-Play (Baseline)",
+    "name": "TF-B1 — Pure Self-Play (Baseline)",
     "date": "2026-10-24",
     "logFile": "data/TF-B1_pure.json",
     "dataFile": "TF-B1_pure.json",
@@ -96,7 +96,7 @@
   },
   {
     "id": "TF-B1_optimized",
-    "name": "TF-B1 \u2014 Optimized Hyperparameters",
+    "name": "TF-B1 — Optimized Hyperparameters",
     "date": "2026-10-24",
     "logFile": "data/TF-B1_optimized.json",
     "dataFile": "TF-B1_optimized.json",
@@ -142,7 +142,7 @@
   },
   {
     "id": "TF-B2_v3",
-    "name": "TF-B2 \u2014 Mixed Opponents (v3 Fixed)",
+    "name": "TF-B2 — Mixed Opponents (v3 Fixed)",
     "date": "2026-10-24",
     "logFile": "data/TF-B2_v3.json",
     "dataFile": "TF-B2_v3.json",
@@ -193,7 +193,7 @@
   },
   {
     "id": "TF-B2_mixed",
-    "name": "TF-B2 \u2014 Mixed Opponents (Baseline)",
+    "name": "TF-B2 — Mixed Opponents (Baseline)",
     "date": "2026-10-24",
     "logFile": "data/TF-B2_mixed.json",
     "dataFile": "TF-B2_mixed.json",
@@ -235,18 +235,18 @@
       "heuristicScoreOpponent": 173,
       "selfPlayDrawRate": 5,
       "finalError": 0.013373,
-      "trainingTimeMin": 81.0,
+      "trainingTimeMin": 81,
       "auditPassRate": 100,
       "auditGames": 107
     }
   },
   {
     "id": "TF-B3_v3",
-    "name": "TF-B3 \u2014 Cluster Reward (v3 Fixed)",
+    "name": "TF-B3 — Cluster Reward (v3 Fixed)",
     "date": "2026-10-24",
     "logFile": "data/TF-B3_v3.json",
     "dataFile": "TF-B3_v3.json",
-    "summary": "Fresh network with cluster reward TD(\u03bb) and mixed network/random training (70/30). NO heuristic in training. Role alternation and gradient isolation enabled. 36% vs Random.",
+    "summary": "Fresh network with cluster reward TD(λ) and mixed network/random training (70/30). NO heuristic in training. Role alternation and gradient isolation enabled. 36% vs Random.",
     "parameters": {
       "cycles": 10,
       "games": 100,
@@ -261,7 +261,7 @@
       "trainingP2": "70% network, 30% random (NO heuristic)",
       "networkRatio": 0.7,
       "randomRatio": 0.3,
-      "heuristicRatio": 0.0,
+      "heuristicRatio": 0,
       "roleAlternation": true,
       "gradientIsolation": true,
       "enableClusterReward": true,
@@ -274,7 +274,7 @@
       "framework": "tensorflow.js",
       "backend": "Metal GPU"
     },
-    "changes": "Cluster reward TD(\u03bb) enabled. No heuristic in training mix. Gradient isolation enabled.",
+    "changes": "Cluster reward TD(λ) enabled. No heuristic in training mix. Gradient isolation enabled.",
     "bugsFixed": [],
     "result": {
       "startWinRate": 39,
@@ -294,11 +294,11 @@
   },
   {
     "id": "TF-B3_cluster",
-    "name": "TF-B3 \u2014 Cluster Reward (Baseline)",
+    "name": "TF-B3 — Cluster Reward (Baseline)",
     "date": "2026-10-24",
     "logFile": "data/TF-B3_cluster.json",
     "dataFile": "TF-B3_cluster.json",
-    "summary": "Fresh network with cluster reward TD(\u03bb) and mixed network/random training (70/30). No gradient isolation. Role alternation enabled. 52% vs Random (best baseline).",
+    "summary": "Fresh network with cluster reward TD(λ) and mixed network/random training (70/30). No gradient isolation. Role alternation enabled. 52% vs Random (best baseline).",
     "parameters": {
       "cycles": 20,
       "games": 100,
@@ -313,7 +313,7 @@
       "trainingP2": "70% network, 30% random (NO heuristic)",
       "networkRatio": 0.7,
       "randomRatio": 0.3,
-      "heuristicRatio": 0.0,
+      "heuristicRatio": 0,
       "roleAlternation": true,
       "gradientIsolation": false,
       "enableClusterReward": true,
@@ -326,7 +326,7 @@
       "framework": "tensorflow.js",
       "backend": "Metal GPU"
     },
-    "changes": "Cluster reward TD(\u03bb) enabled. No heuristic in training. No gradient isolation (dense supervision).",
+    "changes": "Cluster reward TD(λ) enabled. No heuristic in training. No gradient isolation (dense supervision).",
     "bugsFixed": [],
     "result": {
       "startWinRate": 38,
@@ -346,7 +346,7 @@
   },
   {
     "id": "TF-B4",
-    "name": "TF-B4 \u2014 Experience Replay Buffer",
+    "name": "TF-B4 — Experience Replay Buffer",
     "date": "2026-10-25",
     "logFile": "data/TF-B4_replay.json",
     "dataFile": "TF-B4_replay.json",
@@ -368,7 +368,7 @@
       "replayBuffer": true,
       "replayBufferSize": 500000,
       "replayBatchSize": 256,
-      "replayRatio": 2.0,
+      "replayRatio": 2,
       "enableClusterReward": false,
       "audit": true,
       "auditRate": 0.05,
@@ -398,11 +398,11 @@
   },
   {
     "id": "TF-B8",
-    "name": "TF-B8 \u2014 MCTS-50 Training (AlphaGo Zero Style)",
-    "date": "2026-10-25",
+    "name": "TF-B8 — MCTS-50 + Conv (All 5 Core Bugs Fixed)",
+    "date": "2026-10-26",
     "logFile": "data/TF-B8.json",
     "dataFile": "TF-B8.json",
-    "summary": "Phase 5: MCTS with 50 simulations per move. Conv architecture. Training target: MCTS visit policy \u03c0(a). 10 cycles, 100 games/cycle. Result: 30% vs Random, 0% vs Heuristic. SIGN FLIP BUG CONFIRMED \u2014 network learned to lose.",
+    "summary": "Clean re-run of TF-B8 after fixing all 5 core bugs (overlap rule, MCTS enclosures & extra turns, canonical slot encoding, ReplayBuffer value targets, and single-perspective filtering). 10 cycles, 100 games/cycle, MCTS-50. Result: 43.0% avg vs Random (47.0% final, 49.0% peak; P1: 48%, P2: 46% in C10), 60-85% larger clusters (mean 36-40), 0% vs Heuristic. Exposed policy-loss 1/400 scaling & value-head saturation bottleneck.",
     "parameters": {
       "cycles": 10,
       "games": 100,
@@ -410,7 +410,7 @@
       "iterations": 10,
       "learningRate": 0.05,
       "momentum": 0.9,
-      "exploration": 0.1,
+      "exploration": 0.3,
       "batchSize": 256,
       "selfPlayMode": "network",
       "opponentMix": "network",
@@ -434,69 +434,98 @@
       "framework": "tensorflow.js",
       "backend": "Metal GPU"
     },
-    "changes": "Added MCTS with 50 simulations per move. Training target changed from raw network output to MCTS visit distribution \u03c0(a). Dirichlet noise at root for exploration. Temperature schedule: 1.0 early, 0.0 late game. Batched leaf evaluation for M2 Ultra.",
-    "bugsFixed": [],
+    "changes": "Consolidated GridManager rules (isValidMove, executeMove, getCanonicalState). Fixed inverted overlap rule, enabled MCTS enclosure claims & bonus turns, fixed ReplayBuffer valueTargets, filtered MCTS samples to single AI perspective, added P1 vs P2 role win-rate tracking.",
+    "bugsFixed": [
+      "Inverted overlap check in GridManager & game.js fixed (same-diagonal completion)",
+      "MCTSNode.expand now executes claimEnclosedTriangles and extraTurns",
+      "getCanonicalState indexed by cell slot (rot < 2 vs rot >= 2) instead of diagonal group",
+      "ReplayBuffer now stores and samples true ±1 valueTargets",
+      "MCTS training loop filters strictly to AI perspective (step.player === aiPlayerNumber)"
+    ],
     "result": {
-      "startWinRate": 40,
-      "endWinRate": 30,
-      "improvement": -10,
-      "peakWinRate": 42,
-      "vsRandom": 30,
+      "vsRandom": 47,
+      "vsRandomAvg": 43,
+      "vsRandomP1": 48,
+      "vsRandomP2": 46,
       "vsHeuristic": 0,
-      "heuristicScoreAI": 4,
-      "heuristicScoreOpponent": 166,
-      "selfPlayDrawRate": 4,
-      "finalError": 1.000619,
-      "trainingTimeMin": 438.1,
+      "startWinRate": 42,
+      "endWinRate": 47,
+      "peakWinRate": 49,
+      "improvement": 5,
+      "finalError": 2.0746,
+      "trainingTimeMin": 309.1,
       "auditPassRate": null,
       "auditGames": 0,
+      "heuristicScoreAI": 2,
+      "heuristicScoreOpponent": 189,
+      "selfPlayDrawRate": 1,
       "cycleResults": [
         {
           "cycle": 1,
-          "vsRandom": 40
+          "vsRandom": 42,
+          "vsRandomP1": 42,
+          "vsRandomP2": 42
         },
         {
           "cycle": 2,
-          "vsRandom": 42
+          "vsRandom": 41,
+          "vsRandomP1": 40,
+          "vsRandomP2": 42
         },
         {
           "cycle": 3,
-          "vsRandom": 30
+          "vsRandom": 33,
+          "vsRandomP1": 26,
+          "vsRandomP2": 40
         },
         {
           "cycle": 4,
-          "vsRandom": 37
+          "vsRandom": 49,
+          "vsRandomP1": 38,
+          "vsRandomP2": 60
         },
         {
           "cycle": 5,
-          "vsRandom": 31
+          "vsRandom": 41,
+          "vsRandomP1": 54,
+          "vsRandomP2": 28.000000000000004
         },
         {
           "cycle": 6,
-          "vsRandom": 26
+          "vsRandom": 47,
+          "vsRandomP1": 52,
+          "vsRandomP2": 42
         },
         {
           "cycle": 7,
-          "vsRandom": 37
+          "vsRandom": 42,
+          "vsRandomP1": 36,
+          "vsRandomP2": 48
         },
         {
           "cycle": 8,
-          "vsRandom": 37
+          "vsRandom": 43,
+          "vsRandomP1": 48,
+          "vsRandomP2": 38
         },
         {
           "cycle": 9,
-          "vsRandom": 32
+          "vsRandom": 45,
+          "vsRandomP1": 52,
+          "vsRandomP2": 38
         },
         {
           "cycle": 10,
-          "vsRandom": 30
+          "vsRandom": 47,
+          "vsRandomP1": 48,
+          "vsRandomP2": 46
         }
       ]
     }
   },
   {
     "id": "exp20",
-    "name": "exp20 \u2014 brain.js Best (91% vs Random)",
+    "name": "exp20 — brain.js Best (91% vs Random)",
     "date": "2026-10-23",
     "logFile": "data/exp20_mixed.json",
     "dataFile": "exp20_mixed.json",
@@ -534,16 +563,16 @@
       "heuristicScoreOpponent": 173,
       "selfPlayDrawRate": 9,
       "finalError": 0.008,
-      "trainingTimeMin": 8.0
+      "trainingTimeMin": 8
     }
   },
   {
     "id": "exp22",
-    "name": "exp22 \u2014 brain.js Cluster Reward (84% vs Random)",
+    "name": "exp22 — brain.js Cluster Reward (84% vs Random)",
     "date": "2026-10-23",
     "logFile": "data/exp22_cluster_reward.json",
     "dataFile": "exp22_cluster_reward.json",
-    "summary": "brain.js cluster reward test: 84% vs Random, 0% vs Heuristic. TD(\u03bb) rewards. LR=0.01, iterations=200.",
+    "summary": "brain.js cluster reward test: 84% vs Random, 0% vs Heuristic. TD(λ) rewards. LR=0.01, iterations=200.",
     "parameters": {
       "cycles": 20,
       "games": 100,
@@ -580,12 +609,12 @@
       "heuristicScoreOpponent": 173,
       "selfPlayDrawRate": 8,
       "finalError": 0.009,
-      "trainingTimeMin": 8.0
+      "trainingTimeMin": 8
     }
   },
   {
     "id": "TF-B8-V2",
-    "name": "TF-B8-V2 \u2014 MCTS-50 + Conv + Sign Fix",
+    "name": "TF-B8-V2 — MCTS-50 + Conv + Sign Fix",
     "date": "2026-10-26",
     "logFile": "data/TF-B8-V2.json",
     "dataFile": "TF-B8-V2.json",
