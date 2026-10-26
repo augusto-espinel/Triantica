@@ -1,7 +1,7 @@
-node_modules/
+!trainedAI_network.json
+*.log
+.DS_Store
 experiments/data/*.json
 experiments/logs/
-*.log
+node_modules/
 trainedAI_network_v*.json
-!trainedAI_network.json
-.DS_Store

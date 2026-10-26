@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Triantica Training Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0d1117; --card: #161b22; --border: #30363d; --text: #c9d1d9;
+      --text-bright: #f0f6fc; --text-muted: #8b949e; --accent: #58a6ff;
+      --green: #3fb950; --red: #f85149; --yellow: #d29922; --purple: #bc8cff;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+    header { display: flex; justify-content: space-between; align-items: center; padding: 16px 0; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+    header h1 { font-size: 24px; color: var(--text-bright); }
+    header h1 span { color: var(--accent); }
+    header a { color: var(--accent); text-decoration: none; font-size: 14px; }
+    header a:hover { text-decoration: underline; }
+
+    .tabs { display: flex; gap: 4px; margin-bottom: 20px; background: var(--card); border-radius: 8px; padding: 4px; border: 1px solid var(--border); }
+    .tab { padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; color: var(--text-muted); border: none; background: none; }
+    .tab:hover { color: var(--text); }
+    .tab.active { background: var(--accent); color: var(--bg); font-weight: 600; }
+
+    .overview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+    .exp-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; cursor: pointer; position: relative; }
+    .exp-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+    .exp-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+    .exp-card h3 { font-size: 15px; color: var(--text-bright); margin-bottom: 4px; }
+    .exp-card .date { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
+    .exp-card .win-rate { font-size: 28px; font-weight: 700; }
+    .exp-card .win-rate.good { color: var(--green); }
+    .exp-card .win-rate.mid { color: var(--yellow); }
+    .exp-card .win-rate.bad { color: var(--red); }
+    .exp-card .delta { font-size: 13px; }
+    .exp-card .delta.positive { color: var(--green); }
+    .exp-card .delta.negative { color: var(--red); }
+    .heuristic-badge { position: absolute; top: 12px; right: 12px; font-size: 11px; padding: 2px 8px; border-radius: 4px; background: rgba(248,81,73,0.15); color: var(--red); }
+
+    .detail-panel { display: none; }
+    .detail-panel.active { display: block; }
+    .detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .detail-header h2 { font-size: 20px; color: var(--text-bright); }
+    .back-btn { background: var(--card); border: 1px solid var(--border); color: var(--text); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+
+    .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+    .detail-grid.full { grid-template-columns: 1fr; }
+    .section { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+    .section h3 { font-size: 14px; color: var(--accent); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+    .params-table { width: 100%; border-collapse: collapse; }
+    .params-table td { padding: 4px 8px; font-size: 13px; border-bottom: 1px solid var(--border); }
+    .params-table td:first-child { color: var(--text-muted); width: 45%; }
+    .params-table td:last-child { color: var(--text-bright); font-family: monospace; }
+
+    .chart-container { position: relative; height: 260px; margin: 8px 0; }
+
+    .compare-selector { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+    .exp-checkbox { display: flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--card); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 13px; }
+    .exp-checkbox:hover { border-color: var(--accent); }
+    .exp-checkbox input { accent-color: var(--accent); }
+
+    .score-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 16px; }
+    .score-stat { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; text-align: center; }
+    .score-stat .label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.3px; }
+    .score-stat .value { font-size: 20px; font-weight: 700; margin: 2px 0; }
+
+    .loading { text-align: center; padding: 40px; color: var(--text-muted); }
+    .error { text-align: center; padding: 40px; color: var(--red); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🔺 <span>Triantica</span> Training Dashboard</h1>
+      <a href="../">← Back to Game</a>
+    </header>
+    <div id="content"><div class="loading">Loading experiments...</div></div>
+  </div>
+  <script>
+    const COLORS = ['#58a6ff','#3fb950','#d29922','#f85149','#bc8cff','#79c0ff','#56d364','#e3b341','#ff7b72','#d2a8ff'];
+
+    let experiments = [];
+    let expData = {};
+    let selectedExp = null;
+    let charts = {};
+
+    async function loadExperiments() {
+      try {
+        const resp = await fetch('experiments.json?_' + Date.now());
+        experiments = await resp.json();
+
+        const promises = experiments.map(async (exp) => {
+          if (exp.dataFile) {
+            try {
+              const r = await fetch('data/' + exp.dataFile + '?_' + Date.now());
+              expData[exp.id] = await r.json();
+            } catch(e) { console.warn('Failed to load', exp.id, e); }
+          }
+        });
+        await Promise.all(promises);
+        renderOverview();
+      } catch(e) {
+        document.getElementById('content').innerHTML = '<div class="error">Failed to load experiments: ' + e.message + '</div>';
+      }
+    }
+
+    function winRateClass(rate) {
+      if (rate >= 60) return 'good';
+      if (rate >= 40) return 'mid';
+      return 'bad';
+    }
+
+    function renderOverview() {
+      const sorted = [...experiments].sort((a, b) => (b.result?.endWinRate || 0) - (a.result?.endWinRate || 0));
+      const cards = sorted.map(exp => {
+        const r = exp.result || {};
+        const rate = r.vsRandom || 0;
+        const delta = r.improvement || 0;
+        const deltaStr = delta >= 0 ? `+${delta}` : `${delta}`;
+        return `<div class="exp-card" onclick="showDetail('${exp.id}')">
+          ${r.vsHeuristic === 0 ? '<span class="heuristic-badge">0% vs Heuristic</span>' : ''}
+          <h3>${exp.name}</h3>
+          <div class="date">${exp.date}</div>
+          <div class="win-rate ${winRateClass(rate)}">${rate}%</div>
+          <div class="delta ${delta >= 0 ? 'positive' : 'negative'}">${deltaStr}% vs start</div>
+        </div>`;
+      }).join('');
+
+      document.getElementById('content').innerHTML = `
+        <div class="tabs">
+          <button class="tab active" onclick="renderOverview()">Overview</button>
+          <button class="tab" onclick="renderCompare()">Compare</button>
+        </div>
+        <div class="overview-grid">${cards}</div>`;
+    }
+
+    function renderCompare() {
+      const checkboxes = experiments.map((exp, i) => {
+        const r = exp.result || {};
+        return `<label class="exp-checkbox">
+          <input type="checkbox" value="${exp.id}" onchange="updateComparison()" ${i < 3 ? 'checked' : ''}>
+          ${exp.name} (${r.vsRandom || 0}%)
+        </label>`;
+      }).join('');
+
+      document.getElementById('content').innerHTML = `
+        <div class="tabs">
+          <button class="tab" onclick="renderOverview()">Overview</button>
+          <button class="tab active" onclick="renderCompare()">Compare</button>
+        </div>
+        <div class="compare-selector">${checkboxes}</div>
+        <div class="score-stats" id="compStats"></div>
+        <div class="section">
+          <h3>Win Rate Over Training</h3>
+          <div class="chart-container" style="height:340px"><canvas id="compChart"></canvas></div>
+        </div>`;
+
+      updateComparison();
+    }
+
+    function updateComparison() {
+      const selected = [...document.querySelectorAll('.exp-checkbox input:checked')].map(cb => cb.value);
+      const stats = document.getElementById('compStats');
+      if (stats) {
+        stats.innerHTML = selected.map(id => {
+          const exp = experiments.find(e => e.id === id);
+          const r = exp?.result || {};
+          return `<div class="score-stat">
+            <div class="label">${exp?.id || id}</div>
+            <div class="value" style="color:var(--accent)">${r.vsRandom || 0}%</div>
+            <div style="font-size:11px;color:var(--text-muted)">vs Random</div>
+          </div>`;
+        }).join('');
+      }
+
+      // Destroy old chart
+      if (charts.comp) charts.comp.destroy();
+
+      const ctx = document.getElementById('compChart');
+      if (!ctx) return;
+
+      const datasets = selected.map((id, i) => {
+        const data = expData[id];
+        const cycles = data?.cycles || [];
+        const cycleResults = data?.result?.cycleResults || [];
+        const points = cycleResults.map(c => c.vsRandom);
+        // If no cycleResults, try to extract from cycles array
+        const fallback = points.length ? points : cycles.map((_, ci) => {
+          const evals = cycles[ci]?.evaluation || {};
+          return evals.vsRandomWinRate || null;
+        }).filter(v => v !== null);
+
+        return {
+          label: id,
+          data: fallback,
+          borderColor: COLORS[i % COLORS.length],
+          backgroundColor: COLORS[i % COLORS.length] + '20',
+          tension: 0.3,
+          pointRadius: 4,
+          fill: false
+        };
+      });
+
+      const maxLen = Math.max(...datasets.map(d => d.data.length), 1);
+      charts.comp = new Chart(ctx, {
+        type: 'line',
+        data: { labels: Array.from({length: maxLen}, (_, i) => `Cycle ${i+1}`), datasets },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { labels: { color: '#c9d1d9' } } },
+          scales: {
+            x: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } },
+            y: { min: 0, max: 100, ticks: { color: '#8b949e', callback: v => v+'%' }, grid: { color: '#21262d' } }
+          }
+        }
+      });
+    }
+
+    function showDetail(id) {
+      const exp = experiments.find(e => e.id === id);
+      const data = expData[id];
+      if (!exp) return;
+
+      const r = exp.result || {};
+      const params = exp.parameters || {};
+      const cycles = data?.cycles || [];
+      const cycleResults = r.cycleResults || [];
+
+      const paramsHtml = Object.entries(params).map(([k, v]) =>
+        `<tr><td>${k}</td><td>${v === null ? '—' : v}</td></tr>`
+      ).join('');
+
+      const bugsHtml = (exp.bugsFixed || []).map(b => `<li>${b}</li>`).join('');
+
+      // Win rate chart
+      const winRates = cycleResults.map(c => c.vsRandom);
+      const heuristicRates = cycleResults.map(c => c.vsHeuristic || 0);
+
+      const detailHtml = `
+        <div class="detail-header">
+          <h2>${exp.name}</h2>
+          <button class="back-btn" onclick="renderOverview()">← Back</button>
+        </div>
+
+        <div class="score-stats">
+          <div class="score-stat"><div class="label">vs Random</div><div class="value" style="color:var(--${winRateClass(r.vsRandom||0) === 'good' ? 'green' : winRateClass(r.vsRandom||0) === 'mid' ? 'yellow' : 'red'})">${r.vsRandom || 0}%</div></div>
+          <div class="score-stat"><div class="label">vs Heuristic</div><div class="value" style="color:var(--${(r.vsHeuristic||0) > 0 ? 'green' : 'red'})">${r.vsHeuristic || 0}%</div></div>
+          <div class="score-stat"><div class="label">Peak vs Random</div><div class="value" style="color:var(--accent)">${r.peakWinRate || 0}%</div></div>
+          <div class="score-stat"><div class="label">Training Time</div><div class="value" style="color:var(--text-bright)">${r.trainingTimeMin ? r.trainingTimeMin.toFixed(1) + ' min' : '—'}</div></div>
+        </div>
+
+        <div class="detail-grid">
+          <div class="section">
+            <h3>Win Rate by Cycle</h3>
+            <div class="chart-container"><canvas id="detailChart"></canvas></div>
+          </div>
+          <div class="section">
+            <h3>Parameters</h3>
+            <table class="params-table">${paramsHtml}</table>
+          </div>
+        </div>
+
+        ${bugsHtml ? `<div class="section" style="margin-bottom:20px"><h3>Bugs Fixed</h3><ul style="list-style:none;font-size:13px">${bugsHtml}</ul></div>` : ''}
+
+        <div class="section full">
+          <h3>Summary</h3>
+          <p style="font-size:14px;line-height:1.6">${exp.summary || 'No summary available.'}</p>
+        </div>`;
+
+      document.getElementById('content').innerHTML = `<div class="detail-panel active">${detailHtml}</div>`;
+
+      // Render chart
+      const ctx = document.getElementById('detailChart');
+      if (ctx && winRates.length) {
+        if (charts.detail) charts.detail.destroy();
+        charts.detail = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: winRates.map((_, i) => `Cycle ${i+1}`),
+            datasets: [
+              {
+                label: 'vs Random',
+                data: winRates,
+                borderColor: '#58a6ff',
+                backgroundColor: '#58a6ff20',
+                tension: 0.3, pointRadius: 5, fill: true
+              },
+              {
+                label: 'vs Heuristic',
+                data: heuristicRates,
+                borderColor: '#f85149',
+                backgroundColor: '#f8514920',
+                tension: 0.3, pointRadius: 5, fill: true
+              }
+            ]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { labels: { color: '#c9d1d9' } } },
+            scales: {
+              x: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } },
+              y: { min: 0, max: 100, ticks: { color: '#8b949e', callback: v => v+'%' }, grid: { color: '#21262d' } }
+            }
+          }
+        });
+      }
+    }
+
+    loadExperiments();
+  </script>
+</body>
+</html>
