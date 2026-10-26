@@ -399,7 +399,7 @@ class TFConvNetwork {
     
     // Compile with separate losses for each head
     this.model.compile({
-      optimizer: tf.train.momentum(0.01, 0.9),
+      optimizer: tf.train.adam(0.001),
       loss: ['meanSquaredError', 'meanSquaredError'],
       lossWeights: [1.0, 1.0] // Equal weights for policy and value (AlphaGo Zero style)
     });
@@ -471,6 +471,7 @@ class TFConvNetwork {
 
   /**
    * Train on a batch with gradient isolation (only update chosen move in policy)
+   * or full distribution training when MCTS visit distributions are provided.
    * Also trains value head toward the game outcome.
    * 
    * @param {number[][]} inputs - Canonical state vectors (1800 each)
@@ -480,9 +481,16 @@ class TFConvNetwork {
    * @param {number} iterations - Epochs
    * @param {number} learningRate - LR
    * @param {number} batchSize - Mini-batch size
+   * @param {boolean} isolateChosenOnly - If true, mask unchosen moves; if false (MCTS), train full visit distribution
    */
-  async trainBatchWithIsolation(inputs, policyTargets, chosenIndices, valueTargets, iterations = 10, learningRate = 0.02, batchSize = 256) {
-    const optimizer = tf.train.momentum(learningRate, 0.9);
+  async trainBatchWithIsolation(inputs, policyTargets, chosenIndices, valueTargets, iterations = 10, learningRate = 0.001, batchSize = 256, isolateChosenOnly = true) {
+    // Use Adam optimizer (cap legacy high momentum LR >= 0.01 down to 0.001 for Adam stability)
+    const adamLr = learningRate >= 0.01 ? 0.001 : learningRate;
+    if (!this._adamOptimizer || this._adamLr !== adamLr) {
+      this._adamOptimizer = tf.train.adam(adamLr);
+      this._adamLr = adamLr;
+    }
+    const optimizer = this._adamOptimizer;
     const start = Date.now();
     const lossHistory = [];
     const actualBatchSize = Math.min(batchSize, inputs.length);
@@ -514,22 +522,44 @@ class TFConvNetwork {
           const batchXs = tf.tensor4d(batchData, [batchIndices.length, this.rows, this.cols, this.channels]);
           
           const [policyPred, valuePred] = this.model.predict(batchXs);
-          const policyData = policyPred.dataSync();
-          
-          // Build isolated policy targets: copy predictions, override chosen moves only
           const outputSize = this.policySize;
-          const policyTargetData = new Float32Array(batchIndices.length * outputSize);
-          for (let s = 0; s < batchIndices.length; s++) {
-            const sampleIdx = batchIndices[s];
-            // Copy predictions (zero gradient for unchosen moves)
-            for (let o = 0; o < outputSize; o++) {
-              policyTargetData[s * outputSize + o] = policyData[s * outputSize + o];
-            }
-            // Override chosen move with target
-            policyTargetData[s * outputSize + chosenIndices[sampleIdx]] = policyTargets[sampleIdx][chosenIndices[sampleIdx]];
-          }
           
-          const policyTargetTensor = tf.tensor2d(policyTargetData, [batchIndices.length, outputSize]);
+          let policyLoss;
+          let policyTargetTensor;
+          
+          if (isolateChosenOnly) {
+            const policyData = policyPred.dataSync();
+            // Build isolated policy targets: copy predictions, override chosen moves only
+            const policyTargetData = new Float32Array(batchIndices.length * outputSize);
+            for (let s = 0; s < batchIndices.length; s++) {
+              const sampleIdx = batchIndices[s];
+              // Copy predictions (zero gradient for unchosen moves)
+              for (let o = 0; o < outputSize; o++) {
+                policyTargetData[s * outputSize + o] = policyData[s * outputSize + o];
+              }
+              // Override chosen move with target
+              policyTargetData[s * outputSize + chosenIndices[sampleIdx]] = policyTargets[sampleIdx][chosenIndices[sampleIdx]];
+            }
+            policyTargetTensor = tf.tensor2d(policyTargetData, [batchIndices.length, outputSize]);
+            // Sum over the 400 action dimensions so the single active move gradient is not diluted 400x
+            policyLoss = policyPred.sub(policyTargetTensor).square().sum(-1).mean();
+          } else {
+            // MCTS full visit distribution: train via categorical cross-entropy over logSoftmax of sigmoid logits
+            const policyTargetData = new Float32Array(batchIndices.length * outputSize);
+            for (let s = 0; s < batchIndices.length; s++) {
+              const sampleIdx = batchIndices[s];
+              const targetVec = policyTargets[sampleIdx];
+              for (let o = 0; o < outputSize; o++) {
+                policyTargetData[s * outputSize + o] = targetVec[o];
+              }
+            }
+            policyTargetTensor = tf.tensor2d(policyTargetData, [batchIndices.length, outputSize]);
+            const eps = 1e-7;
+            const pClip = policyPred.clipByValue(eps, 1 - eps);
+            const logits = pClip.div(tf.scalar(1).sub(pClip)).log();
+            const logProbs = tf.logSoftmax(logits, -1);
+            policyLoss = policyTargetTensor.mul(logProbs).neg().sum(-1).mean();
+          }
           
           // Value targets
           const valueTargetTensor = tf.tensor2d(
@@ -537,8 +567,6 @@ class TFConvNetwork {
             [batchIndices.length, 1]
           );
           
-          // Compute losses
-          const policyLoss = policyPred.sub(policyTargetTensor).square().mean();
           const valueLoss = valuePred.sub(valueTargetTensor).square().mean();
           
           const totalLoss = policyLoss.add(valueLoss); // Equal weight for policy and value (AlphaGo Zero style)
@@ -1338,7 +1366,22 @@ async function main() {
         
         // AI alternates which player it plays as
         const aiPlayerNumber = (g % 2 === 0) ? 1 : 2;
-        const opponentType = 'network'; // MCTS training is self-play only
+        let opponentType = 'network';
+        if (opponentMix === 'random') {
+          opponentType = 'random';
+        } else if (opponentMix === 'heuristic') {
+          opponentType = 'heuristic';
+        } else if (opponentMix === 'mixed') {
+          const total = networkRatio + randomRatio + heuristicRatio;
+          const r = Math.random() * total;
+          if (r < networkRatio) {
+            opponentType = 'network';
+          } else if (r < networkRatio + randomRatio) {
+            opponentType = 'random';
+          } else {
+            opponentType = 'heuristic';
+          }
+        }
         
         // Initialize tracking for this opponent type (Fix for observation #5)
         opponentTypeCounts[opponentType] = (opponentTypeCounts[opponentType] || 0) + 1;
@@ -1363,10 +1406,19 @@ async function main() {
             move = result.move;
             mctsPolicy = result.policy;
           } else {
-            // Opponent (self-play: also uses MCTS but from their perspective)
-            const result = await getMCTSMove(network, grid, mctsSims, curP, mctsBatchSize);
-            move = result.move;
-            mctsPolicy = result.policy;
+            // Opponent's turn
+            if (opponentType === 'network') {
+              const result = await getMCTSMove(network, grid, mctsSims, curP, mctsBatchSize);
+              move = result.move;
+              mctsPolicy = result.policy;
+            } else if (opponentType === 'heuristic') {
+              const heuristicOpp = new HeuristicPlayer(curP, { explorationFactor: 0 });
+              move = heuristicOpp.getMove(grid);
+              mctsPolicy = null;
+            } else {
+              move = getRandomMove(grid);
+              mctsPolicy = null;
+            }
           }
           
           if (!move) break;
@@ -1408,27 +1460,27 @@ async function main() {
         else draws++;
         
         // Track wins by opponent type (Fix for observation #5)
-        winsByOpponent['network'][winner === 0 ? 'draws' : winner]++;
+        winsByOpponent[opponentType][winner === 0 ? 'draws' : winner]++;
         if (aiPlayerNumber === 1) {
-          winsByOpponent['network'].aiAsP1Games = (winsByOpponent['network'].aiAsP1Games || 0) + 1;
-          if (winner === 1) { winsByOpponent['network'].aiWins = (winsByOpponent['network'].aiWins || 0) + 1; winsByOpponent['network'].aiAsP1Wins = (winsByOpponent['network'].aiAsP1Wins || 0) + 1; }
-          else if (winner === 2) { winsByOpponent['network'].aiLosses = (winsByOpponent['network'].aiLosses || 0) + 1; }
-          else { winsByOpponent['network'].aiDraws = (winsByOpponent['network'].aiDraws || 0) + 1; }
+          winsByOpponent[opponentType].aiAsP1Games = (winsByOpponent[opponentType].aiAsP1Games || 0) + 1;
+          if (winner === 1) { winsByOpponent[opponentType].aiWins = (winsByOpponent[opponentType].aiWins || 0) + 1; winsByOpponent[opponentType].aiAsP1Wins = (winsByOpponent[opponentType].aiAsP1Wins || 0) + 1; }
+          else if (winner === 2) { winsByOpponent[opponentType].aiLosses = (winsByOpponent[opponentType].aiLosses || 0) + 1; }
+          else { winsByOpponent[opponentType].aiDraws = (winsByOpponent[opponentType].aiDraws || 0) + 1; }
         } else {
-          winsByOpponent['network'].aiAsP2Games = (winsByOpponent['network'].aiAsP2Games || 0) + 1;
-          if (winner === 2) { winsByOpponent['network'].aiWins = (winsByOpponent['network'].aiWins || 0) + 1; winsByOpponent['network'].aiAsP2Wins = (winsByOpponent['network'].aiAsP2Wins || 0) + 1; }
-          else if (winner === 1) { winsByOpponent['network'].aiLosses = (winsByOpponent['network'].aiLosses || 0) + 1; }
-          else { winsByOpponent['network'].aiDraws = (winsByOpponent['network'].aiDraws || 0) + 1; }
+          winsByOpponent[opponentType].aiAsP2Games = (winsByOpponent[opponentType].aiAsP2Games || 0) + 1;
+          if (winner === 2) { winsByOpponent[opponentType].aiWins = (winsByOpponent[opponentType].aiWins || 0) + 1; winsByOpponent[opponentType].aiAsP2Wins = (winsByOpponent[opponentType].aiAsP2Wins || 0) + 1; }
+          else if (winner === 1) { winsByOpponent[opponentType].aiLosses = (winsByOpponent[opponentType].aiLosses || 0) + 1; }
+          else { winsByOpponent[opponentType].aiDraws = (winsByOpponent[opponentType].aiDraws || 0) + 1; }
         }
-        scoresByOpponent['network'].p1.push(grid.getLargestContiguous(1));
-        scoresByOpponent['network'].p2.push(grid.getLargestContiguous(2));
+        scoresByOpponent[opponentType].p1.push(grid.getLargestContiguous(1));
+        scoresByOpponent[opponentType].p2.push(grid.getLargestContiguous(2));
         
         // Track scores from AI's perspective (Bug #4 fix)
         const aiFinalScore = grid.getLargestContiguous(aiPlayerNumber);
         const oppPlayerNumber = aiPlayerNumber === 1 ? 2 : 1;
         const oppFinalScore = grid.getLargestContiguous(oppPlayerNumber);
-        scoresByOpponent['network'].ai.push(aiFinalScore);
-        scoresByOpponent['network'].opponent.push(oppFinalScore);
+        scoresByOpponent[opponentType].ai.push(aiFinalScore);
+        scoresByOpponent[opponentType].opponent.push(oppFinalScore);
         
         // Track final board state for diversity (Bug #3 fix)
         finalBoards.push(grid.grid.flat().map(cell => ({
@@ -1440,7 +1492,7 @@ async function main() {
         for (const step of hist) {
           // Only train on AI's moves to avoid dual-perspective conflict
           // (Bug #1 fix: see docs/TF-B8-V2_POSTMORTEM.md for analysis)
-          if (step.player !== aiPlayerNumber) continue;
+          if (step.player !== aiPlayerNumber || !step.mctsPolicy) continue;
           
           // Value target from the perspective of the player who made the move
           // (matches state encoding which is from mover's perspective)
@@ -1483,10 +1535,11 @@ async function main() {
      */
     async function trainOnData(inputs, outputs, chosenIndices, valueTargets, iters) {
       if (useConv) {
+        const isolateChosenOnly = mctsSims === 0 ? useGradientIsolation : false;
         return await network.trainBatchWithIsolation(
           inputs, outputs, chosenIndices,
           valueTargets || new Array(inputs.length).fill(0),
-          iters, learningRate, batchSize
+          iters, learningRate, batchSize, isolateChosenOnly
         );
       } else if (useGradientIsolation) {
         return await network.trainBatchWithIsolation(inputs, outputs, chosenIndices, iters, learningRate, batchSize);
