@@ -397,6 +397,132 @@
     }
   },
   {
+    "id": "TF-B10",
+    "name": "TF-B10 — MCTS-50 + Mixed Heuristic Curriculum (87% Peak & Final)",
+    "date": "2026-10-27",
+    "dataFile": "TF-B10.json",
+    "logFile": "data/TF-B10.json",
+    "parameters": {
+      "cycles": 10,
+      "games": 100,
+      "evalGames": 100,
+      "iterations": 10,
+      "learningRate": 0.001,
+      "optimizer": "adam",
+      "exploration": 0.3,
+      "selfPlayMode": "mixed",
+      "opponentMix": "mixed",
+      "networkRatio": 0.5,
+      "heuristicRatio": 0.5,
+      "randomRatio": 0,
+      "trainingP2": "50% network (MCTS-50), 50% heuristic",
+      "batchSize": 256,
+      "gradientIsolation": true,
+      "roleAlternation": true,
+      "enableClusterReward": false,
+      "replayBuffer": true,
+      "replayBufferSize": 500000,
+      "replayBatchSize": 256,
+      "replayRatio": 2,
+      "architecture": "conv",
+      "mcts": true,
+      "mctsSimulations": 50,
+      "mctsBatchSize": 8,
+      "mctsExploration": 1.5,
+      "mctsDirichletAlpha": 0.03,
+      "mctsDirichletEpsilon": 0.25,
+      "audit": false,
+      "startFrom": "docs/data/TF-B9_network.json",
+      "framework": "tensorflow.js",
+      "backend": "Metal GPU"
+    },
+    "result": {
+      "vsRandom": 87,
+      "vsRandomAvg": 81.8,
+      "vsRandomP1": 90,
+      "vsRandomP2": 84,
+      "vsHeuristic": 0,
+      "peakWinRate": 87,
+      "startWinRate": 78,
+      "endWinRate": 87,
+      "improvement": 9,
+      "finalError": 2.249183,
+      "trainingTimeMin": 161.3,
+      "selfPlayDrawRate": 1,
+      "auditPassRate": null,
+      "auditGames": 0,
+      "heuristicScoreAI": 4,
+      "heuristicScoreOpponent": 177,
+      "replayBufferFinalSize": 44712,
+      "replayBufferUtilization": 0.089,
+      "cycleResults": [
+        {
+          "cycle": 1,
+          "vsRandom": 78,
+          "vsRandomP1": 76,
+          "vsRandomP2": 80
+        },
+        {
+          "cycle": 2,
+          "vsRandom": 76,
+          "vsRandomP1": 74,
+          "vsRandomP2": 78
+        },
+        {
+          "cycle": 3,
+          "vsRandom": 79,
+          "vsRandomP1": 80,
+          "vsRandomP2": 78
+        },
+        {
+          "cycle": 4,
+          "vsRandom": 84,
+          "vsRandomP1": 80,
+          "vsRandomP2": 88
+        },
+        {
+          "cycle": 5,
+          "vsRandom": 81,
+          "vsRandomP1": 80,
+          "vsRandomP2": 82
+        },
+        {
+          "cycle": 6,
+          "vsRandom": 87,
+          "vsRandomP1": 92,
+          "vsRandomP2": 82
+        },
+        {
+          "cycle": 7,
+          "vsRandom": 86,
+          "vsRandomP1": 86,
+          "vsRandomP2": 86
+        },
+        {
+          "cycle": 8,
+          "vsRandom": 82,
+          "vsRandomP1": 86,
+          "vsRandomP2": 78
+        },
+        {
+          "cycle": 9,
+          "vsRandom": 78,
+          "vsRandomP1": 86,
+          "vsRandomP2": 70
+        },
+        {
+          "cycle": 10,
+          "vsRandom": 87,
+          "vsRandomP1": 90,
+          "vsRandomP2": 84
+        }
+      ]
+    },
+    "summary": "Warm-started from TF-B9 with 50% MCTS-50 self-play + 50% HeuristicPlayer opponent mix. Achieved new TF.js records: 87.0% peak & final vs Random (90.0% as P1, 84.0% as P2 in C10; 92.0% P1 peak in C6; 88.0% P2 peak in C4), 81.8% 10-cycle average (83.0% P1 / 80.6% P2), and mean cluster size up to 79.2 triangles. 0.0% vs Heuristic (peak AI cluster 20 in C3).",
+    "changes": "Warm-started from TF-B9_network.json and introduced 50% HeuristicPlayer into the MCTS-50 training opponent mix to expose the network to aggressive early enclosure chains.",
+    "bugsFixed": []
+  },
+  {
     "id": "TF-B9",
     "name": "TF-B9 — MCTS-50 + Conv + Cross-Entropy Sum & Adam (84% Peak)",
     "date": "2026-10-26",
@@ -461,16 +587,66 @@
       "replayBufferFinalSize": 70846,
       "replayBufferUtilization": 0.142,
       "cycleResults": [
-        { "cycle": 1, "vsRandom": 52, "vsRandomP1": 58, "vsRandomP2": 46 },
-        { "cycle": 2, "vsRandom": 55, "vsRandomP1": 58, "vsRandomP2": 52 },
-        { "cycle": 3, "vsRandom": 63, "vsRandomP1": 58, "vsRandomP2": 68 },
-        { "cycle": 4, "vsRandom": 64, "vsRandomP1": 60, "vsRandomP2": 68 },
-        { "cycle": 5, "vsRandom": 74, "vsRandomP1": 80, "vsRandomP2": 68 },
-        { "cycle": 6, "vsRandom": 72, "vsRandomP1": 80, "vsRandomP2": 64 },
-        { "cycle": 7, "vsRandom": 84, "vsRandomP1": 88, "vsRandomP2": 80 },
-        { "cycle": 8, "vsRandom": 79, "vsRandomP1": 84, "vsRandomP2": 74 },
-        { "cycle": 9, "vsRandom": 77, "vsRandomP1": 82, "vsRandomP2": 72 },
-        { "cycle": 10, "vsRandom": 79, "vsRandomP1": 84, "vsRandomP2": 74 }
+        {
+          "cycle": 1,
+          "vsRandom": 52,
+          "vsRandomP1": 58,
+          "vsRandomP2": 46
+        },
+        {
+          "cycle": 2,
+          "vsRandom": 55,
+          "vsRandomP1": 58,
+          "vsRandomP2": 52
+        },
+        {
+          "cycle": 3,
+          "vsRandom": 63,
+          "vsRandomP1": 58,
+          "vsRandomP2": 68
+        },
+        {
+          "cycle": 4,
+          "vsRandom": 64,
+          "vsRandomP1": 60,
+          "vsRandomP2": 68
+        },
+        {
+          "cycle": 5,
+          "vsRandom": 74,
+          "vsRandomP1": 80,
+          "vsRandomP2": 68
+        },
+        {
+          "cycle": 6,
+          "vsRandom": 72,
+          "vsRandomP1": 80,
+          "vsRandomP2": 64
+        },
+        {
+          "cycle": 7,
+          "vsRandom": 84,
+          "vsRandomP1": 88,
+          "vsRandomP2": 80
+        },
+        {
+          "cycle": 8,
+          "vsRandom": 79,
+          "vsRandomP1": 84,
+          "vsRandomP2": 74
+        },
+        {
+          "cycle": 9,
+          "vsRandom": 77,
+          "vsRandomP1": 82,
+          "vsRandomP2": 72
+        },
+        {
+          "cycle": 10,
+          "vsRandom": 79,
+          "vsRandomP1": 84,
+          "vsRandomP2": 74
+        }
       ]
     }
   },

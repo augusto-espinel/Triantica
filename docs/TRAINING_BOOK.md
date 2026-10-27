@@ -1884,6 +1884,51 @@ In naive self-play without an experience replay buffer, moving from Valley 1 $\t
 - Because `TF-B9` trains every cycle on a **1:2 mixture** of **new self-play states (`~7,050` samples from Valley $k+1$)** and **historical Replay Buffer states (`~14,336` samples uniformly sampled across Valleys $1 \dots k$)**, the optimizer is forbidden from abandoning earlier valleys.
 - When the combined loss converges down to a new global low (`2.357` in Cycle 8), it proves the ConvNet has found a **shared parameterization $\theta$ whose basin simultaneously satisfies the geometry of all previously discovered strategies**.
 
+#### TF-B10: Breaking the Heuristic Wall via Mixed-Opponent MCTS Training (`50% Network / 50% Heuristic`)
+
+**Diagnostic Root Cause — Why Pure Self-Play (`TF-B9`) Loses to `HeuristicPlayer`:**
+A move-by-move trace between `TF-B9_network.json` (P1) and `HeuristicPlayer` (P2) revealed the exact tactical mechanism behind the Heuristic Wall:
+- Because `executeMove` grants extra turns via `Math.floor((1 + claimed) / 2)`, **even a 1-triangle enclosure (`claimed = 1`) awards a full extra turn**.
+- `HeuristicPlayer` explicitly evaluates 1-step enclosure claims (`+0.3 × claimed`), contiguous cluster growth (`+0.1 × largestCluster`), and relative lead (`+0.2 × (newLead - currentLead)`). Starting as early as **Move 3**, `HeuristicPlayer` chains 6–8 consecutive `claimed = 1` moves in a single turn sequence (`P2_clust` snowballing `1 → 3 → 5 → 19 → 55` by Move 38 while `P1_clust` remains at `1`), getting `96` moves to the AI's `14` moves across a 110-move game.
+- In pure self-play (`TF-B9`), neither side played this hyper-aggressive early 1-triangle enclosure chain, so the network's policy and value heads never encountered (or learned to block/contest) early extra-turn snowballs.
+
+**Configuration (`TF-B10`):**
+```bash
+nohup node src/server/train_tfjs.cjs \
+  --cycles 10 --games 100 --eval-games 100 \
+  --mcts-sims 50 --architecture conv --learning-rate 0.001 \
+  --opponent-mix mixed --network-ratio 0.5 --heuristic-ratio 0.5 --random-ratio 0.0 \
+  --start-from docs/data/TF-B9_network.json \
+  --output docs/data/TF-B10.json > docs/data/TF-B10.log 2>&1 < /dev/null &
+```
+- **Warm-Start:** Initialized from `docs/data/TF-B9_network.json` (`79.0%` final / `84.0%` peak vs Random).
+- **Opponent Curriculum:** `50%` MCTS-50 Self-Play + `50%` `HeuristicPlayer` (`explorationFactor: 0.1`), exposing the AI to aggressive early enclosure chains while maintaining self-play stability via the 500K Replay Buffer.
+- **Status:** ✅ **Completed** (`161.3` minutes, 10/10 cycles, **87.0% Peak & Final vs Random**, **81.8% 10-Cycle Mean**, published to `docs/data/TF-B10.json` and `trainedAI_network.json`).
+
+**Complete 10-Cycle Trajectory (`TF-B10`):**
+
+| Cycle | vs Random (Overall) | AI as P1 | AI as P2 | Mean Cluster vs Random | vs Heuristic | AI Cluster vs Heuristic (Mean / Max) | Loss (`Initial → Final`) | Self-Play Wins (P1/P2/D) |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **1** | **78.0%** (78W/22L/0D) | 76.0% | 80.0% | 70.9 | 0.0% | 9.5 / 10 | `3.158 → 2.185` | 49 / 51 / 0 |
+| **2** | **76.0%** (76W/21L/3D) | 74.0% | 78.0% | 66.5 | 0.0% | 6.0 / 7 | `3.015 → 2.196` | 45 / 55 / 0 |
+| **3** | **79.0%** (79W/21L/0D) | 80.0% | 78.0% | 72.8 | 0.0% | **13.0 / 20** | `3.190 → 2.211` | 49 / 51 / 0 |
+| **4** | **84.0%** (84W/16L/0D) | 80.0% | **88.0%** | 74.9 | 0.0% | 9.5 / 11 | `2.929 → 2.212` | 56 / 44 / 0 |
+| **5** | **81.0%** (81W/18L/1D) | 80.0% | 82.0% | 69.5 | 0.0% | 5.5 / 6 | `3.130 → 2.240` | 47 / 52 / 1 |
+| **6** | **87.0% 🚀** (87W/12L/1D) | **92.0% 🚀** | 82.0% | 74.3 | 0.0% | 6.5 / 9 | `3.067 → 2.243` | 48 / 51 / 1 |
+| **7** | **86.0%** (86W/14L/0D) | 86.0% | 86.0% | 73.7 | 0.0% | 7.0 / 12 | `2.865 → 2.246` | 52 / 47 / 1 |
+| **8** | **82.0%** (82W/18L/0D) | 86.0% | 78.0% | **79.2** | 0.0% | 5.0 / 8 | `3.222 → 2.252` | 46 / 54 / 0 |
+| **9** | **78.0%** (78W/22L/0D) | 86.0% | 70.0% | 71.2 | 0.0% | 4.5 / 6 | `3.050 → 2.262` | 56 / 44 / 0 |
+| **10** | **87.0% ✅** (87W/11L/2D) | **90.0%** | **84.0%** | 76.5 | 0.0% | 4.0 / 7 | `2.938 → 2.249` | 51 / 48 / 1 |
+
+**Key Takeaways from `TF-B10`:**
+1. **New All-Time TF.js Record vs Random (`87.0%` Peak & Final, `81.8%` 10-Cycle Mean):**
+   - Overall 10-cycle average climbed from `69.9%` (`TF-B9`) to **`81.8%`** (`83.0%` as P1, `80.6%` as P2), peaking at **`92.0%` as P1** (Cycle 6) and **`88.0%` as P2** (Cycle 4).
+   - Mean contiguous cluster size against Random reached **`79.2` triangles** in Cycle 8 (`76.5` in Cycle 10).
+   - Standalone 1-ply browser network verification (`verify_game_network.cjs` without MCTS) improved from `68%` (`TF-B9`) to **`76%` vs Random (`76W / 24L / 0D`)**.
+2. **Why `0.0%` vs `HeuristicPlayer` Persists Even With Mixed Opponent Training:**
+   - During the 50 Heuristic games per cycle, `HeuristicPlayer` chains 1-triangle enclosures (`Math.floor((1 + claimed) / 2) = 1` extra turn per single claim) from Move 3 onward, taking ~85% of the moves (`~14–16` AI turns per game vs `~70` in self-play).
+   - Because `MCTSNode` in `MCTS.cjs` evaluates leaf states purely via the neural Value Head (which predicts final game outcome ~100 moves later) and **does not normalize policy priors across valid moves (`sum(validPriors) ≈ 23.4`) or include an immediate tactical value term for enclosures/extra turns**, 50 MCTS simulations across ~35 valid moves visit each child only 1–2 times and fail to spot 2-ply enclosure setups/blocks.
+
 ---
 
 ### Phase 3: Value Head (Actor-Critic) — MERGED INTO PHASE 2

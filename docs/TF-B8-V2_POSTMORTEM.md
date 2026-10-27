@@ -285,10 +285,11 @@ Applying the policy cross-entropy sum (`.neg().sum(-1).mean()`), persistent `tf.
 | **Cycle 10** | **79.0% ✅** (`79W/21L/0D`) | **84.0%** | **74.0%** | 0.0% | `66.2 / 63 / 136` | `3.095 → 2.367` | `61 / 37 / 2` |
 
 ### Summary Comparison Across Phase 5 MCTS Runs
-| Metric | `TF-B8 (Original)` | `TF-B8-V2` | `TF-B8 (Clean Re-Run)` | **`TF-B9 (Cross-Entropy + Adam)`** |
-| :--- | :--- | :--- | :--- | :--- |
-| **Avg Win Rate vs Random** | `30.0%` | `35.4%` | `43.0%` | **`69.9%` (+26.9 pts)** |
-| **Peak Win Rate vs Random** | `30.0%` | `54.0%` | `49.0%` | **`84.0%` (+35.0 pts)** |
-| **Final (Cycle 10) vs Random** | `30.0%` | `38.0%` (C9: `15%`) | `47.0%` (`48% P1 / 46% P2`) | **`79.0%` (`84% P1 / 74% P2`)** |
-| **Mean Contiguous Cluster Size** | `~18` | `18.4 – 26.5` | `33.6 – 40.4` | **`66.2 – 66.5` ($3.1\times$ larger)** |
-| **Late-Cycle Collapse?** | Degraded | Yes (`15%` in C9) | None (`41%–49%`) | **None (`77%–84%` in C7–C10)** |
+| Metric | `TF-B8 (Original)` | `TF-B8-V2` | `TF-B8 (Clean Re-Run)` | `TF-B9 (Cross-Entropy + Adam)` | **`TF-B10 (Warm-Start + 50% Heuristic)`** |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Avg Win Rate vs Random** | `30.0%` | `35.4%` | `43.0%` | `69.9%` | **`81.8%` (+11.9 pts)** |
+| **Peak Win Rate vs Random** | `30.0%` | `54.0%` | `49.0%` | `84.0%` | **`87.0%` (`92% P1` in C6, `88% P2` in C4)** |
+| **Final (Cycle 10) vs Random** | `30.0%` | `38.0%` (C9: `15%`) | `47.0%` (`48% P1 / 46% P2`) | `79.0%` (`84% P1 / 74% P2`) | **`87.0%` (`90% P1 / 84% P2`)** |
+| **Mean Contiguous Cluster Size** | `~18` | `18.4 – 26.5` | `33.6 – 40.4` | `66.2 – 66.5` | **`70.9 – 79.2` ($3.7\\times$ larger)** |
+| **1-Ply Browser Network Eval** | — | — | — | `68.0%` | **`76.0%` (+8.0 pts)** |
+| **Late-Cycle Collapse?** | Degraded | Yes (`15%` in C9) | None (`41%–49%`) | None (`77%–84%` in C7–C10) | **None (`76%–87%` across all 10 cycles)** |
