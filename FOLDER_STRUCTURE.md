@@ -1,44 +1,43 @@
 # Triantica Folder Structure
 
-Last updated: 2026-10-23
+Last updated: 2026-10-27
 
-## Deployment (gh-pages branch)
+## Deployment (`main` branch root `/`)
 
-The `gh-pages` branch contains the deployed site:
+GitHub Pages serves directly from the `main` branch root (`/`):
 
 ```
-gh-pages/
+main/
 ├── index.html                    # Game (playable)
 ├── game.js                       # Game logic
-├── assets/                       # Vite-bundled JS
-├── models/network.json           # AI model
-├── trainedAI_network.json         # AI network weights
+├── trainedAI_network.json        # Deployed AI network weights
 ├── .nojekyll                     # Prevent Jekyll processing
 │
-└── docs/                         # Training Dashboard
+└── dashboard/                    # Training Dashboard (served at /dashboard/)
     ├── index.html                # Dashboard entry point
     ├── experiments.json          # Experiment metadata
-    └── data/                     # Training run data
-        └── training-*.json       # Individual training run files
+    └── data/                     # Training run data & checkpoints
+        └── TF-B*.json            # Individual training run files
 ```
 
 ### URLs
 - **Game:** `https://augusto-espinel.github.io/Triantica/`
-- **Dashboard:** `https://augusto-espinel.github.io/Triantica/docs/`
+- **Dashboard:** `https://augusto-espinel.github.io/Triantica/dashboard/`
 
-## Source Code (main branch)
+## Source Code (`main` branch)
 
 ```
 triantica/
-├── docs/                          # Dashboard source (deployed to gh-pages/docs/)
+├── dashboard/                     # Dashboard source (served at /dashboard/)
 │   ├── index.html
 │   ├── experiments.json
 │   └── data/
-├── experiments/                   # Training artifacts
-│   ├── logs/                      # Training logs
+├── docs/                          # Project documentation & experiment journals
+│   ├── TRAINING_BOOK.md
+│   └── QUIESCENCE_MCTS.md
+├── experiments/                   # Training scripts & artifacts
 │   └── backups/                   # Network checkpoints
 ├── dist/                          # Vite build output (game)
-├── data/                          # Training data (also in docs/data/)
 ├── public/models/                 # Network files
 ├── browser/                       # Browser-specific code
 ├── src/                           # Source code
@@ -52,31 +51,32 @@ triantica/
 ## Deployment Workflow
 
 ```bash
-# After changes on main, update gh-pages:
-git checkout gh-pages
-# Copy game from dist/ and dashboard from docs/
-git checkout main -- dist/
-# ... arrange files and commit
-git push origin gh-pages
+# Validate and clean dashboard/data/ against dashboard/experiments.json:
+./scripts/publish-dashboard.sh
+
+# Commit and push to main (GitHub Pages deploys automatically from main /):
+git add dashboard/
+git commit -m "Update dashboard data"
+git push origin main
 ```
 
 ## Data Flow
 
 ### Training Output
 ```
-train.js → docs/data/training-TIMESTAMP.json
-         → experiments/logs/training-TIMESTAMP.log
+train_tfjs.cjs → dashboard/data/TF-B12.json
+               → dashboard/data/TF-B12_network.json
 ```
 
 ### Key Files
 | File | Purpose | Edit |
 |------|---------|------|
-| `docs/index.html` | Dashboard HTML/JS | Yes |
-| `docs/experiments.json` | Experiment summaries | Yes (after training) |
-| `docs/data/*.json` | Training run data | No (auto-generated) |
-| `src/server/train.js` | Training pipeline | Yes |
+| `dashboard/index.html` | Dashboard HTML/JS | Yes |
+| `dashboard/experiments.json` | Experiment summaries | Yes (after training) |
+| `dashboard/data/*.json` | Training run data | No (auto-generated) |
+| `src/server/train_tfjs.cjs` | Training pipeline | Yes |
 | `docs/TRAINING_BOOK.md` | Experiment journal | Yes |
 
 ## Historical Context
 
-**2026-10-23:** Restructured for GitHub Pages with dual serving: game at root `/`, dashboard at `/docs/`. Uses `gh-pages` orphan branch for deployment (GitHub Pages API only supports `gh-pages`, `master`, or `master /docs` as sources).
+**2026-10-27:** Consolidated dashboard hosting exclusively under `/dashboard/` (`dashboard/` directory) while keeping `docs/` purely for documentation (`TRAINING_BOOK.md`, `QUIESCENCE_MCTS.md`, etc.). GitHub Pages deploys directly from `main` branch `/`.

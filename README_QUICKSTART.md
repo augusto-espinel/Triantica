@@ -25,7 +25,7 @@ node src/server/train_tfjs.cjs \
   --cycles 3 \
   --games 50 \
   --eval-games 50 \
-  --output data/quick_test.json
+  --output dashboard/data/quick_test.json
 ```
 
 ### Full Baseline Experiment (~35 minutes)
@@ -42,7 +42,7 @@ node src/server/train_tfjs.cjs \
   --self-play-mode network \
   --opponent-mix network \
   --audit true \
-  --output data/baseline.json
+  --output dashboard/data/baseline.json
 ```
 
 ### Mixed Opponent Training (recommended — best results)
@@ -61,7 +61,7 @@ node src/server/train_tfjs.cjs \
   --network-ratio 0.7 \
   --random-ratio 0.3 \
   --audit true \
-  --output data/mixed_baseline.json
+  --output dashboard/data/mixed_baseline.json
 ```
 
 ### Continue from Checkpoint
@@ -70,8 +70,8 @@ node src/server/train_tfjs.cjs \
 fnm use v20.20.2
 node src/server/train_tfjs.cjs \
   --cycles 10 \
-  --start-from data/exp20_mixed.json \
-  --output data/continued.json
+  --start-from dashboard/data/TF-B10_network.json \
+  --output dashboard/data/continued.json
 ```
 
 ### All CLI Parameters
@@ -92,7 +92,7 @@ node src/server/train_tfjs.cjs \
 | `--audit` | false | Enable game auditing |
 | `--audit-rate` | 0.05 | Fraction of games to audit |
 | `--start-from` | null | Path to checkpoint JSON to resume |
-| `--output` | data/training.json | Output path |
+| `--output` | dashboard/data/training.json | Output path |
 
 ## Why TensorFlow.js on Mac Studio M2 Ultra
 
@@ -116,16 +116,16 @@ The training pipeline uses **TensorFlow.js with Metal GPU acceleration**, which 
 ### Dashboard
 
 Training results are visualized on the dashboard:
-**https://augusto-espinel.github.io/Triantica/docs/**
+**https://augusto-espinel.github.io/Triantica/dashboard/**
 
 ### Local Analysis
 
 ```bash
 # List training data
-ls data/*.json
+ls dashboard/data/*.json
 
 # Quick summary with jq
-cat data/baseline.json | jq '.cycles[-1] | {cycle, winRate: .evaluation.aiWinRate, error: .training.finalError}'
+cat dashboard/data/TF-B12.json | jq '.cycles[-1] | {cycle, winRate: .evaluation.aiWinRate, error: .training.finalError}'
 ```
 
 ### Output Format
@@ -164,16 +164,13 @@ Each training run produces JSON with full per-cycle metrics:
 ## Deploying to Dashboard
 
 ```bash
-# Copy data to dashboard
-cp data/experiment.json docs/data/
+# Verify and clean dashboard data
+./scripts/publish-dashboard.sh
 
-# Push to gh-pages for dashboard update
-git checkout gh-pages
-git checkout main -- docs/data/experiment.json docs/index.html
-git add docs/
+# Push to main (GitHub Pages serves directly from main /)
+git add dashboard/
 git commit -m "Update dashboard data"
-git push origin gh-pages
-git checkout main
+git push origin main
 ```
 
 ## Playing the Game

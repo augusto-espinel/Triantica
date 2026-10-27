@@ -21,9 +21,9 @@ Batch size:      256
 Replay buffer:   500K samples, 2x replay ratio
 Encoding:        Canonical 10×10×18 (getStateCanonical)
 Bug fixes:       Sign flip corrected, fixed perspective encoding
-Command:         node src/server/train_tfjs.cjs --cycles 10 --games 100 --mcts-sims 50 --architecture conv --output docs/data/TF-B8-V2.json
+Command:         node src/server/train_tfjs.cjs --cycles 10 --games 100 --mcts-sims 50 --architecture conv --output dashboard/data/TF-B8-V2.json
 PID:             83332
-Log:             docs/data/TF-B8-V2.log
+Log:             dashboard/data/TF-B8-V2.log
 ```
 
 ### Final Results (All 10/10 Cycles)
@@ -205,7 +205,7 @@ To eliminate the risk of fixing a rule in one file and missing it in another, we
    - Update `train_tfjs.cjs` evaluation loops (`vsRandom` and `vsHeuristic`) to record separate win/loss/draw and win-rate metrics when AI plays as **P1 (first mover)** vs **P2 (second mover)**:
      - `p1WinRate`, `p2WinRate`, `p1Wins`, `p2Wins`, `p1Games`, `p2Games`
    - Also record `aiAsP1Wins` / `aiAsP2Wins` in self-play.
-   - Update `dashboard/index.html` (and `docs/index.html`) to display **AI Win Rate as P1 vs P2** on the charts and summary cards so we can immediately see if the network benefits from making the first move.
+   - Update `dashboard/index.html` to display **AI Win Rate as P1 vs P2** on the charts and summary cards so we can immediately see if the network benefits from making the first move.
 
 ---
 
@@ -225,7 +225,7 @@ All 5 critical bugs and architectural consolidations have been implemented and v
 
 ## 5. `TF-B8` Clean Re-Run Results & Post-Run Root Cause Analysis (2026-10-26)
 
-Rather than incrementing to `TF-B9` while `TF-B8` was invalid due to engine/MCTS bugs, we re-ran **`TF-B8`** (`docs/data/TF-B8.json`) across all 10 cycles (309.1 minutes total).
+Rather than incrementing to `TF-B9` while `TF-B8` was invalid due to engine/MCTS bugs, we re-ran **`TF-B8`** (`dashboard/data/TF-B8.json`) across all 10 cycles (309.1 minutes total).
 
 ### Cycle-by-Cycle Results (`TF-B8` Post-Fix Re-Run)
 | Cycle | vs Random (Overall) | AI as P1 (1st Move) | AI as P2 (2nd Move) | vs Heuristic | Eval AI Mean Cluster | Training Loss (Start → End) | Self-Play Wins (P1/P2/D) |

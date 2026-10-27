@@ -27,7 +27,7 @@ node src/server/train_tfjs.cjs \
   --opponent-mix network \
   --audit true \
   --audit-rate 0.05 \
-  --output docs/data/TF-B1_pure.json
+  --output dashboard/data/TF-B1_pure.json
 
 echo ""
 echo "=== TF-B2: Mixed Opponents (50/30/20) ==="
@@ -47,7 +47,7 @@ node src/server/train_tfjs.cjs \
   --heuristic-ratio 0.2 \
   --audit true \
   --audit-rate 0.05 \
-  --output docs/data/TF-B2_mixed.json
+  --output dashboard/data/TF-B2_mixed.json
 
 echo ""
 echo "=== TF-B3: Cluster Reward + Network/Random Mix (70/30) ==="
@@ -68,7 +68,7 @@ node src/server/train_tfjs.cjs \
   --enable-cluster-reward true \
   --audit true \
   --audit-rate 0.05 \
-  --output docs/data/TF-B3_cluster.json
+  --output dashboard/data/TF-B3_cluster.json
 
 echo ""
 echo "=========================================="

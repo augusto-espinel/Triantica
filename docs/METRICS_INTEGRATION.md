@@ -27,7 +27,7 @@ node src/server/train_tfjs.cjs \
   --games 100 \
   --audit true \
   --audit-rate 0.05 \
-  --output data/experiment.json
+  --output dashboard/data/experiment.json
 ```
 
 The audit system validates:
@@ -54,9 +54,9 @@ The audit system validates:
 ### Dashboard
 
 Training results are viewable on the dashboard:
-**https://augusto-espinel.github.io/Triantica/docs/**
+**https://augusto-espinel.github.io/Triantica/dashboard/**
 
-To update dashboard data, copy training JSON to `docs/data/` and update `docs/experiments.json`, then push to `gh-pages` branch.
+To update dashboard data, output or copy training JSON to `dashboard/data/` and update `dashboard/experiments.json`, then run `./scripts/publish-dashboard.sh` and push to `main`.
 
 ### Adding Custom Metrics
 
@@ -76,4 +76,4 @@ selfPlay: {
 }
 ```
 
-3. **Update the dashboard** to display the new field in `docs/index.html`.
+3. **Update the dashboard** to display the new field in `dashboard/index.html`.

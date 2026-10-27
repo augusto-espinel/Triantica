@@ -92,7 +92,7 @@ async function main() {
   console.log('🎮 Debug Game: AI vs Heuristic\n');
 
   // Load latest trained network
-  const networkPath = path.resolve(__dirname, '../docs/data/TF-ONLINE-SGD_network.json');
+  const networkPath = path.resolve(__dirname, '../dashboard/data/TF-B1_pure_network.json');
   let network = null;
   
   if (fs.existsSync(networkPath)) {

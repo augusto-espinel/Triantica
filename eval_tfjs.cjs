@@ -58,7 +58,7 @@ async function main() {
 
   // Load exp20 weights
   const net = new TFNeuralNetwork();
-  const weights = JSON.parse(fs.readFileSync('data/exp20_mixed.json', 'utf-8'));
+  const weights = JSON.parse(fs.readFileSync(process.argv[2] || 'dashboard/data/TF-B1_pure_network.json', 'utf-8'));
   net.fromJSON(weights);
 
   // State encoding (relative to current player)

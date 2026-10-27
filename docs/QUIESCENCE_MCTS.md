@@ -63,8 +63,8 @@ nohup node src/server/train_tfjs.cjs \
   --mcts-sims 50 --architecture conv --learning-rate 0.001 \
   --opponent-mix mixed --network-ratio 0.5 --heuristic-ratio 0.5 --random-ratio 0.0 \
   --quiescence-mode greedy --quiescence-depth 5 --risk-penalty 0.2 \
-  --start-from docs/data/TF-B10_network.json \
-  --output docs/data/TF-B12.json > docs/data/TF-B12.log 2>&1 < /dev/null &
+  --start-from dashboard/data/TF-B10_network.json \
+  --output dashboard/data/TF-B12.json > dashboard/data/TF-B12.log 2>&1 < /dev/null &
 ```
 
 ### Verification (`test_quiescence.cjs`)

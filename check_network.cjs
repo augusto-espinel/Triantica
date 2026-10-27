@@ -8,7 +8,7 @@ const fs = require('fs');
 
 async function main() {
   // Load the network
-  const networkPath = 'docs/data/TF-GRADIENT-ISOLATION_network.json';
+  const networkPath = 'dashboard/data/TF-B1_pure_network.json';
   if (!fs.existsSync(networkPath)) {
     console.log('Network file not found');
     return;

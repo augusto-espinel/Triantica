@@ -1701,7 +1701,7 @@ Once `Conv3` produces the `[B, 10, 10, 64]` spatial feature representation (wher
 
 **Command:**
 ```bash
-node src/server/train_tfjs.cjs --cycles 10 --games 100 --mcts-sims 50 --architecture conv --output docs/data/TF-B8.json
+node src/server/train_tfjs.cjs --cycles 10 --games 100 --mcts-sims 50 --architecture conv --output dashboard/data/TF-B8.json
 ```
 
 **Expected:** vs Random 65-70%, vs Heuristic 3-8%
@@ -1770,7 +1770,7 @@ This confirms a **sign flip bug** in the training signal. The network IS learnin
 
 #### TF-B8 (Clean Consolidated Re-Run): MCTS-50 with All 5 Engine/Search Bugs Fixed
 
-Before incrementing to `TF-B9`, we re-ran `TF-B8` (`docs/data/TF-B8.json`) across all 10 cycles (309.1 minutes) with the consolidated `GridManager` rules (`isValidMove`, `executeMove` with enclosures & extra turns, slot-based `getCanonicalState`, ReplayBuffer value targets, and single-perspective MCTS filtering) plus **P1 vs P2 role win-share tracking**:
+Before incrementing to `TF-B9`, we re-ran `TF-B8` (`dashboard/data/TF-B8.json`) across all 10 cycles (309.1 minutes) with the consolidated `GridManager` rules (`isValidMove`, `executeMove` with enclosures & extra turns, slot-based `getCanonicalState`, ReplayBuffer value targets, and single-perspective MCTS filtering) plus **P1 vs P2 role win-share tracking**:
 
 | Cycle | vs Random (Overall) | AI as P1 (1st Move) | AI as P2 (2nd Move) | vs Heuristic | Eval AI Mean Cluster | Training Loss (Start → End) |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -1807,7 +1807,7 @@ Before incrementing to `TF-B9`, we re-ran `TF-B8` (`docs/data/TF-B8.json`) acros
 
 **Command:**
 ```bash
-node src/server/train_tfjs.cjs --cycles 10 --games 100 --eval-games 100 --mcts-sims 50 --architecture conv --learning-rate 0.001 --output docs/data/TF-B9.json
+node src/server/train_tfjs.cjs --cycles 10 --games 100 --eval-games 100 --mcts-sims 50 --architecture conv --learning-rate 0.001 --output dashboard/data/TF-B9.json
 ```
 
 **Live Pre-Run Verification (20 Games, Cycle 1):**
@@ -1815,7 +1815,7 @@ node src/server/train_tfjs.cjs --cycles 10 --games 100 --eval-games 100 --mcts-s
 - Value Head stays unsaturated (`+0.2538` on mid-game boards).
 - Achieved **56.0% vs Random** (`52.0% as P1`, `60.0% as P2`) in the 20-game live verification test.
 
-**Status:** ✅ **Completed** (`292.6` minutes, 10/10 cycles, **84.0% Peak / 79.0% Final vs Random**, **69.9% 10-Cycle Mean**, published to `docs/data/TF-B9.json` and `trainedAI_network.json`).
+**Status:** ✅ **Completed** (`292.6` minutes, 10/10 cycles, **84.0% Peak / 79.0% Final vs Random**, **69.9% 10-Cycle Mean**, published to `dashboard/data/TF-B9.json` and `trainedAI_network.json`).
 
 **Complete 10-Cycle Trajectory (`TF-B9`):**
 
@@ -1903,12 +1903,12 @@ nohup node src/server/train_tfjs.cjs \
   --cycles 10 --games 100 --eval-games 100 \
   --mcts-sims 50 --architecture conv --learning-rate 0.001 \
   --opponent-mix mixed --network-ratio 0.5 --heuristic-ratio 0.5 --random-ratio 0.0 \
-  --start-from docs/data/TF-B9_network.json \
-  --output docs/data/TF-B10.json > docs/data/TF-B10.log 2>&1 < /dev/null &
+  --start-from dashboard/data/TF-B9_network.json \
+  --output dashboard/data/TF-B10.json > dashboard/data/TF-B10.log 2>&1 < /dev/null &
 ```
-- **Warm-Start:** Initialized from `docs/data/TF-B9_network.json` (`79.0%` final / `84.0%` peak vs Random).
+- **Warm-Start:** Initialized from `dashboard/data/TF-B9_network.json` (`79.0%` final / `84.0%` peak vs Random).
 - **Opponent Curriculum:** `50%` MCTS-50 Self-Play + `50%` `HeuristicPlayer` (`explorationFactor: 0.1`), exposing the AI to aggressive early enclosure chains while maintaining self-play stability via the 500K Replay Buffer.
-- **Status:** ✅ **Completed** (`161.3` minutes, 10/10 cycles, **87.0% Peak & Final vs Random**, **81.8% 10-Cycle Mean**, published to `docs/data/TF-B10.json` and `trainedAI_network.json`).
+- **Status:** ✅ **Completed** (`161.3` minutes, 10/10 cycles, **87.0% Peak & Final vs Random**, **81.8% 10-Cycle Mean**, published to `dashboard/data/TF-B10.json` and `trainedAI_network.json`).
 
 **Complete 10-Cycle Trajectory (`TF-B10`):**
 
@@ -1949,8 +1949,8 @@ nohup node src/server/train_tfjs.cjs \
   --mcts-sims 50 --architecture conv --learning-rate 0.001 \
   --opponent-mix mixed --network-ratio 0.5 --heuristic-ratio 0.5 --random-ratio 0.0 \
   --quiescence-mode greedy --quiescence-depth 5 --risk-penalty 0.2 \
-  --start-from docs/data/TF-B10_network.json \
-  --output docs/data/TF-B12.json > docs/data/TF-B12.log 2>&1 < /dev/null &
+  --start-from dashboard/data/TF-B10_network.json \
+  --output dashboard/data/TF-B12.json > dashboard/data/TF-B12.log 2>&1 < /dev/null &
 ```
 
 ---
@@ -2770,22 +2770,22 @@ node src/server/train_tfjs.cjs --cycles 10 --games 100 \
 
 # Continue from checkpoint
 node src/server/train_tfjs.cjs --cycles 10 \
-  --start-from docs/data/exp20_network.json
+  --start-from dashboard/data/TF-B10_network.json
 ```
 
 ### Evaluation Commands
 
 ```bash
 # Evaluate against random
-node src/server/evaluate.cjs --network docs/data/TF-B1_pure_network.json \
+node src/server/evaluate.cjs --network dashboard/data/TF-B1_pure_network.json \
   --opponent random --games 100
 
 # Evaluate against heuristic
-node src/server/evaluate.cjs --network docs/data/TF-B1_pure_network.json \
+node src/server/evaluate.cjs --network dashboard/data/TF-B1_pure_network.json \
   --opponent heuristic --games 100
 
 # Full tournament
-node src/server/evaluate.cjs --network docs/data/exp20_network.json \
+node src/server/evaluate.cjs --network dashboard/data/TF-B12_network.json \
   --tournament --games 50
 ```
 
@@ -2800,7 +2800,7 @@ triantica/
 │   │   ├── GridManager.js      # Game logic
 │   │   └── GameState.js       # State management
 │   ├── players/
-│   │   ├── AIPlayer.js        # Brain.js interface
+│   │   ├── AIPlayer.js        # Brain.js / ConvNet interface
 │   │   ├── HeuristicPlayer.js # Rule-based AI
 │   │   └── RandomPlayer.js    # Baseline
 │   └── server/
@@ -2808,11 +2808,13 @@ triantica/
 │       ├── train_brain.cjs    # Brain.js training (legacy)
 │       ├── evaluate.cjs      # Evaluation harness
 │       └── GameAuditor.js     # Bug detection
+├── dashboard/
+│   ├── index.html             # Training dashboard UI
+│   ├── experiments.json       # Experiment metadata
+│   └── data/                  # Published training outputs & checkpoints
 ├── docs/
-│   ├── data/                  # Training outputs
 │   ├── TRAINING_BOOK.md       # This guide
-│   ├── dashboard/             # Visualization
-│   └── experiments.json       # Metadata
+│   └── QUIESCENCE_MCTS.md     # Quiescence MCTS design & results
 └── browser/
     └── index.html             # Game interface
 ```
@@ -2821,7 +2823,7 @@ triantica/
 
 ## Appendix C: Dashboard Parameters
 
-The training dashboard (`docs/index.html`) shows these parameters for each experiment:
+The training dashboard (`dashboard/index.html`, hosted at `/dashboard/`) shows these parameters for each experiment:
 
 | Dashboard Field | Description |
 |-----------------|-------------|

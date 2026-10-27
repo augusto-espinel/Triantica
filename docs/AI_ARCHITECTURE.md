@@ -327,7 +327,7 @@ fnm use v20.20.2
 node src/server/train_tfjs.cjs \
   --cycles 20 \
   --games 100 \
-  --output data/experiment.json
+  --output dashboard/data/experiment.json
 
 # Mixed opponents (recommended — curriculum learning)
 node src/server/train_tfjs.cjs \
@@ -342,20 +342,20 @@ node src/server/train_tfjs.cjs \
   --network-ratio 0.7 \
   --random-ratio 0.3 \
   --audit true \
-  --output data/experiment.json
+  --output dashboard/data/experiment.json
 
 # With cluster reward TD(λ)
 node src/server/train_tfjs.cjs \
   --cycles 20 \
   --games 100 \
   --enable-cluster-reward true \
-  --output data/experiment.json
+  --output dashboard/data/experiment.json
 
 # Continue from existing checkpoint
 node src/server/train_tfjs.cjs \
   --cycles 10 \
-  --start-from data/exp20_mixed.json \
-  --output data/continued.json
+  --start-from dashboard/data/TF-B10_network.json \
+  --output dashboard/data/continued.json
 ```
 
 ### CLI Parameters
@@ -376,7 +376,7 @@ node src/server/train_tfjs.cjs \
 | `--audit` | false | Enable game auditing |
 | `--audit-rate` | 0.05 | Fraction of games to audit |
 | `--start-from` | null | Path to checkpoint JSON to resume from |
-| `--output` | data/training.json | Output path for training results |
+| `--output` | dashboard/data/training.json | Output path for training results |
 
 ### Why TensorFlow.js on Mac Studio M2 Ultra
 

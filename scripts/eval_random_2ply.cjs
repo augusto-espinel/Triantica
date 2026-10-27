@@ -115,7 +115,7 @@ async function evaluateCheckpoint(networkPath, evalGames = 100) {
 }
 
 if (require.main === module) {
-  const netPath = process.argv[2] || path.resolve(__dirname, '../docs/data/TF-B12_c8_network.json');
+  const netPath = process.argv[2] || path.resolve(__dirname, '../dashboard/data/TF-B12_network.json');
   const games = parseInt(process.argv[3] || '100', 10);
   evaluateCheckpoint(netPath, games).then(res => {
     const meanAI = (res.aiScores.reduce((a, b) => a + b, 0) / res.aiScores.length).toFixed(1);

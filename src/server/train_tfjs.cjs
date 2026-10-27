@@ -9,7 +9,7 @@
  * - Full dashboard metrics output
  * - Game auditing for bug detection
  * 
- * Usage: node src/server/train_tfjs.cjs --cycles 10 --games 100 --output data/TF-A1_training.json
+ * Usage: node src/server/train_tfjs.cjs --cycles 10 --games 100 --output dashboard/data/TF-B12.json
  * 
  * Requires Node v20 LTS for tfjs-node native bindings (Metal GPU on M2 Ultra)
  */
@@ -1015,7 +1015,7 @@ async function main() {
   const randomRatio = parseFloat(getArg('random-ratio', '0.0'));
   const heuristicRatio = parseFloat(getArg('heuristic-ratio', '0.0'));
   const startFrom = getArg('start-from', null);
-  const output = getArg('output', 'data/training.json');
+  const output = getArg('output', 'dashboard/data/training.json');
   const enableClusterReward = getArg('enable-cluster-reward', 'false') === 'true';
   const audit = getArg('audit', 'false') === 'true';
   const auditRate = parseFloat(getArg('audit-rate', '0.05'));

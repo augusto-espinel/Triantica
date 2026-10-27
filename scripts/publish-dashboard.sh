@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 #
-# publish-dashboard.sh — Copy dashboard experiment data from docs/ to dashboard/
+# publish-dashboard.sh — Validate and clean dashboard/data/ against dashboard/experiments.json
 #
 # Usage:
-#   ./scripts/publish-dashboard.sh              # Copy all experiments listed in experiments.json
-#   ./scripts/publish-dashboard.sh TF-B8-V2      # Copy specific experiment(s)
+#   ./scripts/publish-dashboard.sh              # Verify all experiments listed in dashboard/experiments.json and clean stale files
+#   ./scripts/publish-dashboard.sh <src_file>   # Copy an external experiment file into dashboard/data/ and clean stale files
 #
-# The dashboard at /dashboard/ reads experiments.json and data/*.json
-# This script ensures the dashboard folder only contains the experiments
-# that should be visible, keeping it clean and small.
+# The dashboard is hosted exclusively at /dashboard/ and reads:
+#   - dashboard/experiments.json
+#   - dashboard/data/*.json
 #
 set -euo pipefail
 
@@ -16,65 +16,67 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 DASHBOARD_DIR="$PROJECT_DIR/dashboard"
-DOCS_DIR="$PROJECT_DIR/docs"
-DOCS_DATA_DIR="$DOCS_DIR/data"
 DASHBOARD_DATA_DIR="$DASHBOARD_DIR/data"
 
-# Create dashboard data directory
 mkdir -p "$DASHBOARD_DATA_DIR"
 
-# Copy experiments manifest
-cp "$DOCS_DIR/experiments.json" "$DASHBOARD_DIR/experiments.json"
-echo "✅ Copied experiments.json"
-
-# Determine which experiments to publish
+# If specific external file paths are passed as arguments, copy them into dashboard/data/
 if [ $# -gt 0 ]; then
-    # Specific experiments requested
-    EXPS=("$@")
-else
-    # All experiments from manifest
-    EXPS=$(python3 -c "
+    for arg in "$@"; do
+        if [ -f "$arg" ]; then
+            base="$(basename "$arg")"
+            cp "$arg" "$DASHBOARD_DATA_DIR/$base"
+            echo "✅ Copied $arg -> dashboard/data/$base"
+            net_arg="${arg%.json}_network.json"
+            if [ -f "$net_arg" ]; then
+                net_base="$(basename "$net_arg")"
+                cp "$net_arg" "$DASHBOARD_DATA_DIR/$net_base"
+                echo "✅ Copied $net_arg -> dashboard/data/$net_base"
+            fi
+        fi
+    done
+fi
+
+# Read all dataFiles from dashboard/experiments.json
+EXPS=$(python3 -c "
 import json
-with open('$DOCS_DIR/experiments.json') as f:
+with open('$DASHBOARD_DIR/experiments.json') as f:
     data = json.load(f)
 for e in data:
     df = e.get('dataFile', '')
     if df:
         print(df)
 ")
-fi
 
-# Track what we copy so we can clean up stale files
-COPIED_FILES="experiments.json"
+VALID_FILES=""
+EXP_COUNT=0
 
 for data_file in $EXPS; do
-    src="$DOCS_DATA_DIR/$data_file"
+    EXP_COUNT=$((EXP_COUNT + 1))
     dst="$DASHBOARD_DATA_DIR/$data_file"
 
-    if [ -f "$src" ]; then
-        cp "$src" "$dst"
-        COPIED_FILES="$COPIED_FILES data/$data_file"
-        echo "✅ Copied $data_file"
+    if [ -f "$dst" ]; then
+        VALID_FILES="$VALID_FILES data/$data_file"
+        echo "✅ Verified dashboard/data/$data_file"
 
-        # Also copy network weights if they exist
-        network_file="${data_file%.json}_network.json"
-        network_src="$DOCS_DATA_DIR/$network_file"
-        network_dst="$DASHBOARD_DATA_DIR/$network_file"
-        if [ -f "$network_src" ]; then
-            cp "$network_src" "$network_dst"
-            COPIED_FILES="$COPIED_FILES data/$network_file"
-            echo "✅ Copied $network_file (network weights)"
-        fi
+        # Also preserve network weights and logs/audits associated with this experiment
+        prefix="${data_file%.json}"
+        for extra in "$DASHBOARD_DATA_DIR/${prefix}"_* "$DASHBOARD_DATA_DIR/${prefix}.log"; do
+            if [ -f "$extra" ]; then
+                VALID_FILES="$VALID_FILES data/$(basename "$extra")"
+            fi
+        done
     else
-        echo "⚠️  Missing: $data_file"
+        echo "⚠️  Missing in dashboard/data/: $data_file"
     fi
 done
 
 # Clean up stale files in dashboard/data/ that aren't in the manifest
 if [ -d "$DASHBOARD_DATA_DIR" ]; then
     for f in "$DASHBOARD_DATA_DIR"/*; do
+        [ -e "$f" ] || continue
         fname="data/$(basename "$f")"
-        if ! echo "$COPIED_FILES" | grep -qw "$fname"; then
+        if ! echo "$VALID_FILES" | grep -qw "$fname"; then
             rm "$f"
             echo "🗑️  Removed stale: $fname"
         fi
@@ -82,6 +84,6 @@ if [ -d "$DASHBOARD_DATA_DIR" ]; then
 fi
 
 echo ""
-echo "📊 Dashboard ready at: dashboard/"
-echo "   Experiments: $(echo "$EXPS" | wc -w | tr -d ' ')"
+echo "📊 Dashboard ready at: /dashboard/ (dashboard/)"
+echo "   Manifest experiments: $EXP_COUNT"
 echo "   Run 'git add dashboard/ && git commit && git push' to publish"

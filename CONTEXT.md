@@ -114,26 +114,26 @@ See `README_QUICKSTART.md` for full instructions.
 The project uses a **dual-branch deployment**:
 
 ```
-main       → Source code + experiments.json + data files
+main       → Source code + dashboard/experiments.json + dashboard/data/ files
               ↓
-gh-pages   → GitHub Pages deployment (auto-sync required)
+GitHub Pages deploys directly from `main` branch root (`/`)
 ```
 
-**GitHub Pages URL:** `https://augusto-espinel.github.io/Triantica/docs/`
+**GitHub Pages URL:** `https://augusto-espinel.github.io/Triantica/dashboard/`
 
 ### How to Add New Experiment Data
 
 When running a new training experiment:
 
-1. **Run the experiment** (creates data files in `docs/data/`):
+1. **Run the experiment** (creates data files in `dashboard/data/`):
    ```bash
    cd triantica
-   node src/server/train_tfjs.cjs --cycles 20 --games 100 --output docs/data/TF-B4_new.json
+   node src/server/train_tfjs.cjs --cycles 20 --games 100 --output dashboard/data/TF-B4_new.json
    ```
 
 2. **Update experiments.json** with the new entry:
    ```bash
-   # Edit docs/experiments.json to add:
+   # Edit dashboard/experiments.json to add:
    # - id: unique experiment ID
    # - name: descriptive name with key parameters
    # - logFile: path to data file (data/XXX.json)
@@ -143,32 +143,27 @@ When running a new training experiment:
    # - result: final metrics
    ```
 
-3. **Commit to main branch:**
+3. **Verify and clean `dashboard/data/`:**
    ```bash
-   git add docs/experiments.json docs/data/TF-B4_new.json docs/data/TF-B4_new_network.json
+   ./scripts/publish-dashboard.sh
+   ```
+
+4. **Commit and push to `main` branch:**
+   ```bash
+   git add dashboard/experiments.json dashboard/data/TF-B4_new.json dashboard/data/TF-B4_new_network.json
    git commit -m "Add TF-B4 experiment results"
    git push origin main
    ```
 
-4. **Sync to gh-pages branch:**
+5. **Wait for deployment** (~1-2 minutes):
    ```bash
-   git checkout gh-pages
-   git checkout main -- docs/experiments.json docs/data/TF-B4_new.json docs/data/TF-B4_new_network.json
-   git add docs/
-   git commit -m "Add TF-B4 experiment data"
-   git push origin gh-pages
-   git checkout main
-   ```
-
-5. **Wait for deployment** (~2 minutes):
-   ```bash
-   gh run list --branch gh-pages --limit 1
+   gh run list --branch main --limit 1
    ```
 
 6. **Verify with cache-busting:**
    ```bash
    curl -sH "Cache-Control: no-cache" \
-     "https://augusto-espinel.github.io/Triantica/docs/data/TF-B4_new.json?nc=$(date +%s)" \
+     "https://augusto-espinel.github.io/Triantica/dashboard/data/TF-B4_new.json?nc=$(date +%s)" \
      | jq '.cycles | length'
    ```
 
@@ -184,28 +179,19 @@ When running a new training experiment:
 - Check file size is reasonable (not suspiciously small)
 - Always verify with `jq 'length'` for arrays
 
-#### ❌ Mistake 2: Forgetting gh-pages Sync
-**What happened:** Updated `experiments.json` in `main`, but `gh-pages` still had old version.
-
-**Symptom:** Dashboard shows 3 experiments instead of 9; only "baseline" experiments work.
-
-**Prevention:**
-- ALWAYS sync data files to `gh-pages` branch after updating `main`
-- Verify raw GitHub URL: `https://raw.githubusercontent.com/augusto-espinel/Triantica/gh-pages/docs/experiments.json`
-- GitHub Pages caches for ~2 minutes; use cache-busting query params to verify
-
-#### ❌ Mistake 3: Missing Data Files in gh-pages
-**What happened:** `experiments.json` pointed to `TF-B1_v3.json`, but that file didn't exist in `gh-pages`.
+#### ❌ Mistake 2: Missing Data Files in `dashboard/data/`
+**What happened:** `dashboard/experiments.json` pointed to a `dataFile`, but that file wasn't committed in `dashboard/data/`.
 
 **Symptom:** Dashboard shows experiment card but plots don't render.
 
 **Prevention:**
-- Check `ls -la docs/data/TF-B*.json` in BOTH branches
-- Use `git checkout main -- docs/data/FILENAME.json` to copy from main
+- Run `./scripts/publish-dashboard.sh` to verify every `dataFile` in `dashboard/experiments.json` exists in `dashboard/data/`
+- Verify raw GitHub URL: `https://raw.githubusercontent.com/augusto-espinel/Triantica/main/dashboard/experiments.json`
+- GitHub Pages caches for ~2 minutes; use cache-busting query params to verify
 
 ### Dashboard Data Format
 
-Experiment data files (`docs/data/XXX.json`) must have this structure:
+Experiment data files (`dashboard/data/XXX.json`) must have this structure:
 
 ```json
 {
@@ -322,40 +308,33 @@ Before committing training book updates, verify:
 ```bash
 # 1. Run training experiment
 cd triantica
-node src/server/train_tfjs.cjs --cycles 20 --games 100 --output docs/data/TF-B4.json
+node src/server/train_tfjs.cjs --cycles 20 --games 100 --output dashboard/data/TF-B4.json
 
 # 2. Verify output is valid
-jq '.cycles | length' docs/data/TF-B4.json  # Should be 20
-jq '.cycles[0].evaluation.vsRandom.aiWinRate' docs/data/TF-B4.json
+jq '.cycles | length' dashboard/data/TF-B4.json  # Should be 20
+jq '.cycles[0].evaluation.vsRandom.aiWinRate' dashboard/data/TF-B4.json
 
 # 3. Update experiments.json
 # (manual edit or script)
 
-# 4. Verify experiments.json is valid
-jq 'length' docs/experiments.json
+# 4. Verify experiments.json and dashboard/data/
+jq 'length' dashboard/experiments.json
+./scripts/publish-dashboard.sh
 
-# 5. Commit to main
-git add docs/experiments.json docs/data/TF-B4.json docs/data/TF-B4_network.json
+# 5. Commit and push to main (GitHub Pages deploys directly from main /)
+git add dashboard/experiments.json dashboard/data/TF-B4.json dashboard/data/TF-B4_network.json
 git commit -m "Add TF-B4: Mixed opponents with gradient isolation"
 git push origin main
 
-# 6. Sync to gh-pages
-git checkout gh-pages
-git checkout main -- docs/experiments.json docs/data/TF-B4*.json
-git add docs/
-git commit -m "Add TF-B4 experiment data"
-git push origin gh-pages
-git checkout main
+# 6. Wait for deployment (~1-2 min)
+gh run list --branch main --limit 1
 
-# 7. Wait for deployment (~2 min)
-gh run list --branch gh-pages --limit 1
-
-# 8. Verify deployment
+# 7. Verify deployment
 curl -sH "Cache-Control: no-cache" \
-  "https://augusto-espinel.github.io/Triantica/docs/data/TF-B4.json?nc=$(date +%s)" \
+  "https://augusto-espinel.github.io/Triantica/dashboard/data/TF-B4.json?nc=$(date +%s)" \
   | jq '.cycles | length'
 
-# 9. Update TRAINING_BOOK.md with findings
+# 8. Update TRAINING_BOOK.md with findings
 # (manual edit)
 
 # 10. Commit training book update

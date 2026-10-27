@@ -33,7 +33,7 @@ console.log('='.repeat(50));
 
 // Load the trained conv network
 async function loadNetwork() {
-  const networkPath = 'docs/data/TF-B6_optimized_network.json';
+  const networkPath = 'dashboard/data/TF-B12_network.json';
   const fullPath = path.resolve(networkPath);
   
   const { TFConvNetwork } = require('./train_tfjs.cjs');
