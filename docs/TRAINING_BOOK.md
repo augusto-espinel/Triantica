@@ -1234,6 +1234,11 @@ After 22 brain.js experiments and 10+ TF.js experiments, a clear pattern emerged
 | exp22 | Cluster (brain.js) | brain.js | mixed | 0.01 | 200 | - | ✗ | ✓ | 84% | 0% | 8m |
 | TF-B5_conv | Phase 2: Conv+Value | TF.js | 100% net | 0.01 | 10 | 256 | ✓ | ✗ | 50% | 0% | 42m |
 | TF-B6_optimized | Hyperparameter Tuning | TF.js | 100% net | 0.02 | 10 | 256 | ✓ | ✗ | **50%** | 0% | 42m |
+| TF-B8-V2 | MCTS-50 (Pre-Audit) | TF.js | 100% net | 0.05 | 10 | 256 | ✓ | ✗ | 38% (54% pk) | 0% | 432m |
+| TF-B8 | MCTS-50 (Bugs 6–10 Fixed) | TF.js | 100% net | 0.05 | 10 | 256 | ✓ | ✗ | 47% | 0% | 158m |
+| TF-B9 | MCTS-50 (CE Sum + Adam) | TF.js | 100% net | 0.001 | 10 | 256 | ✓ | ✗ | **79%** (84% pk) | 0% | 145m |
+| TF-B10 | MCTS-50 Mixed (50/50 Heur) | TF.js | 50/0/50 | 0.001 | 10 | 256 | ✓ | ✗ | **87%** | 0% | 161m |
+| TF-B12 | Quiescence MCTS + Mixed | TF.js | 50/0/50 | 0.001 | 10 | 256 | ✓ | ✗ | **100%** | **63%** | 271m |
 
 **Key:**
 - Mix: opponent distribution (network/random/heuristic)
@@ -1927,7 +1932,26 @@ nohup node src/server/train_tfjs.cjs \
    - Standalone 1-ply browser network verification (`verify_game_network.cjs` without MCTS) improved from `68%` (`TF-B9`) to **`76%` vs Random (`76W / 24L / 0D`)**.
 2. **Why `0.0%` vs `HeuristicPlayer` Persists Even With Mixed Opponent Training:**
    - During the 50 Heuristic games per cycle, `HeuristicPlayer` chains 1-triangle enclosures (`Math.floor((1 + claimed) / 2) = 1` extra turn per single claim) from Move 3 onward, taking ~85% of the moves (`~14–16` AI turns per game vs `~70` in self-play).
-   - Because `MCTSNode` in `MCTS.cjs` evaluates leaf states purely via the neural Value Head (which predicts final game outcome ~100 moves later) and **does not normalize policy priors across valid moves (`sum(validPriors) ≈ 23.4`) or include an immediate tactical value term for enclosures/extra turns**, 50 MCTS simulations across ~35 valid moves visit each child only 1–2 times and fail to spot 2-ply enclosure setups/blocks.
+   - An inflection-point audit of `TF-B10` revealed that standard `MCTS.cjs` evaluates leaf states purely via the neural Value Head (which rated dangerous hole-creating moves at `+0.4794` vs safe moves at `+0.1060`). Without playing out forced enclosure cascades at the leaves, 50 MCTS simulations actively amplified single-move openings that `HeuristicPlayer` immediately exploited.
+
+#### TF-B12: Quiescence MCTS + Mixed-Opponent Training (`50% Network / 50% Heuristic`)
+
+**Architectural Principle — Let Quiescence Search Teach Both Enclosing Trains and Hole Avoidance:**
+Rather than complicating the neural network with auxiliary risk heads or artificial TD($\lambda$) reward shaping, **TF-B12** keeps the clean 2-head ConvNet (`Policy + Value`) and upgrades the MCTS teacher to **`QuiescenceMCTS`** (`src/server/QuiescenceMCTS.cjs`):
+1. **Enclosing Moves Are Never Risky (`claimed > 0` $\implies$ `risk = 0`):** Because any move with `claimed > 0` grants `Math.floor((1 + claimed) / 2) >= 1` extra turns, the active player retains the turn and can immediately chain further enclosures ("enclosing trains") or patch any holes created. `QuiescenceMCTS` gives enclosing moves a positive bonus (`enclosureBonusWeight`) at both the root prior and leaf evaluation.
+2. **Penalize Single-Move Openings (`claimed === 0` with Opponent Enclosures):** Only non-enclosing moves that pass the turn to the opponent can be exploited. If a candidate move leaves enclosure opportunities for the opponent, `QuiescenceMCTS` plays out the deterministic greedy cascade at the leaf (`_runQuiescenceRollout`) and penalizes both the leaf Q-value and the root visit policy target (`_getRiskAdjustedPolicy`).
+3. **Batched Pre-Cascade Expansion + Post-Cascade Evaluation (`searchBatched` / `_runBatch`):** Leaf nodes are always expanded using the policy of `leaf.grid` (pre-cascade), while leaf values are evaluated on the quiescent post-cascade board in a single combined `batchPredict` GPU call.
+
+**Configuration (`TF-B12`):**
+```bash
+nohup node src/server/train_tfjs.cjs \
+  --cycles 10 --games 100 --eval-games 100 \
+  --mcts-sims 50 --architecture conv --learning-rate 0.001 \
+  --opponent-mix mixed --network-ratio 0.5 --heuristic-ratio 0.5 --random-ratio 0.0 \
+  --quiescence-mode greedy --quiescence-depth 5 --risk-penalty 0.2 \
+  --start-from docs/data/TF-B10_network.json \
+  --output docs/data/TF-B12.json > docs/data/TF-B12.log 2>&1 < /dev/null &
+```
 
 ---
 
@@ -2542,6 +2566,94 @@ This prevents the AI from playing the same opening every game.
 
 ---
 
+### Phase 5.5: Quiescence MCTS — Why It Improves Over Simple MCTS
+
+**Status:** ✅ Completed (`src/server/QuiescenceMCTS.cjs`) — **Broke the Heuristic Wall in `TF-B12` (`100%` vs Random, `63%` vs Heuristic)**
+
+#### 1. The Horizon Effect & Why Simple MCTS Fails Against Deterministic Cascades
+In `TF-B10` (Simple MCTS-50 + 50% Heuristic opponents), the AI reached a record **87% vs Random**, yet remained at **0% vs `HeuristicPlayer`** (averaging only ~14 turns to Heuristic's ~96 turns per game). An inflection-point audit of `TF-B10` exposed two structural blind spots in simple MCTS (`MCTS.cjs`):
+
+1. **The Horizon Effect at Unquiet Leaves:**
+   Simple MCTS expands a leaf node $s_L$ after a single candidate move and immediately queries the neural Value Head $V_\theta(s_L)$. If $s_L$ is a **"noisy" (tactically unstable) position**—specifically, a single move (`claimed = 0`) that passes the turn to the opponent while leaving a 3-sided enclosure hole—`HeuristicPlayer` will deterministically claim that enclosure with probability $P(\text{capture}) = 1.0$, earn an extra turn via $\lfloor (1 + \text{claimed})/2 \rfloor$, and chain a 5–10 move capture cascade.
+2. **Self-Play Value Head Inversion on Single-Move Openings:**
+   Because the Value Head was trained primarily on states where local cluster density correlated with winning against non-cascading play, $V_\theta(s_L)$ rated a hole-creating blunder at **`+0.4794`** while rating a safe move at **`+0.1060`**. With 50 simulations spread across ~35 legal moves, simple MCTS never searched deep enough down the forced opponent cascade to see the collapse—instead, UCT **amplified** the `+0.4794` blunder (`13` visits vs `1–2` visits for safe moves).
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│             Simple MCTS vs. Quiescence MCTS at a Leaf Node              │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  SIMPLE MCTS (Blind to Forced Cascades):                                │
+│  Root ──(Move A: claimed=0, leaves hole)──► Leaf s_L                    │
+│    • Evaluates raw V_θ(s_L) = +0.4794 ("cluster grew, looks great!")    │
+│    • Backpropagates +0.4794 → UCT visits Move A 13 times                │
+│    • Reality: Heuristic chains 6 enclosures + extra turns → AI loses    │
+│                                                                         │
+│  QUIESCENCE MCTS (Resolves Tactical Cascades Before Evaluation):        │
+│  Root ──(Move A: claimed=0, leaves hole)──► Leaf s_L                    │
+│    1. Expands s_L using pre-cascade policy P_θ(s_L)                     │
+│    2. Plays out greedy enclosure cascade: s_L → s_1 → s_2 → s_quiet     │
+│    3. Evaluates V_θ(s_quiet) - Σ(oppClaimed × riskPenalty) = -0.65      │
+│    4. Backpropagates -0.65 → UCT abandons Move A and selects safe move  │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 2. Game-Mechanic Invariant: Enclosing Trains vs. Single-Move Openings
+A foundational rule of Triantica dictates when a move is safe versus exploitable:
+
+$$\text{extraTurns} = \left\lfloor \frac{1 + \text{claimed}}{2} \right\rfloor$$
+
+- **Enclosing Moves (`claimed > 0`) Are NEVER Risky (`risk = 0`):**
+  Claiming even a single enclosed triangle (`claimed = 1`) awards $\lfloor 2/2 \rfloor = 1$ full extra turn, meaning **the active player retains the turn (`nextPlayer === mover`)**. Even if placing that triangle creates a new 3-sided pocket elsewhere on the board, the AI immediately moves again—allowing it to either **chain an enclosing train in its own favor** or patch the hole before the opponent ever gets a turn. Therefore, `calculateEnclosureRisk` and `calculateChildNodeRisk` strictly enforce `risk = 0` whenever `claimed > 0 || nextPlayer === mover`.
+- **Single-Move Openings (`claimed === 0`) Carry All Opponent Risk:**
+  Only when `claimed === 0` (and `extraTurns === 0`) does the turn pass to the opponent. If that single move leaves enclosure opportunities for the opponent, the opponent can immediately exploit them and snowball extra turns.
+
+#### 3. Four Mechanisms That Make `QuiescenceMCTS` a Superior Teacher
+Recall that during evaluation (`getAIMove`) and browser play (`AIPlayer.js`), the AI uses a **single forward pass of the Policy Head** (no MCTS at test time). MCTS is the **training teacher** that generates target distributions $\pi_{\text{MCTS}}$ and value targets for the 2-head ConvNet. `QuiescenceMCTS` directly upgrades the teacher in four ways without needing a 3rd network head or artificial TD($\lambda$) reward shaping:
+
+1. **Root Prior Shaping (`_expandRootWithRisk`):**
+   At the root node, every legal child move records `child.claimed` and `child.enclosureRisk`.
+   - Enclosing moves (`child.claimed > 0`) receive a multiplicative prior boost, ensuring the 50 MCTS simulations immediately explore offensive **enclosing trains**.
+   - Hole-creating single moves (`child.claimed === 0` and `risk > 0`) have their prior scaled down by $\max(0.05, 1 - 2 \cdot \text{risk} \cdot w_{\text{risk}})$, preventing wasted simulations on obvious blunders.
+2. **Pre-Cascade Leaf Expansion + Post-Cascade Quiescent Value (`_runBatch`):**
+   During batched MCTS (`searchBatched`), every non-terminal leaf `leaf` is:
+   - **Expanded** using the neural policy $P_\theta(\text{leaf.grid})$ of the true **pre-cascade** board so child moves and priors match `leaf.grid`.
+   - **Evaluated** by running a deterministic greedy cascade (`_runQuiescenceRollout`, up to `quiescenceDepth = 5`) to reach a quiet board `qEval.grid`, then combining the neural value $V_\theta(\text{qEval.grid})$ with tactical cascade adjustments (`+claimed × enclosureBonusWeight` for AI claims, `-claimed × riskPenaltyWeight` for opponent claims):
+     $$V_{\text{leaf}} = \text{clip}_{[-1, 1]}\!\left(V_\theta(s_{\text{quiet}}) + w_{\text{bonus}}\sum \text{claimed}_{\text{AI}} - w_{\text{risk}}\sum \text{claimed}_{\text{opp}}\right)$$
+   - Both pre-cascade states (for expansion) and post-cascade states (for value) are packed into a **single combined `network.batchPredict(allStates)` GPU call**.
+3. **Direct Policy Target Distillation (`_getRiskAdjustedPolicy`):**
+   After all 50 simulations finish, the root visit distribution $\pi(a) \propto N(s_0, a)$ is further refined by rewarding enclosing moves (`child.claimed > 0`) and penalizing risky non-enclosing moves (`child.enclosureRisk.risk > 0`). Because the ConvNet Policy Head trains directly via cross-entropy against $\pi_{\text{MCTS}}$, **the 1-ply Policy Head internalizes both offensive enclosing trains and defensive hole avoidance**.
+4. **$O(1)$ Local Neighborhood Enclosure Detection (`countWouldBeEnclosed`):**
+   Because `isTriangleEnclosed(cx, cy, rot)` only depends on cell `(cx, cy)` and its 4 orthogonal neighbors, placing a triangle at `(mx, my)` can only enclose `(mx, my)` itself or one of its 4 orthogonal neighbors. Checking just those 5 cells in-place (pushing/popping the candidate triangle without cloning the grid or rebuilding clusters) produces **100% identical results** to full-board simulation while running **3.2× faster** (~140ms per 50-sim move on M2 Ultra).
+
+#### 4. Experiment `TF-B12` Results: Breaking the Heuristic Wall (`100%` vs Random, `63%` vs Heuristic)
+Warm-started from `TF-B10_network.json`, `TF-B12` ran 10 cycles (100 games/cycle, 50% `QuiescenceMCTS-50` self-play / 50% `HeuristicPlayer`, `quiescenceMode = greedy`, `quiescenceDepth = 5`, `riskPenalty = 0.2`, `enclosureBonusWeight = 0.15`, `LR = 0.001` Adam, runtime `270.5 min`).
+
+| Cycle | Loss (`Start → End`) | Training MCTS-50 vs Heuristic (`W/L/D`, `P1`, `P2`, `Med AI–Opp`) | Eval vs Random (`100 games`) | Mean Score vs Random (`AI – Rand`) | Eval vs Heuristic (Dashboard) | Eval vs Heuristic (`P1 / P2`) | Mean Score vs Heuristic (`AI – Heur`) | Eval Mode vs Heuristic |
+|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---|
+| **0 (`TF-B10`)** | — | `8.0%` (`4W/46L`, `med 4–177`) | `87.0%` | `79.2 – 26.8` | `0.0%` | `0% / 0%` | `7.8 – 175.9` | Both Det & Random 2-Ply (`0%`) |
+| **1** | `5.204 → 3.146` | **`32.1%`** (`18W/38L`, P1:`10/27`, P2:`8/29`, `med 69.5–118`) | **100.0%** | `116.7 – 16.0` | `0.0%` | `0% / 0%` | `12.0 – 169.0` | Deterministic (2 trajectories) |
+| **2** | `4.827 → 3.116` | **`31.3%`** (`15W/32L/1D`, P1:`8/26`, P2:`7/22`, `med 74.5–109.5`) | **100.0%** | `130.0 – 11.3` | `0.0%` | `0% / 0%` | `45.0 – 141.5` | Deterministic (2 trajectories) |
+| **3** | `4.418 → 3.029` | **`36.0%`** (`18W/32L`, P1:`8/22`, P2:`10/28`, `med 76–105.5`) | **100.0%** | `144.2 – 8.8` | `0.0%` | `0% / 0%` | `55.0 – 141.0` | Deterministic (2 trajectories) |
+| **4** | `4.378 → 3.013` | **`42.6%`** (`20W/27L`, P1:`10/29`, P2:`10/18`, `med 89–99`) | **100.0%** | `150.3 – 8.1` | `0.0%` | `0% / 0%` | `36.5 – 147.0` | Deterministic (2 trajectories) |
+| **5** | `4.149 → 3.002` | **`29.5%`** (`13W/31L`, P1:`5/17`, P2:`8/27`, `med 79–109`) | **100.0%** | `152.2 – 7.7` | `0.0%` | `0% / 0%` | `79.0 – 111.0` | Deterministic (2 trajectories) |
+| **6** | `4.033 → 2.961` | **`40.0%`** (`22W/33L`, P1:`10/26`, P2:`12/29`, `med 79–105`) | **100.0%** | `157.6 – 5.8` | **🏆 `50.0%`** | `0% / 100%` | **`91.0 – 77.5`** | Deterministic (`P2 won 147–24!`) |
+| **7** | `4.007 → 2.961` | **`35.7%`** (`15W/27L`, P1:`9/22`, P2:`6/20`, `med 79.5–102.5`) | **100.0%** | `162.1 – 5.4` | `0.0%` | `0% / 0%` | `58.0 – 115.5` | Deterministic (2 trajectories) |
+| **8** | `3.984 → 2.947` | **`35.8%`** (`19W/34L`, P1:`9/29`, P2:`10/24`, `med 75–108`) | **100.0%** | `163.7 – 5.1` | **🏆 `50.0%`** | **`50% / 50%`** | **`90.3 – 88.4`** | **Random First 2 Plies (100 openings)** *(Det: `50%`)* |
+| **9** | `3.892 → 2.951` | **`49.0%`** (`24W/25L`, P1:`12/27`, P2:`12/22`, `med 88–93`) | **100.0%** | `163.1 – 5.1` | **🚀 `62.0%`** | **`68% / 56%`** | **`100.8 – 78.8`** | **Random First 2 Plies (100 openings)** *(Det: `0%`)* |
+| **10** | `3.720 → 2.899` | **`42.3%`** (`22W/29L/1D`, P1:`12/26`, P2:`10/26`, `med 79–108`) | **100.0%** | **`166.2 – 4.4`** | **🚀 `63.0%`** | **`66% / 60%`** | **`101.7 – 79.5`** | **Random First 2 Plies (100 openings)** *(Det: `50%`)* |
+
+#### 5. Methodological Discovery: Why Random First 2 Plies Are Essential for `Eval vs Heuristic`
+During `TF-B12`, we discovered a critical flaw in how `Eval vs Heuristic` had been measured since `TF-B1`:
+- Because both `getAIMove(..., exploration=0)` ( greedy argmax ) and `new HeuristicPlayer(..., { explorationFactor: 0 })` (with deterministic cell-order tie-breaking in `HeuristicPlayer.getMove`) are **100% deterministic**, running 100 evaluation games from an empty board was actually replaying **only 2 unique game trajectories** (50 identical copies of 1 game with AI as P1, and 50 identical copies of 1 game with AI as P2).
+- Consequently, `Eval vs Heuristic` could only ever output `0%`, `50%`, or `100%`! For example, in Cycle 9, the network lost its 2 canonical trajectories (`0%` deterministic), even though its raw 1-ply policy was actually winning **62.0% of games (`68%` as P1, `56%` as P2)** across diverse openings!
+- **Protocol Upgrade (Cycle 8 Onwards & Permanent Default in `train_tfjs.cjs`):**
+  Starting at Cycle 8 of `TF-B12` (and now permanently baked into `src/server/train_tfjs.cjs` and `scripts/eval_random_2ply.cjs`), `Eval vs Heuristic` plays **random moves for the first 2 plies (`m < 2`, i.e., 1 random opening triangle per player)** before switching to `exploration = 0` greedy policy vs deterministic `HeuristicPlayer`. This tests the trained network across **100 genuinely distinct opening board configurations** while keeping all mid-game and endgame play strictly deterministic.
+- As validation, we also ran the exact same 100-game random-2-ply audit on `TF-B10_network.json` (Cycle 0 baseline): `TF-B10` still scored **`0.0%` (`0W / 100L`, mean cluster `7.8` vs `175.9`)**, proving that `TF-B12`'s jump from **`0.0%` → `50.0%` (C8) → `62.0%` (C9) → `63.0%` (C10)** is a genuine, massive architectural breakthrough driven by `QuiescenceMCTS`.
+
+---
+
 ### Phase 6: Self-Play Tournament + Iterative Retraining
 
 **Priority:** Lower (polish after core improvements)
@@ -2609,8 +2721,9 @@ Use this table to track implementation progress. Update after each experiment.
 | 3: Actor-Critic | TF-B6 | ✅ Done | 50% | 0% | Optimized hyperparams (LR=0.02, value weight=1.0) |
 | 4: Deep | TF-B7 | ⏳ Pending | — | — | — |
 | 5: MCTS-50 | TF-B8 | ❌ Failed | 30% | 0% | Sign flip bug: network learned to lose (fixed in `28ca800`) |
-| 5: MCTS-200 | TF-B9 | 🔄 Running | — | — | Bug fix verification; expected 60%+ vs Random |
-| 6: Tournament | TF-B10 | ⏳ Pending | — | — | — |
+| 5: MCTS-50 | TF-B9 | ✅ Done | 79% (84% peak) | 0% | Single-perspective MCTS fix; +41% jump vs Random |
+| 5: MCTS-50 Mixed | TF-B10 | ✅ Done | 87% | 0% | 50% Network / 50% Heuristic; record 87% vs Random |
+| 5.5: Quiescence MCTS | TF-B12 | ✅ Done | **100%** | **63%** | **Heuristic Wall Broken!** 100% vs Random (all 10 cycles), 63% vs Heuristic (66% P1, 60% P2; random 2-ply eval C8–C10) |
 
 **Status Legend:**
 - ✅ Done — Experiment complete, documented

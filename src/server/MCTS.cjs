@@ -37,6 +37,9 @@ class MCTSNode {
     
     // Player to move at this node
     this.player = grid.currentPlayer;
+    
+    // Triangles claimed by the move that led to this node (0 for root/non-enclosing)
+    this.claimed = 0;
   }
   
   /**
@@ -117,12 +120,14 @@ class MCTSNode {
       
       // Create child node using canonical executeMove (places triangle, claims enclosures, updates extraTurns & currentPlayer)
       const newGrid = this.grid.clone();
+      let claimed = 0;
       if (typeof newGrid.executeMove === 'function') {
-        newGrid.executeMove(move.x, move.y, move.rotation, this.player);
+        const execRes = newGrid.executeMove(move.x, move.y, move.rotation, this.player);
+        claimed = execRes.claimed || 0;
       } else {
         newGrid.currentPlayer = this.player;
         newGrid.placeTriangle(move.x, move.y, move.rotation, this.player);
-        const claimed = newGrid.claimEnclosedTriangles(this.player);
+        claimed = newGrid.claimEnclosedTriangles(this.player);
         newGrid.extraTurns += Math.floor((1 + claimed) / 2);
         if (newGrid.extraTurns > 0) {
           newGrid.extraTurns--;
@@ -132,7 +137,9 @@ class MCTSNode {
       }
       
       const moveKey = this._moveKey(move);
-      this.children.set(moveKey, new MCTSNode(newGrid, move, this, prior));
+      const childNode = new MCTSNode(newGrid, move, this, prior);
+      childNode.claimed = claimed;
+      this.children.set(moveKey, childNode);
     }
   }
   

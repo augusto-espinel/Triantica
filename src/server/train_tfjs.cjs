@@ -25,6 +25,7 @@ const fs = require('fs');
 const path = require('path');
 const { ReplayBuffer } = require('./ReplayBuffer.cjs');
 const { MCTS } = require('./MCTS.cjs');
+const { QuiescenceMCTS } = require('./QuiescenceMCTS.cjs');
 
 // Dynamic imports for ES modules (must be awaited)
 let GridManager, GameAuditor, HeuristicPlayer;
@@ -856,15 +857,28 @@ function getAIMove(network, grid, exploration, aiPlayerNumber = 1, useConv = fal
  * Uses Monte Carlo Tree Search with neural network evaluation
  * Returns both move and improved policy for training
  */
-async function getMCTSMove(network, grid, simulations, aiPlayerNumber = 1, batchSize = 8) {
-  const mcts = new MCTS(network, {
-    c: 1.5,
-    alpha: 0.03,
-    epsilon: 0.25,
-    batchSize: batchSize,
-    temperature: 1.0,
-    encodeState: (g, p) => getStateCanonical(g, p)
-  });
+async function getMCTSMove(network, grid, simulations, aiPlayerNumber = 1, batchSize = 8, quiescenceMode = 'none', quiescenceDepth = 5, riskPenalty = 0.15, heuristicPlayer = null) {
+  const mcts = quiescenceMode === 'none'
+    ? new MCTS(network, {
+        c: 1.5,
+        alpha: 0.03,
+        epsilon: 0.25,
+        batchSize: batchSize,
+        temperature: 1.0,
+        encodeState: (g, p) => getStateCanonical(g, p)
+      })
+    : new QuiescenceMCTS(network, {
+        c: 1.5,
+        alpha: 0.03,
+        epsilon: 0.25,
+        batchSize: batchSize,
+        temperature: 1.0,
+        encodeState: (g, p) => getStateCanonical(g, p),
+        quiescenceMode: quiescenceMode,
+        quiescenceDepth: quiescenceDepth,
+        riskPenaltyWeight: riskPenalty,
+        heuristicPlayer: heuristicPlayer
+      });
   
   const result = await mcts.searchBatched(grid, simulations);
   return {
@@ -1014,6 +1028,9 @@ async function main() {
   const architecture = getArg('architecture', 'dense'); // 'dense' or 'conv'
   const mctsSims = parseInt(getArg('mcts-sims', '0')); // MCTS simulations per move (0 = disabled)
   const mctsBatchSize = parseInt(getArg('mcts-batch-size', '8')); // Batch size for parallel MCTS evaluation
+  const quiescenceMode = getArg('quiescence-mode', 'none'); // 'none' | 'greedy' | 'heuristic' | 'hybrid'
+  const quiescenceDepth = parseInt(getArg('quiescence-depth', '5'));
+  const riskPenaltyWeight = parseFloat(getArg('risk-penalty', '0.15'));
   
   console.log('🧪  TF.js Training Pipeline');
   console.log('='.repeat(60));
@@ -1049,6 +1066,11 @@ async function main() {
   if (mctsSims > 0) {
     console.log(`  MCTS sims/move:  ${mctsSims}`);
     console.log(`  MCTS batch size: ${mctsBatchSize}`);
+    console.log(`  Quiescence mode: ${quiescenceMode}`);
+    if (quiescenceMode !== 'none') {
+      console.log(`  Quiescence depth:${quiescenceDepth}`);
+      console.log(`  Risk penalty:    ${riskPenaltyWeight}`);
+    }
   }
   console.log(`  Audit mode:       ${audit ? 'ENABLED' + (audit ? ' (' + (auditRate * 100).toFixed(0) + '% sample rate)' : '') : 'disabled'}`);
   console.log(`  Start from:      ${startFrom || 'fresh'}`);
@@ -1118,6 +1140,11 @@ async function main() {
       replayBufferSize,
       replayBatchSize,
       replayRatio,
+      mctsSims,
+      mctsBatchSize,
+      quiescenceMode,
+      quiescenceDepth,
+      riskPenaltyWeight,
       audit,
       auditRate,
       framework: 'tensorflow.js',
@@ -1401,14 +1428,20 @@ async function main() {
           let move, mctsPolicy;
           
           if (isAI) {
-            // AI's turn - use MCTS
-            const result = await getMCTSMove(network, grid, mctsSims, aiPlayerNumber, mctsBatchSize);
+            // AI's turn - use MCTS (with Quiescence if enabled)
+            const result = await getMCTSMove(
+              network, grid, mctsSims, aiPlayerNumber, mctsBatchSize,
+              quiescenceMode, quiescenceDepth, riskPenaltyWeight
+            );
             move = result.move;
             mctsPolicy = result.policy;
           } else {
             // Opponent's turn
             if (opponentType === 'network') {
-              const result = await getMCTSMove(network, grid, mctsSims, curP, mctsBatchSize);
+              const result = await getMCTSMove(
+                network, grid, mctsSims, curP, mctsBatchSize,
+                quiescenceMode, quiescenceDepth, riskPenaltyWeight
+              );
               move = result.move;
               mctsPolicy = result.policy;
             } else if (opponentType === 'heuristic') {
@@ -1680,9 +1713,13 @@ async function main() {
       
       while (!grid.isGridFull() && m < maxM) {
         grid.currentPlayer = cur;
-        const move = cur === heurAIPlayerNumber 
-          ? getAIMove(network, grid, 0, heurAIPlayerNumber, useConv) 
-          : heuristicEval.getMove(grid);
+        // Diversify evaluation trajectories against deterministic HeuristicPlayer
+        // by playing random first 2 plies (1 opening move per player)
+        const move = m < 2
+          ? getRandomMove(grid)
+          : (cur === heurAIPlayerNumber 
+              ? getAIMove(network, grid, 0, heurAIPlayerNumber, useConv) 
+              : heuristicEval.getMove(grid));
         if (!move) break;
         
         const exec = grid.executeMove(move.x, move.y, move.rotation, cur);
