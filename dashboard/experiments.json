@@ -437,7 +437,7 @@
       "enclosureBonusWeight": 0.15,
       "evalOpeningPlies": "Deterministic (C1–C7), Random 2-Ply (C8–C10)",
       "audit": false,
-      "startFrom": "docs/data/TF-B10_network.json",
+      "startFrom": "dashboard/data/TF-B10_network.json",
       "framework": "tensorflow.js",
       "backend": "Metal GPU"
     },
@@ -601,7 +601,7 @@
       "mctsDirichletAlpha": 0.03,
       "mctsDirichletEpsilon": 0.25,
       "audit": false,
-      "startFrom": "docs/data/TF-B9_network.json",
+      "startFrom": "dashboard/data/TF-B9_network.json",
       "framework": "tensorflow.js",
       "backend": "Metal GPU"
     },

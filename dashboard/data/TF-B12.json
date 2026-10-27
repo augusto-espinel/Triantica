@@ -13,7 +13,7 @@
     "networkRatio": 0.5,
     "randomRatio": 0,
     "heuristicRatio": 0.5,
-    "startFrom": "docs/data/TF-B10_network.json",
+    "startFrom": "dashboard/data/TF-B10_network.json",
     "enableClusterReward": false,
     "batchSize": 256,
     "gradientIsolation": true,
