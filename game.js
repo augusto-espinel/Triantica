@@ -1030,6 +1030,7 @@ class GameScene extends Phaser.Scene {
     );
 
     if (success) {
+      this.totalMovesPlayed++;
       // Claim enclosed triangles and calculate extra turns
       const placedTriangles = 1; // Initial placement
       const enclosedTriangles = this.gridManager.claimEnclosedTriangles();
@@ -1216,7 +1217,13 @@ triggerAIMove() {
     const openingRandomFactor = isOpeningPhase ? 0.50 : 0;
     
     const rand = Math.random();
-    if (aiInstance.networkType === 'ConvNetwork') {
+    if (this.totalMovesPlayed < 2) {
+      // Diversify opening trajectories (first 1 move per player = 2 plies, matching eval games)
+      console.log(`AI Player ${currentPlayerNum} opening random move (ply ${this.totalMovesPlayed + 1}/2)...`);
+      const validMoves = this.gridManager.getValidMoves();
+      move = validMoves.length > 0 ? validMoves[Math.floor(Math.random() * validMoves.length)] : null;
+      this.debugText.setText(`Mode: ${this.gameMode} | P${currentPlayerNum} Opening Random (ply ${this.totalMovesPlayed + 1}/2)`);
+    } else if (aiInstance.networkType === 'ConvNetwork') {
       aiInstance.explorationFactor = 0.0; // Pure network play for ConvNetwork inspection
       console.log(`AI Player ${currentPlayerNum} ConvNetwork prediction...`);
       move = aiInstance.predictMove();
@@ -1348,7 +1355,14 @@ triggerAIMove() {
         // FIX: Compute valid moves INSIDE the timeout, right before use
         const validMoves = this.gridManager.getValidMoves();
         
-        if (playerType === 'random') {
+        if (this.totalMovesPlayed < 2) {
+          // Diversify opening trajectories (first 1 move per player = 2 plies, matching eval games)
+          console.log(`${playerType} Player ${currentPlayerNum} opening random move (ply ${this.totalMovesPlayed + 1}/2)...`);
+          if (validMoves && validMoves.length > 0) {
+            move = validMoves[Math.floor(Math.random() * validMoves.length)];
+            this.debugText.setText(`P${currentPlayerNum} (${playerType}) Opening Random (ply ${this.totalMovesPlayed + 1}/2)`);
+          }
+        } else if (playerType === 'random') {
           // Random player: select random valid move
           this.debugText.setText(`P${currentPlayerNum} random: ${validMoves?.length || 'NULL'} valid moves`);
           if (validMoves && validMoves.length > 0) {
@@ -1405,6 +1419,7 @@ triggerAIMove() {
           }
           
           if (success) {
+            this.totalMovesPlayed++;
             const enclosed = this.gridManager.claimEnclosedTriangles();
             if (enclosed > 0) {
               this.gridManager.extraTurns += Math.floor((1 + enclosed) / 2);

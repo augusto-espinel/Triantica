@@ -1523,9 +1523,10 @@ async function main() {
         
         // Process MCTS training data
         for (const step of hist) {
-          // Only train on AI's moves to avoid dual-perspective conflict
-          // (Bug #1 fix: see docs/TF-B8-V2_POSTMORTEM.md for analysis)
-          if (step.player !== aiPlayerNumber || !step.mctsPolicy) continue;
+          // Train on all moves where MCTS produced a policy target (both players in MCTS self-play,
+          // and AI player in vs-Heuristic/Random games). Each step.state is canonically encoded
+          // from step.player's perspective, and rewardForPlayer is evaluated from step.player's perspective.
+          if (!step.mctsPolicy) continue;
           
           // Value target from the perspective of the player who made the move
           // (matches state encoding which is from mover's perspective)
