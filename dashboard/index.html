@@ -417,7 +417,7 @@
           ...opts,
           scales: {
             ...opts.scales,
-            y: { ...opts.scales.y, min: 0, max: 50, position: 'left', title: { display: true, text: 'Win Rate %', color: '#8b949e' } },
+            y: { ...opts.scales.y, min: 0, max: 100, position: 'left', title: { display: true, text: 'Win Rate %', color: '#8b949e' } },
             ...(hasHeuristicScores ? { y1: { ...opts.scales.y, min: 0, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Score', color: '#8b949e' } } } : {})
           }
         }
@@ -535,12 +535,17 @@
       const exps = ids.map(id => experiments.find(e => e.id === id));
       const avgWin = exps.reduce((s,e) => s + e.result.peakWinRate, 0) / exps.length;
       const avgImp = exps.reduce((s,e) => s + e.result.improvement, 0) / exps.length;
+      const maxHeur = Math.max(...exps.map(e => {
+        const d = cycleData[e.id];
+        const cycMax = d?.cycles ? Math.max(...d.cycles.map(c => c.evaluation?.vsHeuristic?.aiWinRate ?? 0)) : 0;
+        return Math.max(e.result?.vsHeuristic ?? 0, cycMax);
+      }));
       
       document.getElementById('comp-metrics').innerHTML = `
         <div class="comp-metric"><div class="label">Experiments</div><div class="value">${exps.length}</div></div>
         <div class="comp-metric"><div class="label">Avg Peak Win Rate</div><div class="value">${avgWin.toFixed(1)}%</div></div>
         <div class="comp-metric"><div class="label">Avg Improvement</div><div class="value">${avgImp>=0?'+':''}${avgImp.toFixed(1)}pp</div></div>
-        <div class="comp-metric"><div class="label">Heuristic Wall</div><div class="value" style="color:var(--red)">0%</div></div>
+        <div class="comp-metric"><div class="label">Peak vs Heuristic</div><div class="value" style="color:${maxHeur > 0 ? 'var(--green)' : 'var(--red)'}">${maxHeur.toFixed(0)}%</div></div>
       `;
       
       // Win rate comparison chart
