@@ -108,3 +108,25 @@ nohup node src/server/train_tfjs.cjs \
 - **Eval vs Heuristic (1-Ply Policy Network, `exploration = 0`, 100 random-2-ply openings/cycle):**
   - Climbed from **`52.0%` (C1) → `61.0%` (C2) → `66.0%` (C3) → `72.0%` (C4) → `71.0%` (C5) → `75.0%` (C6) → `79.0%` (C7) → 🏆 `89.0%` Peak (C8: `90% P1 / 88% P2`, mean cluster `126.7` vs `52.6`) → `78.0%` (C9) → `73.0%` Final (C10: `80% P1 / 66% P2`, mean cluster `114.1` vs `65.8`)**, averaging **`71.6%`** across all 10 cycles.
 
+---
+
+## 7. Post-`TF-B13` Forensic Audit & Next-Generation Roadmap
+
+A forensic audit of `TF-B13` (`89.0%` C8 peak → `73.0%` C10 final) and the `GridManager` topology revealed five high-leverage bottlenecks and a clean path toward **3D toroidal and arbitrary manifold surfaces**:
+
+1. **Sliding-Window Replay Buffer + Best-Checkpoint Saving:**
+   - `TF-B13`'s unbounded `500K` buffer retained all `115,892` samples from Cycles 1–10, meaning ~`70%` of mini-batches in Cycles 9–10 sampled weaker early-cycle trajectories (`C1–C6`), pulling the `89%` Cycle 8 weights slightly back toward earlier distributions.
+   - **Action:** Cap the replay buffer at a **sliding window of `35,000–50,000` samples** (last 3–4 cycles), add **cosine/step LR decay** (`0.0005 → 0.0001`), and automatically persist `best_network.json` whenever `eval.vsHeuristic` hits a new record.
+2. **Edge Asymmetry Discovery (`hasCorner` vs. `isTriangleEnclosed` / `getAdjacentTriangles`):**
+   - **Critical Code Discovery:** In `src/core/GridManager.js` and `game.js`, `isTriangleEnclosed` and `getAdjacentTriangles` wrap toroidally around all borders via `(x ± 1 + cols) % cols` and `(y ± 1 + rows) % rows`, **whereas corner placement legality (`hasCorner(x, y)`) uses unwrapped planar bounds (`0 <= cellX < cols`, `0 <= cellY < rows`)!**
+   - That means the current engine **already implements the exact hybrid boundary asymmetry**: players cannot place triangles across the outer border via corner contact alone, yet enclosures and contiguous cluster scoring wrap seamlessly around the edges.
+   - Furthermore, when transitioning to a **true 3D rotatable torus $T^2$** (where no artificial 2D border exists), wrapping vertex coordinates modulo `(cols, rows)` in `hasCorner` (`vx = (x + cols) % cols`, `vy = (y + rows) % rows`) makes all 100 cells and 100 vertices topologically identical.
+3. **Toroidal Circular Padding vs. Planar Zero-Padding (`padding: 'same'`):**
+   - For the hybrid planar-placement / toroidal-enclosure ruleset, zero-padding at the border helps the ConvNet detect the placement boundary, while circular padding (`1` cell wrap-around before each `3×3` conv) gives exact translation invariance on a true 3D torus.
+4. **Inference-Time Safety Filter (`countWouldBeEnclosed`):**
+   - Applying `QuiescenceMCTS`'s $O(1)$ local hole-risk check to filter the top-$K$ 1-ply policy moves during evaluation and browser play eliminates residual single-move blunders at negligible compute cost.
+5. **$D_4$ Dihedral Symmetry (`8×` Data Multiplier) & 3D Mesh / Graph Generalization:**
+   - Augmenting replay samples across the 8 symmetries of the square grid ($D_4$) multiplies effective sample size by `8×`.
+   - For future **3D rotatable manifolds** (torus, sphere, icosahedron, or higher-genus triangulated surfaces), the board generalizes cleanly from a 2D array to a **Dual Face-Adjacency Mesh Graph $G = (V_T, E_{\text{edge}}, E_{\text{vertex}})$**, where `QuiescenceMCTS` operates unchanged and `Conv2D` upgrades to a **Mesh / Graph Convolutional Network (MeshCNN / GCN)** over the 3 edge-neighbors and vertex rings of each triangle.
+
+

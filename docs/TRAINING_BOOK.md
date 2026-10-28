@@ -2698,6 +2698,60 @@ Warm-started from `TF-B12_network.json`, `TF-B13` ran 10 cycles (100 games/cycle
 - **Flawless vs Random:** Achieved **`100.0%` (`1,000W / 0L / 0D`)** across all 10 cycles (`2,000` consecutive wins across `TF-B12` + `TF-B13`), with mean AI cluster size reaching **`173.9` vs `3.0`** in Cycle 9.
 - **Dual-Side MCTS Efficiency:** Collecting both players' MCTS policy targets in network-vs-network games nearly doubled the replay buffer growth (`115,892` samples vs `60,961` in `TF-B12`) while maintaining balanced 50/50 self-play parity (`503` P1 wins vs `494` P2 wins, `3` draws across 1,000 games).
 
+#### 7. Post-`TF-B13` Forensic Audit: Architectural Ceiling, Remaining Bottlenecks & Toroidal Topology
+
+While `TF-B13` reached **`89.0%` vs Heuristic** in Cycle 8 (using a raw 1-ply ConvNet forward pass with `exploration = 0`), Cycles 9 and 10 dipped slightly to `78.0%` and `73.0%`. A forensic audit of the training dynamics, network padding, and game rules identified **five key bottlenecks** that explain both the `89%` peak and the path to `95%–99%+` mastery—as well as how to generalize Triantica to **true 3D toroidal and arbitrary manifold surfaces**:
+
+1. **Bottleneck 1 — Replay Buffer Staleness ("Ghost of Cycle 1"):**
+   - `TF-B13` used an unbounded `500,000`-capacity replay buffer (`115,892` samples accumulated by Cycle 10 at `~11.6K` samples/cycle).
+   - Because early samples were never evicted, by Cycles 9–10 roughly **`70%` of training mini-batches were drawn from Cycles 1–6** (when the policy was weaker: `52%–75%` vs Heuristic). Training 10 epochs at a constant `LR = 0.0005` over stale trajectories pulled Cycle 8's converged weights (`loss = 2.883`) back toward earlier MCTS visit distributions (`loss = 2.908` in C8, `2.905` in C10).
+   - **Next Step:** Implement a **sliding-window replay buffer** (`35,000–50,000` samples = last 3–4 cycles, AlphaZero style) + **cosine/step LR decay** (`0.0005 → 0.0001`) + automatic **`best_network.json` checkpointing** whenever `eval.vsHeuristic` sets a new high-water mark.
+
+2. **Bottleneck 2 — Edge Asymmetry in Corner Placement (`hasCorner`) vs. Toroidal Enclosures & Clusters:**
+   - In the current engine (`src/core/GridManager.js` and `game.js`), **edge adjacency** (`getAdjacentTriangles`) and **enclosure detection** (`isTriangleEnclosed`) wrap around the `10×10` grid toroidally via `(x ± 1 + cols) % cols` and `(y ± 1 + rows) % rows`.
+   - However, **corner placement legality** (`hasCorner(x, y)` + `getTriangleCorners(x, y, rotation)`) uses **unwrapped planar vertex coordinates** `cx ∈ [0..cols]`, `cy ∈ [0..rows]` and checks `if (cellX >= 0 && cellY >= 0 && cellX < this.cols && cellY < this.rows)`.
+   - **Consequence:** A triangle placed on border `x = 0` places corners on vertex line `cx = 0`, which does **not** wrap to `cx = cols` (`10`). Thus, players **cannot** branch legal placements across the outer boundary based on corner contact alone, even though enclosures and cluster merges **do** wrap across the boundary!
+   - **Topological Fix (True Torus $T^2$):** In a true $10 \times 10$ torus, vertex `(cols, y)` is identical to `(0, y)` and `(x, rows)` is identical to `(x, 0)` (there are exactly `rows × cols = 100` unique vertices, not `11 × 11 = 121`). Wrapping vertex coordinates modulo `(cols, rows)` inside `hasCorner`:
+     ```js
+     hasCorner(x, y) {
+       const vx = ((x % this.cols) + this.cols) % this.cols;
+       const vy = ((y % this.rows) + this.rows) % this.rows;
+       for (let dy = -1; dy <= 0; dy++) {
+         for (let dx = -1; dx <= 0; dx++) {
+           const cellX = (vx + dx + this.cols) % this.cols;
+           const cellY = (vy + dy + this.rows) % this.rows;
+           const cell = this.grid[cellY][cellX];
+           if (cell.triangles.some(t =>
+             this.getTriangleCorners(cellX, cellY, t.rotation).some(([tx, ty]) =>
+               (tx % this.cols) === vx && (ty % this.rows) === vy
+             )
+           )) {
+             return true;
+           }
+         }
+       }
+       return false;
+     }
+     ```
+     eliminates the artificial planar boundary completely, making every cell topologically identical—essential for a **3D rotatable torus UI** where there is no "edge" of the board.
+
+3. **Bottleneck 3 — Zero-Padding (`padding: 'same'`) vs. Circular Toroidal Convolutions:**
+   - `TFConvNetwork` currently applies `padding: 'same'` (zero-padding) in its three `3×3` `Conv2D` layers (`receptive field = 7×7`).
+   - Because zero-padding fills out-of-bounds neighbors with `0` instead of wrapping to the opposite side of the board, the ConvNet sees artificial walls at `x = 0, 9` and `y = 0, 9`, splitting wrap-around enclosures across opposite sides of the tensor.
+   - **Next Step:** Once `hasCorner` is wrapped toroidally, replace zero-padding with **Toroidal Circular Padding** (wrapping 1 row/col around each border before each `3×3` conv, or circularly padding the input tensor), giving the `[32, 64, 64]` filters exact translation invariance across the entire torus.
+
+4. **Bottleneck 4 — 1-Ply Raw Policy Inference vs. Inference-Time Hole-Risk Filtering:**
+   - Evaluation and browser play currently select moves using the raw 1-ply policy head (`predictMove()`, `exploration = 0`) with zero search lookahead.
+   - Applying `QuiescenceMCTS`'s $O(1)$ local neighborhood risk detector (`countWouldBeEnclosed`) as a lightweight **inference-time safety filter** on the top-$K$ policy candidates (or running light `QuiescenceMCTS-25` at play time) eliminates residual 1-ply hole blunders immediately without changing network weights.
+
+5. **Bottleneck 5 — 8-Fold Dihedral Symmetry ($D_4$) & Future 3D Manifold Surfaces (Graph / Mesh Generalization):**
+   - On the $10 \times 10$ square torus, exploiting the 8 symmetries of $D_4$ (4 rotations × 2 reflections, permuting triangle rotations `[0, 1, 2, 3]`) yields an **8× sample efficiency multiplier** (and full $10 \times 10 \times 8 = 800$-fold symmetry once toroidal translation is enabled).
+   - **Future Vision — Arbitrary 3D Surfaces:** When Triantica expands beyond a regular $10 \times 10$ torus to **arbitrary closed 3D triangulated meshes** (e.g., spheres, higher-genus surfaces, icosahedral geodesic grids, or irregular 3D manifolds rotated interactively by the player), a planar 2D grid `(x, y)` no longer applies. Instead, the board is naturally represented as a **Dual Face-Adjacency Graph $G = (V_T, E_{\text{edge}}, E_{\text{vertex}})$**:
+     - Each triangle slot is a node $v \in V_T$ (with state channels: empty, my piece, opponent piece).
+     - **Enclosure & Cluster Contiguity** operate strictly over the **3 edge-neighbors** $\mathcal{N}_{\text{edge}}(v)$ of each triangle (`isTriangleEnclosed` = all 3 edge-neighbors occupied; clusters = connected components over $\mathcal{N}_{\text{edge}}$).
+     - **Placement Legality** operates strictly over the **3 vertices** $\mathcal{V}(v)$ of each triangle (`isValidPlacement` = at least one vertex in $\mathcal{V}(v)$ is already touched by an existing triangle).
+     - **Neural Architecture:** On any 3D triangle mesh, the `3×3` grid `Conv2D` generalizes directly to a **Mesh / Graph Convolutional Network (GCN / Gauge-Equivariant MeshCNN)** aggregating features over $\mathcal{N}_{\text{edge}}(v)$ and $\mathcal{N}_{\text{vertex}}(v)$, while `QuiescenceMCTS` remains **100% unchanged** because it only queries legal moves and enclosure cascades!
+
 ---
 
 ### Phase 6: Self-Play Tournament + Iterative Retraining
