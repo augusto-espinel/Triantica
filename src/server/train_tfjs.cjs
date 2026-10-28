@@ -1336,6 +1336,7 @@ async function main() {
   // Track best model across cycles to prevent late-cycle drift from overwriting peak checkpoints
   let bestHeuristicWinRate = -1;
   let bestHeuristicMeanMargin = -Infinity;
+  let bestHeuristicSafetyWinRate = -1;
   let bestCycle = 0;
   
   for (let cycle = 1; cycle <= cycles; cycle++) {
@@ -1827,7 +1828,7 @@ async function main() {
       
       while (!grid.isGridFull() && m < maxM) {
         grid.currentPlayer = cur;
-        const move = cur === evalAIPlayerNumber ? getAIMove(network, grid, 0, evalAIPlayerNumber, useConv, useSafetyFilter, safetyFilterTopK) : getRandomMove(grid);
+        const move = cur === evalAIPlayerNumber ? getAIMove(network, grid, 0, evalAIPlayerNumber, useConv, false, safetyFilterTopK) : getRandomMove(grid);
         if (!move) break;
         
         const exec = grid.executeMove(move.x, move.y, move.rotation, cur);
@@ -1861,7 +1862,7 @@ async function main() {
     const evalP2Rate = evalP2Games > 0 ? (evalP2Wins / evalP2Games * 100) : 0;
     console.log(`📊 Eval vs Random: ${evalRate.toFixed(1)}% (${evalWins}W / ${evalLosses}L / ${evalDraws}D) [as P1: ${evalP1Rate.toFixed(1)}%, as P2: ${evalP2Rate.toFixed(1)}%]`);
     
-    // Evaluation vs Heuristic
+    // Evaluation vs Heuristic (1/3 without safety filter — Raw 1-Ply Policy, directly comparable to 2D TF-B12..TF-B14)
     let heurWins = 0, heurLosses = 0, heurDraws = 0;
     let heurP1Wins = 0, heurP1Losses = 0, heurP1Draws = 0, heurP1Games = 0;
     let heurP2Wins = 0, heurP2Losses = 0, heurP2Draws = 0, heurP2Games = 0;
@@ -1883,7 +1884,7 @@ async function main() {
         const move = m < 2
           ? getRandomMove(grid)
           : (cur === heurAIPlayerNumber 
-              ? getAIMove(network, grid, 0, heurAIPlayerNumber, useConv, useSafetyFilter, safetyFilterTopK) 
+              ? getAIMove(network, grid, 0, heurAIPlayerNumber, useConv, false, safetyFilterTopK) 
               : heuristicEval.getMove(grid));
         if (!move) break;
         
@@ -1916,7 +1917,60 @@ async function main() {
     const heurRate = heurWins / evalGames * 100;
     const heurP1Rate = heurP1Games > 0 ? (heurP1Wins / heurP1Games * 100) : 0;
     const heurP2Rate = heurP2Games > 0 ? (heurP2Wins / heurP2Games * 100) : 0;
-    console.log(`📊 Eval vs Heuristic: ${heurRate.toFixed(1)}% (${heurWins}W / ${heurLosses}L / ${heurDraws}D) [as P1: ${heurP1Rate.toFixed(1)}%, as P2: ${heurP2Rate.toFixed(1)}%]`);
+    console.log(`📊 Eval vs Heuristic (Raw Policy): ${heurRate.toFixed(1)}% (${heurWins}W / ${heurLosses}L / ${heurDraws}D) [as P1: ${heurP1Rate.toFixed(1)}%, as P2: ${heurP2Rate.toFixed(1)}%]`);
+
+    // Evaluation vs Heuristic WITH Tactical Safety Filter (1/3 with safety filter)
+    let heurSafeWins = 0, heurSafeLosses = 0, heurSafeDraws = 0;
+    let heurSafeP1Wins = 0, heurSafeP1Losses = 0, heurSafeP1Draws = 0, heurSafeP1Games = 0;
+    let heurSafeP2Wins = 0, heurSafeP2Losses = 0, heurSafeP2Draws = 0, heurSafeP2Games = 0;
+    let heurSafeAIScores = [], heurSafeOppScores = [];
+
+    for (let g = 0; g < evalGames; g++) {
+      grid.reset();
+      let cur = 1, m = 0;
+      const maxM = grid.rows * grid.cols * 3;
+      const heurAIPlayerNumber = (g % 2 === 0) ? 1 : 2;
+      const heuristicOpponentNumber = heurAIPlayerNumber === 1 ? 2 : 1;
+      const heuristicEval = new HeuristicPlayer(heuristicOpponentNumber, { explorationFactor: 0 });
+
+      while (!grid.isGridFull() && m < maxM) {
+        grid.currentPlayer = cur;
+        const move = m < 2
+          ? getRandomMove(grid)
+          : (cur === heurAIPlayerNumber
+              ? getAIMove(network, grid, 0, heurAIPlayerNumber, useConv, true, safetyFilterTopK)
+              : heuristicEval.getMove(grid));
+        if (!move) break;
+
+        const exec = grid.executeMove(move.x, move.y, move.rotation, cur);
+        if (!exec.success) break;
+        cur = exec.nextPlayer;
+        m++;
+      }
+
+      const s1 = grid.getLargestContiguous(1);
+      const s2 = grid.getLargestContiguous(2);
+      if (heurAIPlayerNumber === 1) {
+        heurSafeP1Games++;
+        if (s1 > s2) { heurSafeWins++; heurSafeP1Wins++; }
+        else if (s2 > s1) { heurSafeLosses++; heurSafeP1Losses++; }
+        else { heurSafeDraws++; heurSafeP1Draws++; }
+        heurSafeAIScores.push(s1);
+        heurSafeOppScores.push(s2);
+      } else {
+        heurSafeP2Games++;
+        if (s2 > s1) { heurSafeWins++; heurSafeP2Wins++; }
+        else if (s1 > s2) { heurSafeLosses++; heurSafeP2Losses++; }
+        else { heurSafeDraws++; heurSafeP2Draws++; }
+        heurSafeAIScores.push(s2);
+        heurSafeOppScores.push(s1);
+      }
+    }
+
+    const heurSafeRate = heurSafeWins / evalGames * 100;
+    const heurSafeP1Rate = heurSafeP1Games > 0 ? (heurSafeP1Wins / heurSafeP1Games * 100) : 0;
+    const heurSafeP2Rate = heurSafeP2Games > 0 ? (heurSafeP2Wins / heurSafeP2Games * 100) : 0;
+    console.log(`🛡️  Eval vs Heuristic (+Safety Filter): ${heurSafeRate.toFixed(1)}% (${heurSafeWins}W / ${heurSafeLosses}L / ${heurSafeDraws}D) [as P1: ${heurSafeP1Rate.toFixed(1)}%, as P2: ${heurSafeP2Rate.toFixed(1)}%]`);
     
     // Compute diversity metrics
     const openingDiversity = computeOpeningDiversity(firstMoves);
@@ -1993,6 +2047,24 @@ async function main() {
           p2Games: heurP2Games,
           aiScores: heurAIScores,
           opponentScores: heurOppScores
+        },
+        vsHeuristicWithSafety: {
+          aiWinRate: heurSafeRate,
+          aiWins: heurSafeWins,
+          losses: heurSafeLosses,
+          draws: heurSafeDraws,
+          p1WinRate: heurSafeP1Rate,
+          p2WinRate: heurSafeP2Rate,
+          p1Wins: heurSafeP1Wins,
+          p1Losses: heurSafeP1Losses,
+          p1Draws: heurSafeP1Draws,
+          p1Games: heurSafeP1Games,
+          p2Wins: heurSafeP2Wins,
+          p2Losses: heurSafeP2Losses,
+          p2Draws: heurSafeP2Draws,
+          p2Games: heurSafeP2Games,
+          aiScores: heurSafeAIScores,
+          opponentScores: heurSafeOppScores
         }
       }
     });
@@ -2007,36 +2079,46 @@ async function main() {
       const networkPath = outputPath.replace('.json', '_network.json');
       fs.writeFileSync(networkPath, networkJson);
 
-      // Compute mean score margin vs Heuristic as tie-breaker for peak checkpointing
+      // Compute mean score margin vs Heuristic (Raw Policy) as primary signal for true network learning
       const meanHeurAI = heurAIScores.length > 0 ? heurAIScores.reduce((a, b) => a + b, 0) / heurAIScores.length : 0;
       const meanHeurOpp = heurOppScores.length > 0 ? heurOppScores.reduce((a, b) => a + b, 0) / heurOppScores.length : 0;
       const heurMargin = meanHeurAI - meanHeurOpp;
 
       const bestNetworkPath = outputPath.replace('.json', '_best_network.json');
-      if (heurRate > bestHeuristicWinRate || (heurRate === bestHeuristicWinRate && heurMargin > bestHeuristicMeanMargin)) {
+      if (
+        heurRate > bestHeuristicWinRate ||
+        (heurRate === bestHeuristicWinRate && heurSafeRate > bestHeuristicSafetyWinRate) ||
+        (heurRate === bestHeuristicWinRate && heurSafeRate === bestHeuristicSafetyWinRate && heurMargin > bestHeuristicMeanMargin)
+      ) {
         bestHeuristicWinRate = heurRate;
+        bestHeuristicSafetyWinRate = heurSafeRate;
         bestHeuristicMeanMargin = heurMargin;
         bestCycle = cycle;
         fs.writeFileSync(bestNetworkPath, networkJson);
-        console.log(`🏆 New peak checkpoint saved: ${path.basename(bestNetworkPath)} (Cycle ${cycle}: ${heurRate.toFixed(1)}% vs Heuristic, margin ${heurMargin >= 0 ? '+' : ''}${heurMargin.toFixed(1)})`);
+        console.log(`🏆 New peak checkpoint saved: ${path.basename(bestNetworkPath)} (Cycle ${cycle}: ${heurRate.toFixed(1)}% raw / ${heurSafeRate.toFixed(1)}% +safety vs Heuristic, margin ${heurMargin >= 0 ? '+' : ''}${heurMargin.toFixed(1)})`);
       }
       
       log.endedAt = new Date().toISOString();
       log.bestResult = {
         cycle: bestCycle,
         vsHeuristic: bestHeuristicWinRate,
+        vsHeuristicWithSafety: bestHeuristicSafetyWinRate,
         meanScoreMarginVsHeuristic: bestHeuristicMeanMargin,
         checkpoint: path.basename(bestNetworkPath)
       };
       log.finalResult = { 
         vsRandom: evalRate, 
         vsHeuristic: heurRate,
+        vsHeuristicWithSafety: heurSafeRate,
         vsRandomP1: evalP1Rate,
         vsRandomP2: evalP2Rate,
         vsHeuristicP1: heurP1Rate,
         vsHeuristicP2: heurP2Rate,
+        vsHeuristicWithSafetyP1: heurSafeP1Rate,
+        vsHeuristicWithSafetyP2: heurSafeP2Rate,
         bestCycle,
-        bestVsHeuristic: bestHeuristicWinRate
+        bestVsHeuristic: bestHeuristicWinRate,
+        bestVsHeuristicWithSafety: bestHeuristicSafetyWinRate
       };
       fs.writeFileSync(outputPath, JSON.stringify(log, null, 2));
       
@@ -2052,7 +2134,8 @@ async function main() {
   console.log(`\n✅ Training complete in ${((Date.now() - new Date(log.startedAt).getTime()) / 1000 / 60).toFixed(1)} min`);
   const lastCycle = log.cycles[log.cycles.length - 1];
   console.log(`   Final vs Random: ${lastCycle.evaluation.vsRandom.aiWinRate.toFixed(1)}%`);
-  console.log(`   Final vs Heuristic: ${lastCycle.evaluation.vsHeuristic.aiWinRate.toFixed(1)}%`);
+  console.log(`   Final vs Heuristic (Raw): ${lastCycle.evaluation.vsHeuristic.aiWinRate.toFixed(1)}%`);
+  console.log(`   Final vs Heuristic (+Safety): ${lastCycle.evaluation.vsHeuristicWithSafety.aiWinRate.toFixed(1)}%`);
 }
 
 // Wait for GridManager to load, then run main

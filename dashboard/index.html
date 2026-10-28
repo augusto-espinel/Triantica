@@ -175,7 +175,14 @@
           ? Math.round(lastCycle.evaluation.vsHeuristic.aiWinRate)
           : (hWins && hCount ? Math.round(((hWins.aiWins ?? hWins['1']) / hCount) * 100) : (r.vsHeuristic != null ? r.vsHeuristic : null));
         const hPeak = d?.cycles ? Math.max(r.vsHeuristicPeak || 0, ...d.cycles.map(c => Math.round(c.evaluation?.vsHeuristic?.aiWinRate || 0))) : (r.vsHeuristicPeak || 0);
-        const hBadge = hRate !== null ? (hPeak > hRate ? `${hRate}% vs Heur (pk ${hPeak}%)` : `${hRate}% vs Heuristic`) : '';
+        const hSafeRate = lastCycle?.evaluation?.vsHeuristicWithSafety?.aiWinRate != null
+          ? Math.round(lastCycle.evaluation.vsHeuristicWithSafety.aiWinRate)
+          : (r.vsHeuristicWithSafety != null ? r.vsHeuristicWithSafety : null);
+        const hBadge = hRate !== null
+          ? (hSafeRate !== null
+              ? `${hRate}% Raw | ${hSafeRate}% +Safe vs H`
+              : (hPeak > hRate ? `${hRate}% vs Heur (pk ${hPeak}%)` : `${hRate}% vs Heuristic`))
+          : '';
         // Score stats from last cycle
         const lastCycScores = getCycleScoreStats(lastCycle, 'heuristic')?.ai;
         const scoreBadge = lastCycScores ? `AI med ${lastCycScores.median} / max ${lastCycScores.max} vs H` : '';
@@ -291,6 +298,7 @@
           return null;
         });
         const evalVsHeuristic = data.cycles.map(c => c.evaluation?.vsHeuristic?.aiWinRate ?? null);
+        const evalVsHeuristicSafe = data.cycles.map(c => c.evaluation?.vsHeuristicWithSafety?.aiWinRate ?? null);
         
         // Self-play win rates
         const selfPlayVsRandom = data.cycles.map(c => {
@@ -314,6 +322,8 @@
         const evalVsRandomP2 = data.cycles.map(c => c.evaluation?.vsRandom?.p2WinRate ?? null);
         const evalVsHeuristicP1 = data.cycles.map(c => c.evaluation?.vsHeuristic?.p1WinRate ?? null);
         const evalVsHeuristicP2 = data.cycles.map(c => c.evaluation?.vsHeuristic?.p2WinRate ?? null);
+        const evalVsHeuristicSafeP1 = data.cycles.map(c => c.evaluation?.vsHeuristicWithSafety?.p1WinRate ?? null);
+        const evalVsHeuristicSafeP2 = data.cycles.map(c => c.evaluation?.vsHeuristicWithSafety?.p2WinRate ?? null);
         const spTotalGames = data.cycles.map(c => c.selfPlay?.games || 100);
         const spP1Share = data.cycles.map((c, idx) => c.selfPlay?.wins?.['1'] != null ? (c.selfPlay.wins['1'] / spTotalGames[idx] * 100) : null);
         const spP2Share = data.cycles.map((c, idx) => c.selfPlay?.wins?.['2'] != null ? (c.selfPlay.wins['2'] / spTotalGames[idx] * 100) : null);
@@ -322,7 +332,8 @@
           { label: 'vs Random (eval, %)', data: evalVsRandom, borderColor: '#3fb950', backgroundColor: 'rgba(63,185,80,0.1)', fill: true, tension: 0.3 },
           { label: 'vs Random as P1 (eval, %)', data: evalVsRandomP1, borderColor: '#56d364', backgroundColor: 'transparent', borderDash: [4,2], tension: 0.3 },
           { label: 'vs Random as P2 (eval, %)', data: evalVsRandomP2, borderColor: '#2ea043', backgroundColor: 'transparent', borderDash: [2,2], tension: 0.3 },
-          { label: 'vs Heuristic (eval, %)', data: evalVsHeuristic, borderColor: '#f85149', backgroundColor: 'rgba(248,81,73,0.1)', fill: true, tension: 0.3 },
+          { label: 'vs Heuristic Raw Policy (eval, %)', data: evalVsHeuristic, borderColor: '#f85149', backgroundColor: 'rgba(248,81,73,0.1)', fill: true, tension: 0.3 },
+          { label: 'vs Heuristic +Safety Filter (eval, %)', data: evalVsHeuristicSafe, borderColor: '#a371f7', backgroundColor: 'rgba(163,113,247,0.12)', fill: false, tension: 0.3 },
           { label: 'vs Heuristic (MCTS self-play, %)', data: selfPlayVsHeuristic, borderColor: '#ff7b72', backgroundColor: 'transparent', borderDash: [4,2], tension: 0.3 },
           { label: 'vs Random (self-play, %)', data: selfPlayVsRandom, borderColor: '#58a6ff', backgroundColor: 'transparent', borderDash: [5,3], tension: 0.3 },
           { label: 'vs Network (self-play, %)', data: selfPlayVsNetwork, borderColor: '#d29922', backgroundColor: 'transparent', borderDash: [5,3], tension: 0.3 }
@@ -338,8 +349,10 @@
         const roleDatasets = [
           { label: 'Eval vs Random — AI as P1 (1st Move %)', data: evalVsRandomP1, borderColor: '#3fb950', backgroundColor: 'rgba(63,185,80,0.08)', fill: false, tension: 0.3 },
           { label: 'Eval vs Random — AI as P2 (2nd Move %)', data: evalVsRandomP2, borderColor: '#58a6ff', backgroundColor: 'rgba(88,166,255,0.08)', fill: false, tension: 0.3 },
-          { label: 'Eval vs Heuristic — AI as P1 (%)', data: evalVsHeuristicP1, borderColor: '#f85149', backgroundColor: 'transparent', borderDash: [4,2], tension: 0.3 },
-          { label: 'Eval vs Heuristic — AI as P2 (%)', data: evalVsHeuristicP2, borderColor: '#bc8cff', backgroundColor: 'transparent', borderDash: [4,2], tension: 0.3 },
+          { label: 'Eval vs Heuristic (Raw) — AI as P1 (%)', data: evalVsHeuristicP1, borderColor: '#f85149', backgroundColor: 'transparent', borderDash: [4,2], tension: 0.3 },
+          { label: 'Eval vs Heuristic (Raw) — AI as P2 (%)', data: evalVsHeuristicP2, borderColor: '#bc8cff', backgroundColor: 'transparent', borderDash: [4,2], tension: 0.3 },
+          { label: 'Eval vs Heuristic (+Safety) — AI as P1 (%)', data: evalVsHeuristicSafeP1, borderColor: '#d2a8ff', backgroundColor: 'transparent', borderDash: [2,2], tension: 0.3 },
+          { label: 'Eval vs Heuristic (+Safety) — AI as P2 (%)', data: evalVsHeuristicSafeP2, borderColor: '#79c0ff', backgroundColor: 'transparent', borderDash: [2,2], tension: 0.3 },
           { label: 'Self-Play — P1 Win Share (%)', data: spP1Share, borderColor: '#d29922', backgroundColor: 'transparent', borderDash: [2,2], tension: 0.3 },
           { label: 'Self-Play — P2 Win Share (%)', data: spP2Share, borderColor: '#8b949e', backgroundColor: 'transparent', borderDash: [2,2], tension: 0.3 }
         ].filter(d => d.data.some(v => v !== null));
@@ -393,7 +406,11 @@
         }
         if (lastCycle?.evaluation?.vsHeuristic?.p1WinRate != null) {
           const h = lastCycle.evaluation.vsHeuristic;
-          statCards.push(`<div class="score-stat heuristic"><div class="label">vs Heuristic Role Split</div><div class="value">P1: ${Math.round(h.p1WinRate)}%</div><div class="sub">P2: ${Math.round(h.p2WinRate)}% (${h.p1Wins||0}/${h.p1Games||50} vs ${h.p2Wins||0}/${h.p2Games||50})</div></div>`);
+          statCards.push(`<div class="score-stat heuristic"><div class="label">vs Heur (Raw) Split</div><div class="value">P1: ${Math.round(h.p1WinRate)}%</div><div class="sub">P2: ${Math.round(h.p2WinRate)}% (${h.p1Wins||0}/${h.p1Games||50} vs ${h.p2Wins||0}/${h.p2Games||50})</div></div>`);
+        }
+        if (lastCycle?.evaluation?.vsHeuristicWithSafety?.p1WinRate != null) {
+          const hs = lastCycle.evaluation.vsHeuristicWithSafety;
+          statCards.push(`<div class="score-stat heuristic"><div class="label">vs Heur (+Safety) Split</div><div class="value">P1: ${Math.round(hs.p1WinRate)}%</div><div class="sub">P2: ${Math.round(hs.p2WinRate)}% (${hs.p1Wins||0}/${hs.p1Games||50} vs ${hs.p2Wins||0}/${hs.p2Games||50})</div></div>`);
         }
         document.getElementById('score-stats').innerHTML = statCards.join('');
         document.getElementById('score-stats-row').style.display = '';
@@ -414,13 +431,19 @@
         const wins = hw ? (hw.aiWins ?? hw['1']) : null;
         return (wins != null && hCount) ? ((wins / hCount) * 100) : null;
       }) || [];
+      const heuristicSafeWinRates = data?.cycles?.map(c => c.evaluation?.vsHeuristicWithSafety?.aiWinRate ?? null) || [];
       const heuristicP1Median = data?.cycles?.map(c => getCycleScoreStats(c, 'heuristic')?.ai?.median ?? null) || [];
       const heuristicP1Max = data?.cycles?.map(c => getCycleScoreStats(c, 'heuristic')?.ai?.max ?? null) || [];
       const heuristicP2Median = data?.cycles?.map(c => getCycleScoreStats(c, 'heuristic')?.opp?.median ?? null) || [];
       const hasHeuristicScores = heuristicP1Median.some(v => v !== null);
       const heuristicDatasets = [
-        { label: 'Eval Win Rate vs Heuristic (%)', data: heuristicWinRates, borderColor: '#f85149', backgroundColor: 'rgba(248,81,73,0.1)', fill: true, tension: 0.3, yAxisID: 'y' },
+        { label: 'Eval Win Rate vs Heuristic — Raw Policy (%)', data: heuristicWinRates, borderColor: '#f85149', backgroundColor: 'rgba(248,81,73,0.1)', fill: true, tension: 0.3, yAxisID: 'y' },
       ];
+      if (heuristicSafeWinRates.some(v => v !== null)) {
+        heuristicDatasets.push(
+          { label: 'Eval Win Rate vs Heuristic — +Safety Filter (%)', data: heuristicSafeWinRates, borderColor: '#a371f7', backgroundColor: 'transparent', tension: 0.3, yAxisID: 'y' }
+        );
+      }
       if (heuristicSPWinRates.some(v => v !== null)) {
         heuristicDatasets.push(
           { label: 'MCTS Self-Play Win Rate vs Heuristic (%)', data: heuristicSPWinRates, borderColor: '#58a6ff', backgroundColor: 'transparent', borderDash: [4,2], tension: 0.3, yAxisID: 'y' }
@@ -598,11 +621,25 @@
         const data = cycleData[exp.id];
         const rates = data?.cycles?.map(c => c.evaluation?.vsHeuristic?.aiWinRate ?? null) || [];
         return {
-          label: exp.name + ' (vs Heuristic)',
+          label: exp.name + ' (vs Heuristic Raw)',
           data: rates,
           borderColor: PALETTE[i % PALETTE.length],
           backgroundColor: 'transparent',
           borderDash: [5, 3],
+          tension: 0.3
+        };
+      }).filter(d => d.data.some(v => v !== null));
+
+      // Add vs Heuristic (+Safety Filter) datasets when available
+      const heurSafeDatasets = exps.map((exp, i) => {
+        const data = cycleData[exp.id];
+        const rates = data?.cycles?.map(c => c.evaluation?.vsHeuristicWithSafety?.aiWinRate ?? null) || [];
+        return {
+          label: exp.name + ' (vs Heuristic +Safety)',
+          data: rates,
+          borderColor: PALETTE[i % PALETTE.length],
+          backgroundColor: 'transparent',
+          borderDash: [2, 2],
           tension: 0.3
         };
       }).filter(d => d.data.some(v => v !== null));
@@ -628,7 +665,7 @@
       
       charts.compareWinrate = new Chart(document.getElementById('chart-compare-winrate'), {
         type: 'line',
-        data: { labels, datasets: [...datasets, ...heurDatasets, ...spDatasets] },
+        data: { labels, datasets: [...datasets, ...heurDatasets, ...heurSafeDatasets, ...spDatasets] },
         options: {
           responsive: true, maintainAspectRatio: false,
           plugins: { legend: { labels: { color: '#c9d1d9' } } },

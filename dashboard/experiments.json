@@ -402,11 +402,12 @@
     "date": "2026-10-28",
     "logFile": "data/TF-B15.json",
     "dataFile": "TF-B15.json",
-    "summary": "⏳ IN PROGRESS: Phase 3 Full Toroidal Symmetry (T^2 corner placement + enclosure wrapping) + Bottleneck 2 (ToroidalPad2D circular convolutions) + Bottleneck 3 (Inference-Time Tactical Safety Filter, topK=12) warm-started from TF-B14_best_network.json (90% 2D champion). 10 cycles, 100 games/cycle Dual-Side QuiescenceMCTS-50 pure self-play.",
+    "summary": "⏳ IN PROGRESS: Phase 3 Full Toroidal Symmetry (T^2 corner placement + enclosure wrapping) + Bottleneck 2 (ToroidalPad2D circular convolutions) + Bottleneck 3 (Inference-Time Tactical Safety Filter, topK=12) warm-started from TF-B14_best_network.json (90% 2D champion). Evaluates 3-way split every cycle: 1/3 vs Random (raw), 1/3 vs Heuristic (raw 1-ply policy, comparable to 2D), and 1/3 vs Heuristic (+Safety Filter).",
     "parameters": {
       "cycles": 10,
       "games": 100,
       "evalGames": 100,
+      "evalProtocol": "3-Way Split (1/3 vs Random Raw, 1/3 vs Heuristic Raw Policy, 1/3 vs Heuristic +Safety Filter)",
       "iterations": 10,
       "learningRate": 0.0003,
       "minLearningRate": 0.00008,
