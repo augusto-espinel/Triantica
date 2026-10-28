@@ -15,6 +15,7 @@ class BrowserConvNetwork {
         this.channels = 18;
         this.numFilters = [32, 64, 64];
         this.policySize = 400;
+        this.paddingMode = 'circular';
         this.model = null;
         this.rawJSON = null;
         if (jsonData) {
@@ -23,16 +24,63 @@ class BrowserConvNetwork {
     }
 
     _buildModel() {
+        if (typeof tf !== 'undefined' && !BrowserConvNetwork._toroidalLayerRegistered) {
+            class ToroidalPad2D extends tf.layers.Layer {
+                static className = 'ToroidalPad2D';
+                constructor(config = {}) {
+                    super(config);
+                    this.padding = config.padding || 1;
+                }
+                computeOutputShape(inputShape) {
+                    const p = this.padding;
+                    return [inputShape[0], inputShape[1] + 2 * p, inputShape[2] + 2 * p, inputShape[3]];
+                }
+                call(inputs) {
+                    return tf.tidy(() => {
+                        const x = Array.isArray(inputs) ? inputs[0] : inputs;
+                        const p = this.padding;
+                        const h = x.shape[1];
+                        const w = x.shape[2];
+                        const topRows = tf.slice(x, [0, 0, 0, 0], [-1, p, -1, -1]);
+                        const botRows = tf.slice(x, [0, h - p, 0, 0], [-1, p, -1, -1]);
+                        const rowWrapped = tf.concat([botRows, x, topRows], 1);
+                        const leftCols = tf.slice(rowWrapped, [0, 0, 0, 0], [-1, -1, p, -1]);
+                        const rightCols = tf.slice(rowWrapped, [0, 0, w - p, 0], [-1, -1, p, -1]);
+                        return tf.concat([rightCols, rowWrapped, leftCols], 2);
+                    });
+                }
+                getConfig() {
+                    const config = super.getConfig();
+                    Object.assign(config, { padding: this.padding });
+                    return config;
+                }
+            }
+            tf.serialization.registerClass(ToroidalPad2D);
+            BrowserConvNetwork.ToroidalPad2D = ToroidalPad2D;
+            BrowserConvNetwork._toroidalLayerRegistered = true;
+        }
+
         const input = tf.input({ shape: [this.rows, this.cols, this.channels] });
         let x = input;
         for (let i = 0; i < this.numFilters.length; i++) {
-            x = tf.layers.conv2d({
-                filters: this.numFilters[i],
-                kernelSize: 3,
-                padding: 'same',
-                kernelInitializer: 'glorotUniform',
-                biasInitializer: 'zeros'
-            }).apply(x);
+            if (this.paddingMode === 'circular' && BrowserConvNetwork.ToroidalPad2D) {
+                x = new BrowserConvNetwork.ToroidalPad2D({ padding: 1 }).apply(x);
+                x = tf.layers.conv2d({
+                    filters: this.numFilters[i],
+                    kernelSize: 3,
+                    padding: 'valid',
+                    kernelInitializer: 'glorotUniform',
+                    biasInitializer: 'zeros'
+                }).apply(x);
+            } else {
+                x = tf.layers.conv2d({
+                    filters: this.numFilters[i],
+                    kernelSize: 3,
+                    padding: 'same',
+                    kernelInitializer: 'glorotUniform',
+                    biasInitializer: 'zeros'
+                }).apply(x);
+            }
             x = tf.layers.batchNormalization().apply(x);
             x = tf.layers.reLU().apply(x);
         }
@@ -85,6 +133,7 @@ class BrowserConvNetwork {
             this.channels = json.architecture?.channels || 18;
             this.numFilters = json.architecture?.numFilters || [32, 64, 64];
             this.policySize = json.architecture?.policySize || 400;
+            this.paddingMode = json.architecture?.paddingMode || 'circular';
 
             this._buildModel();
 
@@ -281,20 +330,91 @@ class AIPlayer {
                 const cell = this.gridManager.grid[r][c];
                 const cellOffset = (r * cols + c) * 18;
 
-                for (let slot = 0; slot < 2; slot++) {
-                    const slotOffset = cellOffset + slot * 9;
-                    const tri = cell.triangles.find(t => (slot === 0 ? t.rotation < 2 : t.rotation >= 2));
+                let slashTriangle = null;
+                let backslashTriangle = null;
+                for (const t of cell.triangles) {
+                    if (t.rotation % 2 === 0) slashTriangle = t;
+                    else backslashTriangle = t;
+                }
 
-                    if (!tri) {
-                        state[slotOffset] = 1;
-                    } else {
-                        const ownerOffset = tri.player === this.playerNumber ? 0 : 4;
-                        state[slotOffset + 1 + ownerOffset + tri.rotation] = 1;
-                    }
+                // Group 0: slash (rotations 0, 2)
+                if (!slashTriangle) {
+                    state[cellOffset + 0] = 1;
+                } else if (slashTriangle.player === this.playerNumber) {
+                    state[cellOffset + 1 + slashTriangle.rotation] = 1;
+                } else {
+                    state[cellOffset + 5 + slashTriangle.rotation] = 1;
+                }
+
+                // Group 1: backslash (rotations 1, 3)
+                if (!backslashTriangle) {
+                    state[cellOffset + 9] = 1;
+                } else if (backslashTriangle.player === this.playerNumber) {
+                    state[cellOffset + 10 + backslashTriangle.rotation] = 1;
+                } else {
+                    state[cellOffset + 14 + backslashTriangle.rotation] = 1;
                 }
             }
         }
         return Array.from(state);
+    }
+
+    static countWouldBeEnclosed(grid, mx, my, mrot, player) {
+        const { rows, cols } = grid;
+        const candidates = [
+            [mx, my],
+            [(mx + 1) % cols, my],
+            [(mx - 1 + cols) % cols, my],
+            [mx, (my + 1) % rows],
+            [mx, (my - 1 + rows) % rows]
+        ];
+        let claimed = 0;
+        const mapping = [2, 3, 0, 1];
+        const cell = grid.grid[my][mx];
+        cell.triangles.push({ player, rotation: mrot });
+
+        for (let i = 0; i < 5; i++) {
+            const [cx, cy] = candidates[i];
+            const cCell = grid.grid[cy][cx];
+            if (cCell.triangles.length === 1) {
+                const oppRotation = mapping[cCell.triangles[0].rotation];
+                if (grid.isTriangleEnclosed(cx, cy, oppRotation)) {
+                    claimed++;
+                }
+            }
+        }
+
+        cell.triangles.pop();
+        return claimed;
+    }
+
+    static evaluateOpponentReplyRisk(grid, mx, my, mrot, player) {
+        const { rows, cols } = grid;
+        const cell = grid.grid[my][mx];
+        cell.triangles.push({ player, rotation: mrot });
+
+        const opp = player === 1 ? 2 : 1;
+        let maxOppClaim = 0;
+        let totalOppClaims = 0;
+
+        for (let dy = -2; dy <= 2; dy++) {
+            for (let dx = -2; dx <= 2; dx++) {
+                const ox = (mx + dx + cols) % cols;
+                const oy = (my + dy + rows) % rows;
+                if (grid.grid[oy][ox].triangles.length >= 2) continue;
+                for (let r = 0; r < 4; r++) {
+                    if (!grid.isValidMove(ox, oy, r)) continue;
+                    const c = AIPlayer.countWouldBeEnclosed(grid, ox, oy, r, opp);
+                    if (c > 0) {
+                        totalOppClaims += c;
+                        if (c > maxOppClaim) maxOppClaim = c;
+                    }
+                }
+            }
+        }
+
+        cell.triangles.pop();
+        return { maxOppClaim, totalOppClaims };
     }
 
     loadNetworkJSON(jsonData) {
@@ -353,23 +473,48 @@ class AIPlayer {
                 const cellIndex = Math.floor(i / 4);
                 const x = cellIndex % this.gridManager.cols;
                 const y = Math.floor(cellIndex / this.gridManager.cols);
-                moves.push({ x, y, rotation, score });
+                if (this.gridManager.isValidMove(x, y, rotation)) {
+                    moves.push({ x, y, rotation, score, rawPolicyScore: score });
+                }
+            }
+
+            if (moves.length === 0) {
+                console.warn("AI couldn't find a valid move from network output. Making random valid move.");
+                return this.getRandomValidMove(this.gridManager);
             }
 
             // Sort moves by score in descending order
             moves.sort((a, b) => b.score - a.score);
 
-            // Find the highest-scoring valid move
-            for (const move of moves) {
-                if (this.gridManager.isValidMove(move.x, move.y, move.rotation)) {
-                    // console.log(`AI Prediction: (${move.x}, ${move.y}), Rot: ${move.rotation}, Score: ${move.score.toFixed(4)}`);
-                    return { x: move.x, y: move.y, rotation: move.rotation };
+            // Apply 1-ply tactical safety filter for ConvNetwork
+            if (this.networkType === 'ConvNetwork' || this.network.type === 'ConvNetwork') {
+                const K = Math.min(12, moves.length);
+                let bestMove = moves[0];
+                let bestAdjustedScore = -Infinity;
+
+                for (let i = 0; i < K; i++) {
+                    const m = moves[i];
+                    const myClaimed = AIPlayer.countWouldBeEnclosed(this.gridManager, m.x, m.y, m.rotation, this.playerNumber);
+                    let adjScore = m.rawPolicyScore;
+                    if (myClaimed > 0) {
+                        adjScore = m.rawPolicyScore * (1 + myClaimed * 0.5) + 0.25 * myClaimed;
+                    } else if ((this.gridManager.extraTurns || 0) === 0) {
+                        const { maxOppClaim, totalOppClaims } = AIPlayer.evaluateOpponentReplyRisk(
+                            this.gridManager, m.x, m.y, m.rotation, this.playerNumber
+                        );
+                        if (maxOppClaim > 0) {
+                            adjScore = m.rawPolicyScore * Math.max(0.01, 1 - (maxOppClaim * 0.45 + totalOppClaims * 0.1));
+                        }
+                    }
+                    if (adjScore > bestAdjustedScore) {
+                        bestAdjustedScore = adjScore;
+                        bestMove = m;
+                    }
                 }
+                return { x: bestMove.x, y: bestMove.y, rotation: bestMove.rotation };
             }
 
-            // If no valid move found by the network (shouldn't happen in a normal game state unless grid is full)
-            console.warn("AI couldn't find a valid move from network output. Making random valid move.");
-            return this.getRandomValidMove(this.gridManager);
+            return { x: moves[0].x, y: moves[0].y, rotation: moves[0].rotation };
         }
     }
 

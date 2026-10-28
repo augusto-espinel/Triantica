@@ -2,8 +2,8 @@
 
 **Last Updated:** 2026-10-28  
 **Completed Experiment:** `TF-B14` (`90.0%` Peak / `80.1%` 10-Cycle Avg vs Heuristic, `100.0%` vs Random)  
-**Milestone 1 Status:** ✅ Ready to Tag & Publish (`v1.0.0-2d` on `2d-variant` branch)  
-**Target Milestone 2:** 3D Toroidal & Arbitrary Manifold Generalization (`v2.0.0-3d` on `main`)
+**Milestone 1 Status:** ✅ Tagged & Published (`v1.0.0-2d` on `2d-variant` branch)  
+**Milestone 2 Status:** ✅ Phase 3 Implemented on `main` (Full Toroidal Symmetry + `ToroidalPad2D`/`3D` + Tactical Safety Filter + Manifold Graph $G=(V_T,E_{\text{edge}},E_{\text{vertex}})$)
 
 ---
 
@@ -41,14 +41,14 @@ To maintain rigorous scientific discipline, execution is divided into **four seq
 │    • Ready to continue 3D-compatible development on `main`                   │
 │                                      │                                       │
 │                                      ▼                                       │
-│  PHASE 3: 3D Capability, Full Edge Symmetry & Bottlenecks 2 & 3      [NEXT]  │
+│  PHASE 3: 3D Capability, Full Edge Symmetry & Bottlenecks 2 & 3      [DONE]  │
 │    • Unify toroidal edge symmetry: wrap hasCorner(x, y) modulo (cols, rows)  │
 │    • Bottleneck 2: Toroidal Circular Padding in TFConvNetwork / ConvNetwork  │
-│    • Bottleneck 3: Inference-Time Tactical Safety Filter (predictMove)       │
+│    • Bottleneck 3: Inference-Time Tactical Safety Filter (predictMove): 99%! │
 │    • Generalize GridManager to Dual Face-Adjacency Mesh Graph G=(V_T,E_e,E_v)│
 │                                      │                                       │
 │                                      ▼                                       │
-│  PHASE 4: Manifold Symmetry Exploitation (Bottleneck 4)              [FINAL] │
+│  PHASE 4: Manifold Symmetry Exploitation (Bottleneck 4)              [NEXT]  │
 │    • Tackle dihedral (D_4) / toroidal / mesh gauge symmetry augmentation     │
 │      after all 3D-compatible training & architectural upgrades are proven    │
 │                                                                              │
@@ -95,7 +95,7 @@ node src/server/train_tfjs.cjs \
 
 ---
 
-### Phase 2: Official 2D Variant Release, Dedicated Branch (`2d-variant`) & Tagging (`v1.0.0-2d`) — ⏳ NEXT
+### Phase 2: Official 2D Variant Release, Dedicated Branch (`2d-variant`) & Tagging (`v1.0.0-2d`) — ✅ COMPLETED
 
 **Objective:**  
 Freeze, tag, and preserve the definitive 2D version of Triantica (using the Bounded Placement / Toroidal Enclosure hybrid topology) on its own dedicated GitHub branch (`2d-variant`) once `TF-B14` completes, while continuing 3D-compatible development on `main`. This allows GitHub Pages to be switched between `2d-variant` and `main` at any time for direct gameplay and performance comparison between the 2D and 3D variants.
@@ -113,32 +113,31 @@ Freeze, tag, and preserve the definitive 2D version of Triantica (using the Boun
 
 ---
 
-### Phase 3: 3D Capability, Full Edge Symmetry & Bottlenecks 2 & 3 — ⏳ PLANNED (POST-2D RELEASE)
+### Phase 3: 3D Capability, Full Edge Symmetry & Bottlenecks 2 & 3 — ✅ COMPLETED
 
 **Objective:**  
 Transition Triantica from a bounded 2D planar-placement board to a **seam-free 3D rotatable manifold** where edges have full topological symmetry, while resolving **Bottleneck 2** (Toroidal Circular Padding) and **Bottleneck 3** (Inference-Time Safety Filter).
 
-#### Step 3.1: Full Edge Symmetry on the Torus ($T^2$)
-- Upgrade `hasCorner(x, y)` in `src/core/GridManager.js` (and `game.js`) to support `toroidalPlacement = true` by wrapping vertex coordinates modulo `(this.cols, this.rows)`:
-  - Vertex `(cols, y) ≡ (0, y)` and `(x, rows) ≡ (x, 0)` (`100` unique vertices on a `10×10` torus instead of `121`).
-  - Both **placement legality** (corner sharing) and **enclosure / cluster scoring** (edge sharing) become 100% translation-invariant across the torus, eliminating artificial board borders so the player can freely rotate the 3D torus to any angle.
+#### Step 3.1: Full Edge Symmetry on the Torus ($T^2$) — ✅ DONE
+- Upgraded `hasCorner(x, y)` in `src/core/GridManager.js` and `game.js` to default to `toroidalPlacement = true` on `main` (while preserving `toroidalPlacement: false` compatibility for the `2d-variant` hybrid topology):
+  - Vertex coordinates wrap modulo `(this.cols, this.rows)` (`100` unique mesh vertices on a `10×10` torus instead of `121`, each incident to `12` triangle face-slots).
+  - Both **placement legality** (corner sharing) and **enclosure / cluster scoring** (edge sharing) are now 100% translation-invariant across $T^2$.
 
-#### Step 3.2: Bottleneck 2 — Toroidal Circular Padding in `TFConvNetwork` & `ConvNetwork.cjs`
-- Replace `padding: 'same'` (zero-padding) in the `3×3` `Conv2D` layers with **Circular Toroidal Padding** (`pad = 1` wrapping row `0 ↔ rows-1` and col `0 ↔ cols-1` before `padding: 'valid'` `3×3` convolution) in both:
-  - `src/server/train_tfjs.cjs` (`TFConvNetwork`)
-  - `src/ai/ConvNetwork.cjs` (pure-JS inference engine used in browser & fast server eval)
-- Guarantees exact translation equivariance: shifting the board on the 3D torus shifts the feature maps identically without boundary distortion.
+#### Step 3.2: Bottleneck 2 — Toroidal Circular Padding in `TFConvNetwork` & `ConvNetwork.cjs` — ✅ DONE
+- Implemented custom TensorFlow.js layers `ToroidalPad2D` and `ToroidalPad3D` in `src/server/train_tfjs.cjs` (using differentiable `tf.slice` and `tf.concat` inside `tf.tidy()` without deprecated `util.isNullOrUndefined` calls, and registered via `tf.serialization.registerClass`), plus matching circular convolution in `src/ai/ConvNetwork.cjs` and `AIPlayer.js` (`BrowserConvNetwork`).
+- Verified exact numerical equivalence between `TFConvNetwork` and pure-JS `ConvNetwork` (`max abs policy diff = 4.28e-7`, `value diff = 0.0`) and exact 2D periodic translation equivariance (`max abs diff = 5.96e-8`).
 
-#### Step 3.3: Bottleneck 3 — Inference-Time Tactical Safety Filter (`ConvNetwork.predictMove`)
-- Integrate `QuiescenceMCTS`'s fast $O(1)$ local neighborhood risk check (`countWouldBeEnclosed`) into 1-ply inference (`src/ai/ConvNetwork.cjs` / `AIPlayer.js`).
-- Evaluate the top-$K$ policy moves (`K = 5`): if a candidate move has `claimed === 0` (passes the turn) and creates an immediate opponent enclosure (`oppEnclosed > 0`), apply the risk penalty before final move selection, eliminating residual 1-ply tactical blunders at zero search cost.
+#### Step 3.3: Bottleneck 3 — Inference-Time Tactical Safety Filter (`ConvNetwork.predictMove`) — ✅ DONE
+- Integrated `ConvNetwork.countWouldBeEnclosed` and `ConvNetwork.evaluateOpponentReplyRisk` (checking the local $5\times 5$ toroidal neighborhood for 1-ply opponent enclosure traps and rewarding immediate AI enclosures) into `src/ai/ConvNetwork.cjs`, `src/players/AIPlayer.js`, and browser `AIPlayer.js`.
+- **Empirical Verification (`500` random-opening games vs `HeuristicPlayer`):**
+  - **Raw Policy (`safetyFilter = false`):** `87.0%` (`87W / 13L / 0D` per 100 games)
+  - **With Tactical Safety Filter (`safetyFilter = true`):** **`99.0%` (`495W / 5L / 0D` across 500 games; `100.0%` on 100 deterministic openings)**, eliminating virtually all 1-ply tactical blunders at ~0.35s/game without search overhead.
 
-#### Step 3.4: 3D Manifold Engine & Mesh Representation ($\mathcal{M}$)
-- Generalize `GridManager` to support arbitrary closed 3D triangulated manifolds $\mathcal{M}$ via a **Dual Face-Adjacency Graph** $G = (V_T, E_{\text{edge}}, E_{\text{vertex}})$:
-  - **Nodes $v \in V_T$:** Triangle slots on the 3D mesh.
-  - **Edge-Adjacency $\mathcal{N}_{\text{edge}}(v)$ (3 neighbors per triangle):** Governs `isTriangleEnclosed` (all 3 edge-neighbors occupied) and `getLargestContiguous` (connected components over $E_{\text{edge}}$).
-  - **Vertex-Adjacency $\mathcal{V}(v)$ (3 mesh vertices per triangle):** Governs `isValidPlacement` (at least one vertex in $\mathcal{V}(v)$ is touched by an existing triangle).
-  - **`QuiescenceMCTS` Compatibility:** `QuiescenceMCTS.cjs` is already 100% manifold-agnostic and operates unchanged on any 3D mesh.
+#### Step 3.4: 3D Manifold Engine & Mesh Representation ($\mathcal{M}$) — ✅ DONE
+- Generalized `GridManager` (`src/core/GridManager.js`) with `buildToroidalManifoldGraph(rows, cols, toroidalPlacement)` and `buildGeneralMeshManifoldGraph(meshFaces, numVertices)` to represent any closed 3D triangulated manifold $\mathcal{M}$ via a **Dual Face-Adjacency Graph** $G = (V_T, E_{\text{edge}}, E_{\text{vertex}})$:
+  - **Nodes $v \in V_T$:** Triangle face-slots on the 3D mesh (`400` on $T^2$, or $|F|$ on any general 3D triangle mesh such as an octahedron or subdivided icosphere).
+  - **Edge-Adjacency $\mathcal{N}_{\text{edge}}(v)$ (3 boundary groups per triangle):** Governs `isManifoldFaceEnclosed` and `getManifoldAdjacentFaces`.
+  - **Vertex-Adjacency $\mathcal{V}(v)$ (3 mesh vertices per triangle):** Governs `isManifoldFaceValidPlacement` via `vertexToFaces` incidence lists.
 
 ---
 
@@ -156,7 +155,7 @@ Once the 3D-compatible architecture, full edge symmetry, circular/mesh convoluti
 | Bottleneck ID | Technical Issue | Target Phase | Planned Resolution | Status |
 |:---:|:---|:---:|:---|:---:|
 | **Bottleneck 1** | Replay Buffer Staleness (`500K` capacity kept Cycle 1–6 noise) & Constant LR | **Phase 1** (`TF-B14`) | `45,000` sliding-window `ReplayBuffer` + Cosine LR (`0.0004 → 0.0001`) + in-place Adam moment preservation + `*_best_network.json` checkpointing | ✅ **Completed (`TF-B14`: `90.0%` Peak / `80.1%` Avg vs Heuristic)** |
-| **Asymmetry (2D vs 3D)** | Planar `hasCorner` placement vs. Toroidal `isTriangleEnclosed` / `getAdjacentTriangles` | **Phase 2** (`2d-variant`) $\to$ **Phase 3** (`main`) | Official feature of `v1.0.0-2d` (`2d-variant` branch); unify with modulo vertex wrapping (`toroidalPlacement = true`) in `v2.0.0-3d` (`main`) | ✅ **2D Released (`2d-variant` / `v1.0.0-2d`); 3D Next** |
-| **Bottleneck 2** | `Conv2D` Zero-Padding (`padding: 'same'`) splits wrap-around features at borders | **Phase 3** (3D Transition) | Replace with Toroidal Circular Padding (`10×10 → 12×12` wrap before `3×3` conv) / Mesh Graph Conv | ⏳ **Scheduled for Phase 3** |
-| **Bottleneck 3** | 1-Ply Raw Policy Inference lacks tactical hole-risk check at test time | **Phase 3** (3D Transition) | Add $O(1)$ `countWouldBeEnclosed` safety filter to top-$K$ candidates in `ConvNetwork.predictMove()` | ⏳ **Scheduled for Phase 3** |
-| **Bottleneck 4** | Symmetry Exploitation ($D_4$ rotations/reflections & manifold symmetries) | **Phase 4** (Post-3D Polish) | 8× dihedral / toroidal / gauge symmetry augmentation after 3D training improvements are complete | ⏳ **Deferred to Phase 4** |
+| **Asymmetry (2D vs 3D)** | Planar `hasCorner` placement vs. Toroidal `isTriangleEnclosed` / `getAdjacentTriangles` | **Phase 2** (`2d-variant`) $\to$ **Phase 3** (`main`) | Official feature of `v1.0.0-2d` (`2d-variant` branch); unified with modulo vertex wrapping (`toroidalPlacement = true`) & manifold graph $G=(V_T,E_{\text{edge}},E_{\text{vertex}})$ on `main` | ✅ **Completed (`2d-variant` & `main`)** |
+| **Bottleneck 2** | `Conv2D` Zero-Padding (`padding: 'same'`) splits wrap-around features at borders | **Phase 3** (3D Transition) | Replaced with `ToroidalPad2D` / `ToroidalPad3D` (`10×10 → 12×12` wrap before `3×3` `valid` conv) + pure-JS circular conv in `ConvNetwork.cjs` | ✅ **Completed (Exact Equivariance `5.96e-8`)** |
+| **Bottleneck 3** | 1-Ply Raw Policy Inference lacks tactical hole-risk check at test time | **Phase 3** (3D Transition) | Added $O(1)$ `countWouldBeEnclosed` + $5\times 5$ `evaluateOpponentReplyRisk` filter to top-$K$ candidates in `ConvNetwork.predictMove()` | ✅ **Completed (`99.0%` vs Heuristic over 500 games)** |
+| **Bottleneck 4** | Symmetry Exploitation ($D_4$ rotations/reflections & manifold symmetries) | **Phase 4** (Post-3D Polish) | 8× dihedral / toroidal / gauge symmetry augmentation after 3D training improvements are complete | ⏳ **Next (Phase 4)** |

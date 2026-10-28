@@ -26,6 +26,7 @@ const path = require('path');
 const { ReplayBuffer } = require('./ReplayBuffer.cjs');
 const { MCTS } = require('./MCTS.cjs');
 const { QuiescenceMCTS } = require('./QuiescenceMCTS.cjs');
+const { ConvNetwork } = require('../ai/ConvNetwork.cjs');
 
 // Dynamic imports for ES modules (must be awaited)
 let GridManager, GameAuditor, HeuristicPlayer;
@@ -312,22 +313,103 @@ class TFNeuralNetwork {
 }
 
 // ============================================================
-// TF.js Convolutional Neural Network (Phase 2)
+// Custom Toroidal / Circular Padding Layers (2D & 3D Manifolds)
+// ============================================================
+
+/**
+ * ToroidalPad2D — Differentiable 2D Circular / Toroidal Padding Layer
+ * Wraps top/bottom rows and left/right columns so 3x3 convolutions with padding='valid'
+ * preserve exact periodic translation equivariance on T^2.
+ */
+class ToroidalPad2D extends tf.layers.Layer {
+  static className = 'ToroidalPad2D';
+  constructor(config = {}) {
+    super(config);
+    this.padding = config.padding || 1;
+  }
+  computeOutputShape(inputShape) {
+    const p = this.padding;
+    return [inputShape[0], inputShape[1] + 2 * p, inputShape[2] + 2 * p, inputShape[3]];
+  }
+  call(inputs) {
+    return tf.tidy(() => {
+      const x = Array.isArray(inputs) ? inputs[0] : inputs;
+      const p = this.padding;
+      const h = x.shape[1];
+      const w = x.shape[2];
+      const topRows = tf.slice(x, [0, 0, 0, 0], [-1, p, -1, -1]);
+      const botRows = tf.slice(x, [0, h - p, 0, 0], [-1, p, -1, -1]);
+      const rowWrapped = tf.concat([botRows, x, topRows], 1);
+      const leftCols = tf.slice(rowWrapped, [0, 0, 0, 0], [-1, -1, p, -1]);
+      const rightCols = tf.slice(rowWrapped, [0, 0, w - p, 0], [-1, -1, p, -1]);
+      return tf.concat([rightCols, rowWrapped, leftCols], 2);
+    });
+  }
+  getConfig() {
+    const config = super.getConfig();
+    Object.assign(config, { padding: this.padding });
+    return config;
+  }
+}
+tf.serialization.registerClass(ToroidalPad2D);
+
+/**
+ * ToroidalPad3D — Differentiable 3D Circular / Toroidal Padding Layer
+ * Wraps rows, cols, and depth axes for 3D toroidal manifold volumes (T^3 or 3D surface charts).
+ */
+class ToroidalPad3D extends tf.layers.Layer {
+  static className = 'ToroidalPad3D';
+  constructor(config = {}) {
+    super(config);
+    this.padding = config.padding || 1;
+  }
+  computeOutputShape(inputShape) {
+    const p = this.padding;
+    return [
+      inputShape[0],
+      inputShape[1] + 2 * p,
+      inputShape[2] + 2 * p,
+      inputShape[3] + 2 * p,
+      inputShape[4]
+    ];
+  }
+  call(inputs) {
+    return tf.tidy(() => {
+      const x = Array.isArray(inputs) ? inputs[0] : inputs;
+      const p = this.padding;
+      const h = x.shape[1];
+      const w = x.shape[2];
+      const d = x.shape[3];
+      const topRows = tf.slice(x, [0, 0, 0, 0, 0], [-1, p, -1, -1, -1]);
+      const botRows = tf.slice(x, [0, h - p, 0, 0, 0], [-1, p, -1, -1, -1]);
+      const rowWrapped = tf.concat([botRows, x, topRows], 1);
+      const leftCols = tf.slice(rowWrapped, [0, 0, 0, 0, 0], [-1, -1, p, -1, -1]);
+      const rightCols = tf.slice(rowWrapped, [0, 0, w - p, 0, 0], [-1, -1, p, -1, -1]);
+      const colWrapped = tf.concat([rightCols, rowWrapped, leftCols], 2);
+      const frontDepth = tf.slice(colWrapped, [0, 0, 0, 0, 0], [-1, -1, -1, p, -1]);
+      const backDepth = tf.slice(colWrapped, [0, 0, 0, d - p, 0], [-1, -1, -1, p, -1]);
+      return tf.concat([backDepth, colWrapped, frontDepth], 3);
+    });
+  }
+  getConfig() {
+    const config = super.getConfig();
+    Object.assign(config, { padding: this.padding });
+    return config;
+  }
+}
+tf.serialization.registerClass(ToroidalPad3D);
+
+// ============================================================
+// TF.js Convolutional Neural Network (Phase 2 & Phase 3)
 // ============================================================
 
 /**
  * Conv network with dual heads: Policy (move probabilities) + Value (position score)
  * 
  * Input: 10×10×18 canonical one-hot tensor
- * Backbone: 3 Conv2D layers for spatial pattern recognition
+ * Backbone: 3 Conv2D layers with ToroidalPad2D for periodic spatial pattern recognition
  * Policy head: 400 outputs (one per possible move)
  * Value head: 1 output (position evaluation, -1 to +1)
- * 
- * This architecture matches the design principles from AlphaGo Zero:
- * - Conv layers learn local spatial patterns (enclosures, territory boundaries)
- * - Policy head: "What should I do?"
- * - Value head: "How good is my position?"
- * - Canonical encoding makes pattern detection trivial for conv filters
  */
 class TFConvNetwork {
   constructor(config = {}) {
@@ -336,6 +418,7 @@ class TFConvNetwork {
     this.channels = config.channels || 18; // canonical encoding channels
     this.numFilters = config.numFilters || [32, 64, 64];
     this.policySize = this.rows * this.cols * 4; // 400 possible moves
+    this.paddingMode = config.paddingMode || 'circular'; // 'circular' (ToroidalPad2D) or 'same'
     this.model = null;
     this._buildModel();
   }
@@ -344,16 +427,27 @@ class TFConvNetwork {
     // Input: [batch, 10, 10, 18]
     const input = tf.input({ shape: [this.rows, this.cols, this.channels] });
     
-    // Backbone: 3 Conv2D layers with batch normalization and ReLU
+    // Backbone: 3 Conv2D layers with ToroidalPad2D (circular) or zero-pad ('same'), BatchNorm, and ReLU
     let x = input;
     for (let i = 0; i < this.numFilters.length; i++) {
-      x = tf.layers.conv2d({
-        filters: this.numFilters[i],
-        kernelSize: 3,
-        padding: 'same',
-        kernelInitializer: 'glorotUniform',
-        biasInitializer: 'zeros'
-      }).apply(x);
+      if (this.paddingMode === 'circular') {
+        x = new ToroidalPad2D({ padding: 1 }).apply(x);
+        x = tf.layers.conv2d({
+          filters: this.numFilters[i],
+          kernelSize: 3,
+          padding: 'valid',
+          kernelInitializer: 'glorotUniform',
+          biasInitializer: 'zeros'
+        }).apply(x);
+      } else {
+        x = tf.layers.conv2d({
+          filters: this.numFilters[i],
+          kernelSize: 3,
+          padding: 'same',
+          kernelInitializer: 'glorotUniform',
+          biasInitializer: 'zeros'
+        }).apply(x);
+      }
       x = tf.layers.batchNormalization().apply(x);
       x = tf.layers.reLU().apply(x);
     }
@@ -658,7 +752,8 @@ class TFConvNetwork {
           cols: this.cols,
           channels: this.channels,
           numFilters: this.numFilters,
-          policySize: this.policySize
+          policySize: this.policySize,
+          paddingMode: this.paddingMode
         },
         weights: []
       };
@@ -684,6 +779,7 @@ class TFConvNetwork {
       this.channels = json.architecture?.channels || 18;
       this.numFilters = json.architecture?.numFilters || [32, 64, 64];
       this.policySize = json.architecture?.policySize || 400;
+      this.paddingMode = json.architecture?.paddingMode || this.paddingMode || 'circular';
       
       this._buildModel();
       
@@ -823,7 +919,7 @@ function getRandomMove(grid) {
   return valid.length ? valid[Math.floor(Math.random() * valid.length)] : null;
 }
 
-function getAIMove(network, grid, exploration, aiPlayerNumber = 1, useConv = false) {
+function getAIMove(network, grid, exploration, aiPlayerNumber = 1, useConv = false, useSafetyFilter = true, topK = 12) {
   if (Math.random() < exploration) return getRandomMove(grid);
   
   let policy;
@@ -844,16 +940,51 @@ function getAIMove(network, grid, exploration, aiPlayerNumber = 1, useConv = fal
     const idx = Math.floor(i / 4);
     const x = idx % cols;
     const y = Math.floor(idx / cols);
-    moves.push({ x, y, rotation: rot, score: policy[i] });
+    if (isValidMove(grid, x, y, rot)) {
+      moves.push({ x, y, rotation: rot, score: policy[i], rawPolicyScore: policy[i] });
+    }
   }
   
+  if (moves.length === 0) return getRandomMove(grid);
   moves.sort((a, b) => b.score - a.score);
   
-  for (const m of moves) {
-    if (isValidMove(grid, m.x, m.y, m.rotation)) return m;
+  if (!useConv || !useSafetyFilter) {
+    return moves[0];
   }
-  
-  return getRandomMove(grid);
+
+  // Bottleneck 3: Inference-time tactical safety filter on top-K candidate moves
+  const K = Math.min(topK, moves.length);
+  let bestMove = moves[0];
+  let bestAdjustedScore = -Infinity;
+
+  for (let i = 0; i < K; i++) {
+    const m = moves[i];
+    const myClaimed = ConvNetwork.countWouldBeEnclosed(grid, m.x, m.y, m.rotation, aiPlayerNumber);
+    let adjScore = m.rawPolicyScore;
+
+    if (myClaimed > 0) {
+      adjScore = m.rawPolicyScore * (1 + myClaimed * 0.5) + 0.25 * myClaimed;
+    } else if ((grid.extraTurns || 0) === 0) {
+      const { maxOppClaim, totalOppClaims } = ConvNetwork.evaluateOpponentReplyRisk(
+        grid,
+        m.x,
+        m.y,
+        m.rotation,
+        aiPlayerNumber
+      );
+      if (maxOppClaim > 0) {
+        adjScore = m.rawPolicyScore * Math.max(0.01, 1 - (maxOppClaim * 0.45 + totalOppClaims * 0.1));
+      }
+    }
+
+    m.score = adjScore;
+    if (adjScore > bestAdjustedScore) {
+      bestAdjustedScore = adjScore;
+      bestMove = m;
+    }
+  }
+
+  return bestMove;
 }
 
 /**
@@ -1037,6 +1168,8 @@ async function main() {
   const quiescenceMode = getArg('quiescence-mode', 'none'); // 'none' | 'greedy' | 'heuristic' | 'hybrid'
   const quiescenceDepth = parseInt(getArg('quiescence-depth', '5'));
   const riskPenaltyWeight = parseFloat(getArg('risk-penalty', '0.15'));
+  const useSafetyFilter = getArg('safety-filter', 'true') !== 'false';
+  const safetyFilterTopK = parseInt(getArg('safety-top-k', '12'));
   
   console.log('🧪  TF.js Training Pipeline');
   console.log('='.repeat(60));
@@ -1069,6 +1202,9 @@ async function main() {
     console.log(`  Replay ratio:     ${replayRatio}x`);
   }
   console.log(`  Architecture:     ${architecture}`);
+  if (architecture === 'conv') {
+    console.log(`  Safety filter:    ${useSafetyFilter ? 'ENABLED (topK=' + safetyFilterTopK + ')' : 'disabled'}`);
+  }
   if (mctsSims > 0) {
     console.log(`  MCTS sims/move:  ${mctsSims}`);
     console.log(`  MCTS batch size: ${mctsBatchSize}`);
@@ -1153,6 +1289,10 @@ async function main() {
       quiescenceMode,
       quiescenceDepth,
       riskPenaltyWeight,
+      safetyFilter: useSafetyFilter,
+      safetyFilterTopK,
+      toroidalPlacement: true,
+      circularPadding: useConv,
       audit,
       auditRate,
       framework: 'tensorflow.js',
@@ -1687,7 +1827,7 @@ async function main() {
       
       while (!grid.isGridFull() && m < maxM) {
         grid.currentPlayer = cur;
-        const move = cur === evalAIPlayerNumber ? getAIMove(network, grid, 0, evalAIPlayerNumber, useConv) : getRandomMove(grid);
+        const move = cur === evalAIPlayerNumber ? getAIMove(network, grid, 0, evalAIPlayerNumber, useConv, useSafetyFilter, safetyFilterTopK) : getRandomMove(grid);
         if (!move) break;
         
         const exec = grid.executeMove(move.x, move.y, move.rotation, cur);
@@ -1743,7 +1883,7 @@ async function main() {
         const move = m < 2
           ? getRandomMove(grid)
           : (cur === heurAIPlayerNumber 
-              ? getAIMove(network, grid, 0, heurAIPlayerNumber, useConv) 
+              ? getAIMove(network, grid, 0, heurAIPlayerNumber, useConv, useSafetyFilter, safetyFilterTopK) 
               : heuristicEval.getMove(grid));
         if (!move) break;
         
@@ -1929,4 +2069,4 @@ if (require.main === module) {
 }
 
 // Export for MCTS and testing
-module.exports = { TFConvNetwork, TFNeuralNetwork };
+module.exports = { TFConvNetwork, TFNeuralNetwork, ToroidalPad2D, ToroidalPad3D };

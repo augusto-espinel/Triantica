@@ -109,8 +109,10 @@ async function main() {
     networkLoaded: aiPlayer.isNetworkLoaded,
   };
   
+  const outDir = join(__dirname, '..', 'experiments', 'data');
+  mkdirSync(outDir, { recursive: true });
   writeFileSync(
-    join(__dirname, '..', 'experiments', 'data', 'ai-integration.json'),
+    join(outDir, 'ai-integration.json'),
     JSON.stringify(allResults, null, 2)
   );
   console.log('\n💾 All results saved to experiments/data/ai-integration.json');

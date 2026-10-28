@@ -11,10 +11,181 @@ export const GRID_COLS = 10;
 export const ROTATIONS = [0, 1, 2, 3]; // 0°, 90°, 180°, 270°
 export const PLAYERS = [1, 2];
 
+/**
+ * Dual Face-Adjacency Manifold Graph Cache for Toroidal Grids G = (V_T, E_edge, E_vertex)
+ * Avoids rebuilding static topology when cloning GridManager during MCTS search.
+ */
+const MANIFOLD_GRAPH_CACHE = new Map();
+
+/**
+ * Build Dual Face-Adjacency Manifold Graph G = (V_T, E_edge, E_vertex) for a rows × cols Torus
+ * - V_T: 4 * rows * cols triangle face slots
+ * - E_edge: 3 boundary edge-neighbor groups per face (governs enclosure & contiguous clusters)
+ * - E_vertex: 3 mesh vertex IDs per face (governs corner-sharing placement legality)
+ */
+export function buildToroidalManifoldGraph(rows, cols, toroidalPlacement = true) {
+  const cacheKey = `${rows}x${cols}:${toroidalPlacement ? 'T2' : 'hybrid2D'}`;
+  if (MANIFOLD_GRAPH_CACHE.has(cacheKey)) {
+    return MANIFOLD_GRAPH_CACHE.get(cacheKey);
+  }
+
+  const numCells = rows * cols;
+  const numFaceSlots = numCells * 4;
+  const numVertices = toroidalPlacement ? rows * cols : (rows + 1) * (cols + 1);
+
+  const getVertexId = (vx, vy) => {
+    if (toroidalPlacement) {
+      const wx = ((vx % cols) + cols) % cols;
+      const wy = ((vy % rows) + rows) % rows;
+      return wy * cols + wx;
+    }
+    return vy * (cols + 1) + vx;
+  };
+
+  const getCorners = (x, y, rot) => {
+    switch (rot) {
+      case 0: return [[x, y + 1], [x + 1, y], [x, y]];
+      case 1: return [[x, y], [x, y + 1], [x + 1, y + 1]];
+      case 3: return [[x + 1, y], [x, y], [x + 1, y + 1]];
+      case 2: return [[x + 1, y + 1], [x, y + 1], [x + 1, y]];
+      default: return [];
+    }
+  };
+
+  const faces = new Array(numFaceSlots);
+  const vertexToFaces = Array.from({ length: numVertices }, () => []);
+
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      for (let rot = 0; rot < 4; rot++) {
+        const faceId = (y * cols + x) * 4 + rot;
+        const vertices = getCorners(x, y, rot).map(([cx, cy]) => getVertexId(cx, cy));
+        const leftX = (x - 1 + cols) % cols;
+        const rightX = (x + 1) % cols;
+        const topY = (y - 1 + rows) % rows;
+        const bottomY = (y + 1) % rows;
+
+        let edgeNeighbors;
+        if (rot === 0) {
+          edgeNeighbors = [
+            [(topY * cols + x) * 4 + 1, (topY * cols + x) * 4 + 2],
+            [(y * cols + leftX) * 4 + 2, (y * cols + leftX) * 4 + 3],
+            [(y * cols + x) * 4 + 2]
+          ];
+        } else if (rot === 1) {
+          edgeNeighbors = [
+            [(bottomY * cols + x) * 4 + 0, (bottomY * cols + x) * 4 + 3],
+            [(y * cols + leftX) * 4 + 2, (y * cols + leftX) * 4 + 3],
+            [(y * cols + x) * 4 + 3]
+          ];
+        } else if (rot === 2) {
+          edgeNeighbors = [
+            [(bottomY * cols + x) * 4 + 0, (bottomY * cols + x) * 4 + 3],
+            [(y * cols + rightX) * 4 + 0, (y * cols + rightX) * 4 + 1],
+            [(y * cols + x) * 4 + 0]
+          ];
+        } else {
+          edgeNeighbors = [
+            [(topY * cols + x) * 4 + 1, (topY * cols + x) * 4 + 2],
+            [(y * cols + rightX) * 4 + 0, (y * cols + rightX) * 4 + 1],
+            [(y * cols + x) * 4 + 1]
+          ];
+        }
+
+        faces[faceId] = {
+          faceId,
+          x,
+          y,
+          rotation: rot,
+          cellId: y * cols + x,
+          diagonalGroup: rot % 2,
+          oppositeFaceId: (y * cols + x) * 4 + ((rot + 2) % 4),
+          vertices,
+          edgeNeighbors
+        };
+
+        for (const vId of vertices) {
+          vertexToFaces[vId].push(faceId);
+        }
+      }
+    }
+  }
+
+  const graph = {
+    type: toroidalPlacement ? 'T2_torus' : 'hybrid_2d',
+    rows,
+    cols,
+    numCells,
+    numFaceSlots,
+    numVertices,
+    faces,
+    vertexToFaces
+  };
+  MANIFOLD_GRAPH_CACHE.set(cacheKey, graph);
+  return graph;
+}
+
+/**
+ * Build Dual Face-Adjacency Manifold Graph G = (V_T, E_edge, E_vertex) for an arbitrary
+ * closed 3D triangulated mesh M = (V, F), where each face f in F is a triple [v0, v1, v2].
+ */
+export function buildGeneralMeshManifoldGraph(meshFaces, numVertices) {
+  const numFaceSlots = meshFaces.length;
+  const vertexToFaces = Array.from({ length: numVertices }, () => []);
+  const edgeMap = new Map();
+
+  for (let fId = 0; fId < numFaceSlots; fId++) {
+    const [v0, v1, v2] = meshFaces[fId];
+    for (const v of [v0, v1, v2]) {
+      vertexToFaces[v].push(fId);
+    }
+    const edges = [[v0, v1], [v1, v2], [v2, v0]];
+    for (const [a, b] of edges) {
+      const key = a < b ? `${a},${b}` : `${b},${a}`;
+      if (!edgeMap.has(key)) edgeMap.set(key, []);
+      edgeMap.get(key).push(fId);
+    }
+  }
+
+  const faces = meshFaces.map((verts, fId) => {
+    const [v0, v1, v2] = verts;
+    const edges = [[v0, v1], [v1, v2], [v2, v0]];
+    const edgeNeighbors = edges.map(([a, b]) => {
+      const key = a < b ? `${a},${b}` : `${b},${a}`;
+      return (edgeMap.get(key) || []).filter(other => other !== fId);
+    });
+    return {
+      faceId: fId,
+      x: fId,
+      y: 0,
+      rotation: 0,
+      cellId: fId,
+      diagonalGroup: 0,
+      oppositeFaceId: fId,
+      vertices: verts,
+      edgeNeighbors
+    };
+  });
+
+  return {
+    type: 'general_3d_manifold',
+    rows: 1,
+    cols: numFaceSlots,
+    numCells: numFaceSlots,
+    numFaceSlots,
+    numVertices,
+    faces,
+    vertexToFaces
+  };
+}
+
 export class GridManager {
-  constructor(rows = GRID_ROWS, cols = GRID_COLS) {
+  constructor(rows = GRID_ROWS, cols = GRID_COLS, options = {}) {
     this.rows = rows;
     this.cols = cols;
+    // Phase 3: Full Toroidal Edge Symmetry (toroidalPlacement = true by default on main)
+    this.toroidalPlacement = options.toroidalPlacement !== undefined ? options.toroidalPlacement : true;
+    this.manifoldGraph = options.manifoldGraph || buildToroidalManifoldGraph(this.rows, this.cols, this.toroidalPlacement);
     this.grid = this.createGrid();
     this.currentPlayer = 1;
     this.selectedRotation = 0;
@@ -67,6 +238,25 @@ export class GridManager {
   }
 
   hasCorner(x, y) {
+    if (this.toroidalPlacement) {
+      const wx = ((x % this.cols) + this.cols) % this.cols;
+      const wy = ((y % this.rows) + this.rows) % this.rows;
+      for (let dy = -1; dy <= 0; dy++) {
+        for (let dx = -1; dx <= 0; dx++) {
+          const cellX = (wx + dx + this.cols) % this.cols;
+          const cellY = (wy + dy + this.rows) % this.rows;
+          const cell = this.grid[cellY][cellX];
+          if (cell.triangles.some(t =>
+            this.getTriangleCorners(cellX, cellY, t.rotation)
+              .some(([tx, ty]) => (tx % this.cols) === wx && (ty % this.rows) === wy)
+          )) {
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+
     for (let dy = -1; dy <= 0; dy++) {
       for (let dx = -1; dx <= 0; dx++) {
         const cellX = x + dx;
@@ -83,6 +273,50 @@ export class GridManager {
       }
     }
     return false;
+  }
+
+  /**
+   * Graph-native manifold methods for arbitrary 3D triangulated manifolds G = (V_T, E_edge, E_vertex)
+   */
+  isFaceOccupied(faceId, player = null) {
+    const f = this.manifoldGraph.faces[faceId];
+    if (!f) return false;
+    const cell = this.grid[f.y][f.x];
+    return cell.triangles.some(t => t.rotation === f.rotation && (player === null || t.player === player));
+  }
+
+  isManifoldVertexOccupied(vertexId) {
+    const incident = this.manifoldGraph.vertexToFaces[vertexId] || [];
+    return incident.some(fId => this.isFaceOccupied(fId));
+  }
+
+  isManifoldFaceValidPlacement(faceId) {
+    if (this.isFirstMove()) return true;
+    const f = this.manifoldGraph.faces[faceId];
+    if (!f) return false;
+    return f.vertices.some(vId => this.isManifoldVertexOccupied(vId));
+  }
+
+  isManifoldFaceEnclosed(faceId) {
+    const f = this.manifoldGraph.faces[faceId];
+    if (!f) return false;
+    return f.edgeNeighbors.every(edgeGroup =>
+      edgeGroup.some(neighborFaceId => this.isFaceOccupied(neighborFaceId))
+    );
+  }
+
+  getManifoldAdjacentFaces(faceId, player) {
+    const f = this.manifoldGraph.faces[faceId];
+    if (!f) return [];
+    const adj = [];
+    for (const edgeGroup of f.edgeNeighbors) {
+      for (const nFaceId of edgeGroup) {
+        if (this.isFaceOccupied(nFaceId, player)) {
+          adj.push(this.manifoldGraph.faces[nFaceId]);
+        }
+      }
+    }
+    return adj;
   }
 
   getTriangleCorners(x, y, rotation) {
@@ -464,7 +698,10 @@ export class GridManager {
   }
 
   clone() {
-    const cloned = new GridManager(this.rows, this.cols);
+    const cloned = new GridManager(this.rows, this.cols, {
+      toroidalPlacement: this.toroidalPlacement,
+      manifoldGraph: this.manifoldGraph
+    });
     
     // Deep copy grid
     cloned.grid = this.grid.map(row => 

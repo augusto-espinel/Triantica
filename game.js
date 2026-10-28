@@ -1,7 +1,8 @@
 class GridManager {
-  constructor(rows, cols) {
+  constructor(rows, cols, options = {}) {
     this.rows = rows;
     this.cols = cols;
+    this.toroidalPlacement = options.toroidalPlacement !== undefined ? options.toroidalPlacement : true;
     this.grid = this.createGrid();
     this.currentPlayer = 1;
     this.selectedRotation = 0; // 0-3 (0°, 90°, 180°, 270°)
@@ -83,6 +84,22 @@ class GridManager {
   }
 
   hasCorner(x, y) {
+      if (this.toroidalPlacement) {
+        const wx = ((x % this.cols) + this.cols) % this.cols;
+        const wy = ((y % this.rows) + this.rows) % this.rows;
+        for (let dy = -1; dy <= 0; dy++) {
+          for (let dx = -1; dx <= 0; dx++) {
+            const cellX = (wx + dx + this.cols) % this.cols;
+            const cellY = (wy + dy + this.rows) % this.rows;
+            const cell = this.grid[cellY][cellX];
+            if (cell.triangles.some(t => this.getTriangleCorners(cellX, cellY, t.rotation)
+              .some(([tx, ty]) => (tx % this.cols) === wx && (ty % this.rows) === wy))) {
+              return true;
+            }
+          }
+        }
+        return false;
+      }
       // Check all cells around grid point (x,y) for overlapping corners
       for (let dy = -1; dy <= 0; dy++) {
         for (let dx = -1; dx <= 0; dx++) {

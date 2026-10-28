@@ -76,8 +76,22 @@ async function runTests() {
   await test('GridManager tracks clusters', () => {
     const gm = new GridManager();
     gm.placeTriangle(5, 5, 0, 1);
-    gm.placeTriangle(5, 5, 1, 1);
+    gm.placeTriangle(5, 5, 2, 1);
     assertEqual(gm.getLargestContiguous(1), 2);
+  });
+
+  await test('GridManager toroidal placement wraps around row=0/col=0 boundary', () => {
+    const gm = new GridManager();
+    gm.placeTriangle(0, 0, 0, 1); // touches vertex (0,0) which wraps to (10,10)
+    assertEqual(gm.isValidMove(9, 9, 2), true, 'Toroidal opposite corner (9,9,rot=2) should be legal');
+  });
+
+  await test('GridManager manifold graph consistency (400 face-slots, 100 vertices)', () => {
+    const gm = new GridManager();
+    assertEqual(gm.manifoldGraph.numFaceSlots, 400, '400 face slots');
+    assertEqual(gm.manifoldGraph.numVertices, 100, '100 toroidal vertices');
+    gm.placeTriangle(0, 0, 0, 1);
+    assertEqual(gm.isManifoldFaceValidPlacement((9 * 10 + 9) * 4 + 2), true, 'Manifold graph wraps vertex (0,0)');
   });
 
   await test('GridManager getValidMoves returns array', () => {
@@ -174,7 +188,7 @@ async function runTests() {
     const results = await session.runGames(5);
     
     assertEqual(results.games.length, 5, 'Should run 5 games');
-    assertEqual(results.wins[1] + results.wins[2] + results.wins.draws, 5, 'All games accounted');
+    assertEqual(results.wins.player1 + results.wins.player2 + results.wins.draws, 5, 'All games accounted');
   });
 
   // GameLogger Tests
@@ -216,11 +230,11 @@ async function runTests() {
     
     const results = await session.runGames(20);
     
-    console.log(`   P1 wins: ${results.wins[1]}, P2 wins: ${results.wins[2]}, Draws: ${results.wins.draws}`);
+    console.log(`   P1 wins: ${results.wins.player1}, P2 wins: ${results.wins.player2}, Draws: ${results.wins.draws}`);
     console.log(`   Avg moves: ${results.avgMoves.toFixed(1)}`);
     
     assertEqual(results.games.length, 20, 'All 20 games played');
-    assertEqual(results.wins[1] + results.wins[2] + results.wins.draws, 20, 'Results complete');
+    assertEqual(results.wins.player1 + results.wins.player2 + results.wins.draws, 20, 'Results complete');
   });
 
   // Summary

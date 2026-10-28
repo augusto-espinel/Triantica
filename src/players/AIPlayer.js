@@ -8,6 +8,10 @@
  */
 
 import { PlayerInterface, PlayerType } from './PlayerInterface.js';
+import { createRequire } from 'node:module';
+
+const requireCJS = createRequire(import.meta.url);
+const { ConvNetwork } = requireCJS('../ai/ConvNetwork.cjs');
 
 // brain.js reference — resolved lazily at runtime
 let brainRef = null;
@@ -75,6 +79,8 @@ export class AIPlayer extends PlayerInterface {
     this.trainingData = [];
     this._networkJSON = config.networkJSON || null;
     this._brainFactory = config.brainFactory || null;
+    this.safetyFilter = config.safetyFilter !== undefined ? config.safetyFilter : true;
+    this.useOpeningRandom = config.useOpeningRandom !== undefined ? config.useOpeningRandom : false;
     // TD(λ) cluster reward configuration
     this.enableClusterReward = config.enableClusterReward ?? false;
     this.clusterRewardFactor = config.clusterRewardFactor ?? 0.1;
@@ -95,6 +101,14 @@ export class AIPlayer extends PlayerInterface {
    */
   async initialize() {
     super.initialize();
+
+    if (this._networkJSON && this._networkJSON.type === 'ConvNetwork') {
+      this.network = new ConvNetwork(this._networkJSON);
+      this.isConvNetwork = true;
+      this.isNetworkLoaded = true;
+      return;
+    }
+
     const brain = await this._getBrain();
     
     if (!brain && !this._networkJSON) {
@@ -193,8 +207,8 @@ export class AIPlayer extends PlayerInterface {
       this._evalMoveCount = 0;
     }
     
-    // Opening diversity: 50% random for first 3 moves
-    const isOpeningPhase = this._evalMoveCount < 3;
+    // Opening diversity: optional 50% random for first 3 moves when useOpeningRandom=true
+    const isOpeningPhase = this.useOpeningRandom && this._evalMoveCount < 3;
     const openingRandomFactor = isOpeningPhase ? 0.50 : 0;
     
     // Per-game exploration: mode is determined once at game start
@@ -230,9 +244,18 @@ export class AIPlayer extends PlayerInterface {
    * Get move using network prediction (exploit)
    */
   async _getNetworkMove(gridManager) {
+    if (this.isConvNetwork || (this.network && typeof this.network.predictMove === 'function')) {
+      const move = this.network.predictMove(gridManager, this.playerNumber, {
+        safetyFilter: this.safetyFilter
+      });
+      if (move) return move;
+      return this._getRandomValidMove(gridManager);
+    }
+
     // Always use relative state for consistency with training
     const state = this._getStateRelativeToCurrentPlayer(gridManager);
-    const output = this.network.run(state);
+    const rawOut = this.network.run(state);
+    const output = Array.isArray(rawOut) ? rawOut : rawOut.policy;
 
     // Map output to moves, sorted by score
     const moves = [];
