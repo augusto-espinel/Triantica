@@ -1,7 +1,7 @@
 # Quiescence MCTS for Enclosure-Aware Search
 
-**Updated:** 2026-10-27  
-**Status:** ✅ Completed in **TF-B12** — **Heuristic Wall Broken (`100.0%` vs Random across all 10 cycles, `63.0%` vs Heuristic)**
+**Updated:** 2026-10-28  
+**Status:** ✅ Completed in **TF-B12** & **TF-B13** — **Heuristic Wall Broken (`100.0%` vs Random across all 20 cycles; `63.0%` vs Heuristic in TF-B12 → `89.0%` Peak / `73.0%` Final / `71.6%` Avg vs Heuristic in TF-B13)**
 
 ---
 
@@ -85,3 +85,26 @@ Verifies that:
   - **Cycles 1–7 (Deterministic 2-trajectory eval):** Broke the Heuristic Wall in **Cycle 6 at `50.0%`** (winning `100%` as P2, `147–24`).
   - **Cycles 8–10 (Random First 2 Plies — 100 distinct openings):** Climbed from **`50.0%` (Cycle 8: `50% P1 / 50% P2`) → `62.0%` (Cycle 9: `68% P1 / 56% P2`) → `63.0%` (Cycle 10: `66% P1 / 60% P2`, mean cluster `101.7` vs `79.5`)**!
   - By comparison, `TF-B10_network.json` evaluated under the exact same 100-game random-first-2-plies protocol scored **`0.0%` (`0W / 100L`, mean cluster `7.8` vs `175.9`)**.
+
+---
+
+## 6. Experiment `TF-B13` Final Results (2026-10-28)
+
+Building on `TF-B12_network.json`, **TF-B13** unlocked **dual-side MCTS sample collection** in network-vs-network games (`if (!step.mctsPolicy) continue;`), shifted the curriculum to **75% Network / 25% Heuristic**, halved the learning rate (`LR = 0.0005` Adam), and raised `riskPenalty` (`0.20 → 0.25`):
+
+```bash
+nohup node src/server/train_tfjs.cjs \
+  --cycles 10 --games 100 --eval-games 100 \
+  --mcts-sims 50 --architecture conv --learning-rate 0.0005 \
+  --opponent-mix mixed --network-ratio 0.75 --heuristic-ratio 0.25 --random-ratio 0.0 \
+  --quiescence-mode greedy --quiescence-depth 5 --risk-penalty 0.25 \
+  --start-from dashboard/data/TF-B12_network.json \
+  --output dashboard/data/TF-B13.json > dashboard/data/TF-B13.log 2>&1 < /dev/null &
+```
+
+- **Sample Throughput Nearly Doubled:** Generated **`115,892` MCTS samples** across 10 cycles (~`11.6K` samples/cycle vs `60,961` total in `TF-B12`).
+- **vs Random (`100` eval games/cycle, 2-ply random openings):** **`100.0%` across all 10 cycles (`1,000W / 0L / 0D`)**, with average AI cluster size reaching **`173.9` vs `3.0`** (Cycle 9).
+- **Training MCTS-50 vs Heuristic:** Won **`71.8%` (`163W / 64L`)** across all 227 training games vs `HeuristicPlayer`, peaking at **`90.9%` (`20W / 2L`)** in Cycle 6.
+- **Eval vs Heuristic (1-Ply Policy Network, `exploration = 0`, 100 random-2-ply openings/cycle):**
+  - Climbed from **`52.0%` (C1) → `61.0%` (C2) → `66.0%` (C3) → `72.0%` (C4) → `71.0%` (C5) → `75.0%` (C6) → `79.0%` (C7) → 🏆 `89.0%` Peak (C8: `90% P1 / 88% P2`, mean cluster `126.7` vs `52.6`) → `78.0%` (C9) → `73.0%` Final (C10: `80% P1 / 66% P2`, mean cluster `114.1` vs `65.8`)**, averaging **`71.6%`** across all 10 cycles.
+

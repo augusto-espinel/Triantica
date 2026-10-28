@@ -173,8 +173,9 @@
         const hCount = lastCycle?.selfPlay?.opponentTypeCounts?.heuristic || 0;
         const hRate = lastCycle?.evaluation?.vsHeuristic?.aiWinRate != null
           ? Math.round(lastCycle.evaluation.vsHeuristic.aiWinRate)
-          : (hWins && hCount ? Math.round((hWins['1'] / hCount) * 100) : (r.vsHeuristic != null ? r.vsHeuristic : null));
-        const hBadge = hRate !== null ? `${hRate}% vs Heuristic` : '';
+          : (hWins && hCount ? Math.round(((hWins.aiWins ?? hWins['1']) / hCount) * 100) : (r.vsHeuristic != null ? r.vsHeuristic : null));
+        const hPeak = d?.cycles ? Math.max(r.vsHeuristicPeak || 0, ...d.cycles.map(c => Math.round(c.evaluation?.vsHeuristic?.aiWinRate || 0))) : (r.vsHeuristicPeak || 0);
+        const hBadge = hRate !== null ? (hPeak > hRate ? `${hRate}% vs Heur (pk ${hPeak}%)` : `${hRate}% vs Heuristic`) : '';
         // Score stats from last cycle
         const lastCycScores = getCycleScoreStats(lastCycle, 'heuristic')?.ai;
         const scoreBadge = lastCycScores ? `AI med ${lastCycScores.median} / max ${lastCycScores.max} vs H` : '';
@@ -185,7 +186,11 @@
         // Role P1 vs P2 badge (when roleAlternation is active and P1/P2 win rates exist)
         const p1wr = lastCycle?.evaluation?.vsRandom?.p1WinRate ?? r.p1WinRate;
         const p2wr = lastCycle?.evaluation?.vsRandom?.p2WinRate ?? r.p2WinRate;
-        const roleBadge = (p1wr != null && p2wr != null) ? `P1: ${Math.round(p1wr)}% | P2: ${Math.round(p2wr)}% (vs R)` : '';
+        const hp1wr = lastCycle?.evaluation?.vsHeuristic?.p1WinRate ?? r.vsHeuristicP1;
+        const hp2wr = lastCycle?.evaluation?.vsHeuristic?.p2WinRate ?? r.vsHeuristicP2;
+        const roleBadge = (hp1wr != null && hp2wr != null && (hp1wr > 0 || hp2wr > 0))
+          ? `P1: ${Math.round(hp1wr)}% | P2: ${Math.round(hp2wr)}% (vs H)`
+          : ((p1wr != null && p2wr != null) ? `P1: ${Math.round(p1wr)}% | P2: ${Math.round(p2wr)}% (vs R)` : '');
         return `<div class="exp-card" onclick="showDetail('${exp.id}')" id="card-${exp.id}">
           ${hBadge ? `<span class="heuristic-badge">${hBadge}</span>` : ''}
           ${scoreBadge ? `<span class="heuristic-badge" style="top:${hBadge?'32px':'12px'};font-size:10px;background:rgba(210,153,34,0.15);color:var(--yellow)">${scoreBadge}</span>` : ''}
@@ -298,6 +303,12 @@
           const nc = c.selfPlay?.opponentTypeCounts?.network || 0;
           return (nw && nc) ? (nw['1'] / nc * 100) : null;
         });
+        const selfPlayVsHeuristic = data.cycles.map(c => {
+          const hw = c.selfPlay?.winsByOpponent?.heuristic;
+          const hc = c.selfPlay?.opponentTypeCounts?.heuristic || 0;
+          const wins = hw ? (hw.aiWins ?? hw['1']) : null;
+          return (wins != null && hc) ? (wins / hc * 100) : null;
+        });
         
         const evalVsRandomP1 = data.cycles.map(c => c.evaluation?.vsRandom?.p1WinRate ?? null);
         const evalVsRandomP2 = data.cycles.map(c => c.evaluation?.vsRandom?.p2WinRate ?? null);
@@ -312,6 +323,7 @@
           { label: 'vs Random as P1 (eval, %)', data: evalVsRandomP1, borderColor: '#56d364', backgroundColor: 'transparent', borderDash: [4,2], tension: 0.3 },
           { label: 'vs Random as P2 (eval, %)', data: evalVsRandomP2, borderColor: '#2ea043', backgroundColor: 'transparent', borderDash: [2,2], tension: 0.3 },
           { label: 'vs Heuristic (eval, %)', data: evalVsHeuristic, borderColor: '#f85149', backgroundColor: 'rgba(248,81,73,0.1)', fill: true, tension: 0.3 },
+          { label: 'vs Heuristic (MCTS self-play, %)', data: selfPlayVsHeuristic, borderColor: '#ff7b72', backgroundColor: 'transparent', borderDash: [4,2], tension: 0.3 },
           { label: 'vs Random (self-play, %)', data: selfPlayVsRandom, borderColor: '#58a6ff', backgroundColor: 'transparent', borderDash: [5,3], tension: 0.3 },
           { label: 'vs Network (self-play, %)', data: selfPlayVsNetwork, borderColor: '#d29922', backgroundColor: 'transparent', borderDash: [5,3], tension: 0.3 }
         ].filter(d => d.data.some(v => v !== null));
@@ -394,15 +406,26 @@
         if (c.evaluation?.vsHeuristic?.aiWinRate != null) return c.evaluation.vsHeuristic.aiWinRate;
         const hw = c.selfPlay?.winsByOpponent?.heuristic;
         const hCount = c.selfPlay?.opponentTypeCounts?.heuristic || 1;
-        return hw ? ((hw['1'] / hCount) * 100) : null;
+        return hw ? (((hw.aiWins ?? hw['1']) / hCount) * 100) : null;
+      }) || [];
+      const heuristicSPWinRates = data?.cycles?.map(c => {
+        const hw = c.selfPlay?.winsByOpponent?.heuristic;
+        const hCount = c.selfPlay?.opponentTypeCounts?.heuristic || 0;
+        const wins = hw ? (hw.aiWins ?? hw['1']) : null;
+        return (wins != null && hCount) ? ((wins / hCount) * 100) : null;
       }) || [];
       const heuristicP1Median = data?.cycles?.map(c => getCycleScoreStats(c, 'heuristic')?.ai?.median ?? null) || [];
       const heuristicP1Max = data?.cycles?.map(c => getCycleScoreStats(c, 'heuristic')?.ai?.max ?? null) || [];
       const heuristicP2Median = data?.cycles?.map(c => getCycleScoreStats(c, 'heuristic')?.opp?.median ?? null) || [];
       const hasHeuristicScores = heuristicP1Median.some(v => v !== null);
       const heuristicDatasets = [
-        { label: 'Win Rate vs Heuristic (%)', data: heuristicWinRates, borderColor: '#f85149', backgroundColor: 'rgba(248,81,73,0.1)', fill: true, tension: 0.3, yAxisID: 'y' },
+        { label: 'Eval Win Rate vs Heuristic (%)', data: heuristicWinRates, borderColor: '#f85149', backgroundColor: 'rgba(248,81,73,0.1)', fill: true, tension: 0.3, yAxisID: 'y' },
       ];
+      if (heuristicSPWinRates.some(v => v !== null)) {
+        heuristicDatasets.push(
+          { label: 'MCTS Self-Play Win Rate vs Heuristic (%)', data: heuristicSPWinRates, borderColor: '#58a6ff', backgroundColor: 'transparent', borderDash: [4,2], tension: 0.3, yAxisID: 'y' }
+        );
+      }
       if (hasHeuristicScores) {
         heuristicDatasets.push(
           { label: 'AI Median Score vs Heuristic', data: heuristicP1Median, borderColor: '#ff9800', backgroundColor: 'transparent', borderDash: [5,3], tension: 0.3, yAxisID: 'y1' },

@@ -1239,6 +1239,7 @@ After 22 brain.js experiments and 10+ TF.js experiments, a clear pattern emerged
 | TF-B9 | MCTS-50 (CE Sum + Adam) | TF.js | 100% net | 0.001 | 10 | 256 | ✓ | ✗ | **79%** (84% pk) | 0% | 145m |
 | TF-B10 | MCTS-50 Mixed (50/50 Heur) | TF.js | 50/0/50 | 0.001 | 10 | 256 | ✓ | ✗ | **87%** | 0% | 161m |
 | TF-B12 | Quiescence MCTS + Mixed | TF.js | 50/0/50 | 0.001 | 10 | 256 | ✓ | ✗ | **100%** | **63%** | 271m |
+| TF-B13 | Dual-Side Quiescence + 75/25 | TF.js | 75/0/25 | 0.0005 | 10 | 256 | ✓ | ✗ | **100%** | **73% (89% pk)** | 341m |
 
 **Key:**
 - Mix: opponent distribution (network/random/heuristic)
@@ -1953,6 +1954,28 @@ nohup node src/server/train_tfjs.cjs \
   --output dashboard/data/TF-B12.json > dashboard/data/TF-B12.log 2>&1 < /dev/null &
 ```
 
+#### TF-B13: Dual-Side Quiescence MCTS + 75/25 Curriculum (`89% Peak / 73% Final vs Heuristic`)
+
+**Architectural & Curriculum Refinements:**
+Building directly on `TF-B12_network.json`, **TF-B13** introduced three targeted improvements to consolidate strategic mastery against `HeuristicPlayer`:
+1. **Dual-Side MCTS Self-Play Sample Collection (`!step.mctsPolicy` Filter):**
+   In `TF-B9` through `TF-B12`, the MCTS sample loop filtered by `if (step.player !== aiPlayerNumber || !step.mctsPolicy) continue;`, discarding half of all MCTS-50 searches in network-vs-network games. Because every state in `hist` is already canonically encoded from `step.player`'s perspective (`1` = mover, `-1` = opponent) and `rewardForPlayer` is computed relative to `step.player`, both P1 and P2 MCTS moves are 100% perspective-consistent. Changing the filter to `if (!step.mctsPolicy) continue;` captured **both sides of network-vs-network MCTS games** while still excluding non-MCTS `HeuristicPlayer` moves—nearly doubling sample generation from **`~6,096` samples/cycle (`60,961` total in `TF-B12`)** to **`~11,589` samples/cycle (`115,892` total in `TF-B13`)**.
+2. **75% Network / 25% Heuristic Curriculum + Fine-Tuning Schedule (`LR = 0.0005`, `riskPenalty = 0.25`):**
+   Shifted the opponent mix to `75%` dual-side `QuiescenceMCTS-50` self-play and `25%` `HeuristicPlayer`, halved the Adam learning rate (`0.001` $\to$ `0.0005`), and raised `riskPenalty` (`0.20` $\to$ `0.25`) to sharpen punishment of single-move holes while stabilizing high-level self-play.
+3. **100-Opening Random 2-Ply Protocol Across All 10 Cycles & Browser Parity:**
+   Evaluated all 10 cycles using the 100-game random-first-2-plies protocol (50 as P1, 50 as P2) and updated `game.js` so browser AI/Heuristic games also play random first 2 plies (`this.totalMovesPlayed < 2`).
+
+**Configuration (`TF-B13`):**
+```bash
+nohup node src/server/train_tfjs.cjs \
+  --cycles 10 --games 100 --eval-games 100 \
+  --mcts-sims 50 --architecture conv --learning-rate 0.0005 \
+  --opponent-mix mixed --network-ratio 0.75 --heuristic-ratio 0.25 --random-ratio 0.0 \
+  --quiescence-mode greedy --quiescence-depth 5 --risk-penalty 0.25 \
+  --start-from dashboard/data/TF-B12_network.json \
+  --output dashboard/data/TF-B13.json > dashboard/data/TF-B13.log 2>&1 < /dev/null &
+```
+
 ---
 
 ### Phase 3: Value Head (Actor-Critic) — MERGED INTO PHASE 2
@@ -2568,7 +2591,7 @@ This prevents the AI from playing the same opening every game.
 
 ### Phase 5.5: Quiescence MCTS — Why It Improves Over Simple MCTS
 
-**Status:** ✅ Completed (`src/server/QuiescenceMCTS.cjs`) — **Broke the Heuristic Wall in `TF-B12` (`100%` vs Random, `63%` vs Heuristic)**
+**Status:** ✅ Completed (`src/server/QuiescenceMCTS.cjs`) — **Broke the Heuristic Wall in `TF-B12` (`63%` vs Heuristic) & Reached `89%` Peak / `73%` Final vs Heuristic in `TF-B13` (`100%` vs Random)**
 
 #### 1. The Horizon Effect & Why Simple MCTS Fails Against Deterministic Cascades
 In `TF-B10` (Simple MCTS-50 + 50% Heuristic opponents), the AI reached a record **87% vs Random**, yet remained at **0% vs `HeuristicPlayer`** (averaging only ~14 turns to Heuristic's ~96 turns per game). An inflection-point audit of `TF-B10` exposed two structural blind spots in simple MCTS (`MCTS.cjs`):
@@ -2652,6 +2675,29 @@ During `TF-B12`, we discovered a critical flaw in how `Eval vs Heuristic` had be
   Starting at Cycle 8 of `TF-B12` (and now permanently baked into `src/server/train_tfjs.cjs` and `scripts/eval_random_2ply.cjs`), `Eval vs Heuristic` plays **random moves for the first 2 plies (`m < 2`, i.e., 1 random opening triangle per player)** before switching to `exploration = 0` greedy policy vs deterministic `HeuristicPlayer`. This tests the trained network across **100 genuinely distinct opening board configurations** while keeping all mid-game and endgame play strictly deterministic.
 - As validation, we also ran the exact same 100-game random-2-ply audit on `TF-B10_network.json` (Cycle 0 baseline): `TF-B10` still scored **`0.0%` (`0W / 100L`, mean cluster `7.8` vs `175.9`)**, proving that `TF-B12`'s jump from **`0.0%` → `50.0%` (C8) → `62.0%` (C9) → `63.0%` (C10)** is a genuine, massive architectural breakthrough driven by `QuiescenceMCTS`.
 
+#### 6. Experiment `TF-B13` Results: Scaling to `89.0%` Peak & `73.0%` Final vs Heuristic (`100%` vs Random)
+Warm-started from `TF-B12_network.json`, `TF-B13` ran 10 cycles (100 games/cycle, 75% dual-side `QuiescenceMCTS-50` self-play / 25% `HeuristicPlayer`, `quiescenceMode = greedy`, `quiescenceDepth = 5`, `riskPenalty = 0.25`, `enclosureBonusWeight = 0.15`, `LR = 0.0005` Adam, runtime `340.8 min`, `115,892` total replay buffer samples). All 10 cycles were evaluated across 100 distinct random-first-2-plies openings against both `RandomPlayer` and `HeuristicPlayer`.
+
+| Cycle | Loss (`Start → End`) | Buffer Samples (`Util`) | Training MCTS-50 vs Heuristic (`W/L`, `P1`, `P2`, `Med AI–Opp`) | Eval vs Random (`100 games`, `Mean AI–Rand`) | Eval vs Heuristic (`100 games`) | Eval vs Heuristic (`P1 / P2`) | Mean Score vs Heuristic (`AI – Heur`) | Diversity (`Open / Board`) |
+|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| **0 (`TF-B12`)** | `3.720 → 2.899` | `60,961` (`12.2%`) | `42.3%` (`22W/29L/1D`, `med 79–108`) | **100.0%** (`166.2 – 4.4`) | `63.0%` | `66% / 60%` | `101.7 – 79.5` | `3.78 / 1.84` |
+| **1** | `4.046 → 2.934` | `12,036` (`2.4%`) | **`75.0%`** (`12W/4L`, P1:`6/7`, P2:`6/9`, `med 127.5–57`) | **100.0%** (`165.2 – 4.4`) | **`52.0%`** (`52W/47L/1D`) | `44% / 60%` | `91.8 – 87.7` | `4.13 / 1.84` |
+| **2** | `4.002 → 2.912` | `23,507` (`4.7%`) | **`52.2%`** (`12W/11L`, P1:`4/15`, P2:`8/8`, `med 95–94`) | **100.0%** (`167.8 – 3.7`) | **`61.0%`** (`61W/39L/0D`) | `54% / 68%` | `98.0 – 78.2` | `3.96 / 1.82` |
+| **3** | `3.829 → 2.874` | `34,816` (`7.0%`) | **`79.3%`** (`23W/6L`, P1:`10/11`, P2:`13/18`, `med 124–62`) | **100.0%** (`167.7 – 3.9`) | **`66.0%`** (`66W/34L/0D`) | `70% / 62%` | `102.8 – 75.0` | `4.21 / 1.81` |
+| **4** | `3.723 → 2.881` | `46,558` (`9.3%`) | **`77.3%`** (`17W/5L`, P1:`9/11`, P2:`8/11`, `med 132.5–59.5`) | **100.0%** (`171.8 – 3.2`) | **`72.0%`** (`72W/28L/0D`) | `74% / 70%` | `107.8 – 72.4` | `4.33 / 1.81` |
+| **5** | `3.838 → 2.880` | `57,556` (`11.5%`) | **`71.0%`** (`22W/9L`, P1:`10/14`, P2:`12/17`, `med 113–84`) | **100.0%** (`171.6 – 3.3`) | **`71.0%`** (`71W/29L/0D`) | `78% / 64%` | `108.2 – 69.8` | `4.19 / 1.79` |
+| **6** | `3.724 → 2.886` | `69,363` (`13.9%`) | **🔥 `90.9%`** (`20W/2L`, P1:`9/9`, P2:`11/13`, `med 114.5–71.5`) | **100.0%** (`172.0 – 3.2`) | **`75.0%`** (`75W/25L/0D`) | `74% / 76%` | `117.8 – 62.3` | `4.07 / 1.82` |
+| **7** | `3.723 → 2.883` | `81,090` (`16.2%`) | **`73.7%`** (`14W/5L`, P1:`7/10`, P2:`7/9`, `med 109–71`) | **100.0%** (`172.6 – 3.4`) | **`79.0%`** (`79W/19L/2D`) | `78% / 80%` | `117.9 – 61.6` | `3.94 / 1.82` |
+| **8** | `3.777 → 2.908` | `93,218` (`18.6%`) | **`81.3%`** (`13W/3L`, P1:`10/10`, P2:`3/6`, `med 122.5–69`) | **100.0%** (`173.6 – 3.0`) | **🏆 `89.0%`** (`89W/11L/0D`) | **`90% / 88%`** | **`126.7 – 52.6`** | `4.51 / 1.84` |
+| **9** | `3.718 → 2.894` | `104,119` (`20.8%`) | **`62.5%`** (`20W/12L`, P1:`9/18`, P2:`11/14`, `med 107–84`) | **100.0%** (**`173.9 – 3.0`**) | **`78.0%`** (`78W/22L/0D`) | `86% / 70%` | `121.9 – 57.3` | `4.27 / 1.81` |
+| **10** | `3.645 → 2.905` | `115,892` (`23.2%`) | **`58.8%`** (`10W/7L`, P1:`7/11`, P2:`3/6`, `med 99–80`) | **100.0%** (`172.9 – 3.5`) | **🚀 `73.0%`** (`73W/27L/0D`) | **`80% / 66%`** | **`114.1 – 65.8`** | `4.63 / 1.83` |
+
+**Key Takeaways from `TF-B13`:**
+- **Sustained Dominance Over `HeuristicPlayer`:** The standalone 1-ply ConvNet (`exploration = 0`, no MCTS at eval time) climbed steadily from `52.0%` (Cycle 1) to an all-time peak of **`89.0%` (`89W / 11L`, `90%` as P1, `88%` as P2, mean cluster `126.7` vs `52.6`)** in Cycle 8, finishing at **`73.0%` (`80%` as P1, `66%` as P2)** in Cycle 10 and averaging **`71.6%`** across all 10 cycles.
+- **MCTS-50 Self-Play vs Heuristic:** Across all 227 training games played against `HeuristicPlayer`, `QuiescenceMCTS-50` won **`71.8%` (`163W / 64L`)**, peaking at **`90.9%` (`20W / 2L`)** in Cycle 6.
+- **Flawless vs Random:** Achieved **`100.0%` (`1,000W / 0L / 0D`)** across all 10 cycles (`2,000` consecutive wins across `TF-B12` + `TF-B13`), with mean AI cluster size reaching **`173.9` vs `3.0`** in Cycle 9.
+- **Dual-Side MCTS Efficiency:** Collecting both players' MCTS policy targets in network-vs-network games nearly doubled the replay buffer growth (`115,892` samples vs `60,961` in `TF-B12`) while maintaining balanced 50/50 self-play parity (`503` P1 wins vs `494` P2 wins, `3` draws across 1,000 games).
+
 ---
 
 ### Phase 6: Self-Play Tournament + Iterative Retraining
@@ -2724,6 +2770,7 @@ Use this table to track implementation progress. Update after each experiment.
 | 5: MCTS-50 | TF-B9 | ✅ Done | 79% (84% peak) | 0% | Single-perspective MCTS fix; +41% jump vs Random |
 | 5: MCTS-50 Mixed | TF-B10 | ✅ Done | 87% | 0% | 50% Network / 50% Heuristic; record 87% vs Random |
 | 5.5: Quiescence MCTS | TF-B12 | ✅ Done | **100%** | **63%** | **Heuristic Wall Broken!** 100% vs Random (all 10 cycles), 63% vs Heuristic (66% P1, 60% P2; random 2-ply eval C8–C10) |
+| 5.6: Dual-Side Quiescence | TF-B13 | ✅ Done | **100%** | **73% (89% peak)** | **New Record vs Heuristic!** 89% peak (C8: 90% P1, 88% P2), 73% final (C10: 80% P1, 66% P2), 71.6% 10-cycle avg; 115.9K dual-side MCTS samples |
 
 **Status Legend:**
 - ✅ Done — Experiment complete, documented
@@ -2785,7 +2832,7 @@ node src/server/evaluate.cjs --network dashboard/data/TF-B1_pure_network.json \
   --opponent heuristic --games 100
 
 # Full tournament
-node src/server/evaluate.cjs --network dashboard/data/TF-B12_network.json \
+node src/server/evaluate.cjs --network dashboard/data/TF-B13_network.json \
   --tournament --games 50
 ```
 
@@ -2849,7 +2896,7 @@ The training dashboard (`dashboard/index.html`, hosted at `/dashboard/`) shows t
 
 ---
 
-*Last updated: 2026-10-24*
-*Version: 3.0 (Local Experiments)*
+*Last updated: 2026-10-28*
+*Version: 3.3 (Phase 5.6 Dual-Side Quiescence MCTS — TF-B13)*
 *Framework: TensorFlow.js with Metal GPU*
 *Hardware: Mac Studio M2 Ultra*
