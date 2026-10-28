@@ -555,6 +555,57 @@ Batch Size │  Hardware Utilization │  Throughput & Gradient Behavior
 
 **Recommendation:** Use `mctsBatchSize: 8` during tree search (balancing virtual-loss tree diversity against vectorization) and `batchSize: 256` with `tf.train.adam(0.001)` during replay-buffer gradient updates.
 
+### Wall-Clock Processing Time Derivation (Why Self-Play is 96% of Cycle Time)
+
+A common intuition from supervised deep learning is that **backpropagation** (gradient descent after the games finish) is the primary computational bottleneck, while playing the games is fast. In **AlphaZero / QuiescenceMCTS reinforcement learning**, the exact opposite is true: **~96% of wall-clock time is spent generating the 100 self-play games**, while **backpropagation takes only ~85 seconds (~3% of cycle time)** and **3-way evaluation takes ~25 seconds (~1%)**.
+
+Here is the first-principles derivation measured on the Mac Studio M2 Ultra (`TF-B14` / `TF-B15`, `QuiescenceMCTS-50`, `100` games/cycle):
+
+#### 1. Phase A — Dual-Side `QuiescenceMCTS-50` Self-Play (`~2,580s` = `~43.0 min`, `96.1%`)
+
+In pure Dual-Side MCTS self-play, **both** Player 1 and Player 2 execute a 50-simulation Monte Carlo Tree Search before every move on the board:
+- **Moves per cycle:**
+  $$N_{\text{moves}} = 100\text{ games/cycle} \times \approx 130\text{ moves/game} = \mathbf{13,000\text{ moves/cycle}}$$
+- **MCTS tree simulations per cycle:**
+  $$N_{\text{sims}} = 13,000\text{ moves} \times 50\text{ simulations/move} = \mathbf{650,000\text{ MCTS simulations/cycle}}$$
+- **Work performed at each of the `650,000` leaf expansions:**
+  1. **Board Cloning & Tree Traversal (CPU / V8 JS):** Clone the $10 \times 10$ toroidal `GridManager` along the search path, enumerate all legal moves (`isValidMove` across up to 400 slots), and apply `placeTriangle` + `claimEnclosedTriangles`.
+  2. **Quiescence Cascade Rollout (`quiescenceMode = 'greedy'`, depth $\le 5$):** Whenever a leaf move is non-enclosing (`claimed === 0`), `QuiescenceMCTS` scans all opponent replies using $O(1)$ `countWouldBeEnclosed` checks and greedily plays out multi-step opponent enclosure chains (up to 5 plies) so the value head evaluates the *post-cascade quiescent board* rather than a mid-tactical horizon trap.
+  3. **Batched Neural Network Forward Passes (`mctsBatchSize = 8`):** Every 8 virtual-loss leaf nodes are grouped into a `[8, 10, 10, 18]` tensor and evaluated by `TFConvNetwork.runBatch()`:
+     $$N_{\text{forward\_batches}} = \frac{650,000\text{ simulations}}{8\text{ leaves/batch}} = \mathbf{81,250\text{ ConvNet forward calls/cycle}}$$
+     At `~12.3M FLOPs` per sample (`~98.4M FLOPs` per batch of 8), the neural network executes **`~8.0 TeraFLOPs`** of forward inference per cycle across `81,250` separate JS $\leftrightarrow$ C++ TF.js bridge calls, plus `650,000+` JavaScript board state clones and quiescence checks.
+  - **Measured Throughput:** `~25.8 seconds/game` (`~198 ms/move` for 50 simulations $\approx \mathbf{3.96\text{ ms}}$ per QuiescenceMCTS simulation) $\implies$ **`~43.0 minutes` per 100-game cycle**.
+
+#### 2. Phase B — Backpropagation & Experience Replay (`~85s` = `~1.4 min`, `3.1%`)
+
+Once the 100 self-play games finish, the pipeline has collected $\approx 13,000$ canonical `(state, mctsPolicy, chosenMoveIdx, valueTarget)` training tuples:
+- **Why Backpropagation is $30\times$ Faster than Self-Play:**
+  - Instead of small `batchSize = 8` forward passes interleaved with sequential JavaScript game logic, backpropagation packs states into large **`batchSize = 256`** tensors (`[256, 10, 10, 18]`), saturating the M2 Ultra's AMX / Metal SIMD tiles at ~98% hardware utilization.
+  - **Current-cycle gradient updates (`10` epochs):**
+    $$\frac{13,000\text{ samples}}{256\text{ samples/batch}} \approx 51\text{ batches/epoch} \times 10\text{ epochs} = \mathbf{510\text{ gradient steps}}$$
+  - **Sliding-Window Replay Buffer updates (`replayRatio = 2.0`):**
+    $$2.0 \times 51\text{ batches} \approx \mathbf{102\text{ replay gradient steps}}$$
+  - **Total Backprop Compute:** **`612` large-batch (`B = 256`) forward+backward steps** (`156,672` sample evaluations total, compared to `650,000` leaf evaluations during self-play, and executed in `612` bulk C++ kernel calls instead of `81,250` small calls!).
+  - **Measured Runtime (`TF-B14` Cycles 1–10):** **`83.2s – 86.3s` (`~1.4 minutes`) per cycle**.
+
+#### 3. Phase C — 3-Way Evaluation (`300` Games Total: `~25s` = `~0.4 min`, `0.8%`)
+
+After weight updates, the model plays **300 full evaluation games** (`100` vs Random Raw, `100` vs Heuristic Raw Policy, `100` vs Heuristic +Safety Filter):
+- Because evaluation tests the **1-ply policy network** (`predictMove()` with `exploration = 0`, 1 forward pass per AI move instead of 50 MCTS simulations), 300 games require only:
+  $$300\text{ games} \times \approx 65\text{ AI moves/game} = \mathbf{19,500\text{ single-state forward passes}}$$
+- Even including the $O(1)$ `countWouldBeEnclosed` + $5 \times 5$ `evaluateOpponentReplyRisk` checks on the top-$K=12$ moves in the `+Safety Filter` split (`< 0.4 ms/move`), all 300 evaluation games complete in **`~22–28 seconds`**.
+
+#### Summary Table: Per-Cycle Time Budget (`100` Games/Cycle, `QuiescenceMCTS-50`)
+
+| Cycle Phase | Operations per Cycle | Tensor Batch Size | Wall-Clock Time | Share of Cycle | Scaling Law |
+| :--- | :--- | :---: | :---: | :---: | :--- |
+| **1. QuiescenceMCTS Self-Play** | `100` games, `13,000` moves, **`650,000` tree sims + cascades**, `81,250` net calls | `B = 8` | **`~43.0 min`** (`2,580s`) | **`96.1%`** | Linear in `games × mctsSims` |
+| **2. Backpropagation + Replay** | `13,000` new samples (`10` iters) + `26,000` replay samples (`612` steps) | `B = 256` | **`~1.4 min`** (`85s`) | **`3.1%`** | Linear in `games × (iterations + replayRatio)` |
+| **3. 3-Way Evaluation** | `300` games (`100` Rand, `100` Heur Raw, `100` Heur +Safety), `~19,500` net calls | `B = 1` | **`~0.4 min`** (`25s`) | **`0.8%`** | Linear in `evalGames` |
+| **Total per Cycle** | **400 total games played** (`100` MCTS + `300` 1-ply eval) | — | **`~44.8 min`** (`2,690s`) | **`100.0%`** | **`~7.4 hours` for 10 cycles** |
+
+> **Practical Takeaway for Experiment Design:** Because self-play dominates 96% of runtime, total training duration scales almost purely with `cycles × games × mctsSims`. Increasing training epochs (`--iterations 10 → 20`), increasing `--replay-ratio`, or expanding evaluation from 200 to 300 games (as in our 3-way evaluation split) adds less than **1–2% overhead** to total cycle time!
+
 ---
 
 ## 5. Parameters Explored {#5-parameters}
