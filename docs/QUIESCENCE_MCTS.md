@@ -1,7 +1,7 @@
 # Quiescence MCTS for Enclosure-Aware Search
 
 **Updated:** 2026-10-28  
-**Status:** ✅ Completed in **TF-B12** & **TF-B13** — **Heuristic Wall Broken (`100.0%` vs Random across all 20 cycles; `63.0%` vs Heuristic in TF-B12 → `89.0%` Peak / `73.0%` Final / `71.6%` Avg vs Heuristic in TF-B13)**
+**Status:** ✅ Completed in **TF-B12**, **TF-B13** & **TF-B14** — **Heuristic Wall Broken (`100.0%` vs Random across all 30 cycles; `63.0%` vs Heuristic in TF-B12 → `89.0%` Peak / `71.6%` Avg in TF-B13 → 🏆 `90.0%` Peak / `80.1%` 10-Cycle Avg in TF-B14)**
 
 ---
 
@@ -128,5 +128,20 @@ A forensic audit of `TF-B13` (`89.0%` C8 peak → `73.0%` C10 final) and the `Gr
 5. **$D_4$ Dihedral Symmetry (`8×` Data Multiplier) & 3D Mesh / Graph Generalization:**
    - Augmenting replay samples across the 8 symmetries of the square grid ($D_4$) multiplies effective sample size by `8×`.
    - For future **3D rotatable manifolds** (torus, sphere, icosahedron, or higher-genus triangulated surfaces), the board generalizes cleanly from a 2D array to a **Dual Face-Adjacency Mesh Graph $G = (V_T, E_{\text{edge}}, E_{\text{vertex}})$**, where `QuiescenceMCTS` operates unchanged and `Conv2D` upgrades to a **Mesh / Graph Convolutional Network (MeshCNN / GCN)** over the 3 edge-neighbors and vertex rings of each triangle.
+
+---
+
+## 8. Experiment `TF-B14` Final Results: Official 2D Baseline Champion (`v1.0.0-2d`)
+
+Warm-started from `TF-B13_network.json`, **`TF-B14`** resolved **Bottleneck 1** (`45,000`-sample sliding-window `ReplayBuffer` + Cosine LR decay `0.0004 → 0.0001` with in-place Adam moment preservation + automatic `*_best_network.json` peak checkpointing) and evaluated **100% pure network self-play** (`0%` Heuristic teacher, `Dual-Side QuiescenceMCTS-50`, `397.2 min` runtime, `129,962` total samples generated):
+
+- **New Record Peak vs Heuristic (`90.0%` in Cycle 9):**
+  - Achieved **`90.0%` (`90W / 9L / 1D`, `88.0%` as P1 and `92.0%` as P2)** with a record cluster score of **`123.8` vs `54.2` (`+69.7` margin)** in Cycle 9 (`LR = 0.000109`).
+  - Automatically saved as `dashboard/data/TF-B14_best_network.json` (`MD5: f2eb302a23dc4a38397a7ed34bd27b2a`) and promoted to `trainedAI_network.json`.
+- **10-Cycle Average Jumped from `71.6%` (`TF-B13`) to `80.1%` (`TF-B14`):**
+  - Cycle-by-cycle vs Heuristic: **`83%` (C1) → `76%` (C2) → `80%` (C3) → `79%` (C4) → `82%` (C5) → `76%` (C6) → `78%` (C7) → `79%` (C8) → 🏆 `90%` (C9) → `78%` (C10)** (`801W / 196L / 3D` total).
+  - Never dropped below `76.0%` in any cycle, proving that `QuiescenceMCTS-50` pure self-play maintains and refines anti-Heuristic mastery without needing `HeuristicPlayer` in the training loop.
+- **Flawless vs Random:** **`100.0%` (`1,000W / 0L / 0D`)** across all 10 cycles, reaching **`175.3` vs `2.6`** mean cluster score in Cycle 10.
+
 
 

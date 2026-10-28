@@ -26,7 +26,7 @@
 
 class ReplayBuffer {
   constructor(config = {}) {
-    this.maxSize = config.maxSize || 500000;
+    this.maxSize = config.maxSize || 45000;
     this.alpha = config.alpha || 0.6;       // Priority exponent (0=uniform, 1=full priority)
     this.beta = config.beta || 0.4;         // Importance sampling exponent (annealed to 1.0)
     this.betaGrowth = config.betaGrowth || 0.001; // Beta growth per sample call

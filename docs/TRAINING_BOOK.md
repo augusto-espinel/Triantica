@@ -1240,6 +1240,7 @@ After 22 brain.js experiments and 10+ TF.js experiments, a clear pattern emerged
 | TF-B10 | MCTS-50 Mixed (50/50 Heur) | TF.js | 50/0/50 | 0.001 | 10 | 256 | ✓ | ✗ | **87%** | 0% | 161m |
 | TF-B12 | Quiescence MCTS + Mixed | TF.js | 50/0/50 | 0.001 | 10 | 256 | ✓ | ✗ | **100%** | **63%** | 271m |
 | TF-B13 | Dual-Side Quiescence + 75/25 | TF.js | 75/0/25 | 0.0005 | 10 | 256 | ✓ | ✗ | **100%** | **73% (89% pk)** | 341m |
+| TF-B14 | Sliding-Window Pure SP + CosLR | TF.js | 100% net | 4e-4→1e-4 | 10 | 256 | ✓ | ✗ | **100%** | **78% (90% pk, 80.1% avg)** | 397m |
 
 **Key:**
 - Mix: opponent distribution (network/random/heuristic)
@@ -2591,7 +2592,7 @@ This prevents the AI from playing the same opening every game.
 
 ### Phase 5.5: Quiescence MCTS — Why It Improves Over Simple MCTS
 
-**Status:** ✅ Completed (`src/server/QuiescenceMCTS.cjs`) — **Broke the Heuristic Wall in `TF-B12` (`63%` vs Heuristic) & Reached `89%` Peak / `73%` Final vs Heuristic in `TF-B13` (`100%` vs Random)**
+**Status:** ✅ Completed (`src/server/QuiescenceMCTS.cjs`) — **Broke the Heuristic Wall in `TF-B12` (`63%` vs Heuristic), Reached `89%` Peak in `TF-B13`, and Achieved `90.0%` Peak (`88%` P1 / `92%` P2) & `80.1%` 10-Cycle Avg vs Heuristic in `TF-B14` (`100%` vs Random across all 30 cycles)**
 
 #### 1. The Horizon Effect & Why Simple MCTS Fails Against Deterministic Cascades
 In `TF-B10` (Simple MCTS-50 + 50% Heuristic opponents), the AI reached a record **87% vs Random**, yet remained at **0% vs `HeuristicPlayer`** (averaging only ~14 turns to Heuristic's ~96 turns per game). An inflection-point audit of `TF-B10` exposed two structural blind spots in simple MCTS (`MCTS.cjs`):
@@ -2752,6 +2753,36 @@ While `TF-B13` reached **`89.0%` vs Heuristic** in Cycle 8 (using a raw 1-ply Co
      - **Placement Legality** operates strictly over the **3 vertices** $\mathcal{V}(v)$ of each triangle (`isValidPlacement` = at least one vertex in $\mathcal{V}(v)$ is already touched by an existing triangle).
      - **Neural Architecture:** On any 3D triangle mesh, the `3×3` grid `Conv2D` generalizes directly to a **Mesh / Graph Convolutional Network (GCN / Gauge-Equivariant MeshCNN)** aggregating features over $\mathcal{N}_{\text{edge}}(v)$ and $\mathcal{N}_{\text{vertex}}(v)$, while `QuiescenceMCTS` remains **100% unchanged** because it only queries legal moves and enclosure cascades!
 
+#### 8. Experiment `TF-B14` Results: Bottleneck 1 Fixed + 100% Pure Network Self-Play (`90.0%` Peak / `80.1%` 10-Cycle Avg vs Heuristic)
+
+Warm-started from `TF-B13_network.json`, **`TF-B14`** tested the resolution of **Bottleneck 1** (`45,000`-sample sliding-window `ReplayBuffer` + Cosine LR decay `0.0004 → 0.0001` with in-place Adam moment retention + automatic `*_best_network.json` peak checkpointing) under **100% pure network self-play** (`0%` Heuristic teacher, `Dual-Side QuiescenceMCTS-50`, runtime `397.2 min`, `129,962` total samples generated across 10 cycles):
+
+| Cycle | Cosine LR | Buffer (`45K` Window, `Total Added`) | Loss (`Start → End`) | Self-Play (`P1 / P2 / D`) | Eval vs Random (`100 games`, `Mean AI–Rand`) | Eval vs Heuristic (`100 games`) | Role Split vs Heuristic (`P1 / P2`) | Mean Score vs Heuristic (`AI – Heur`, `Margin`) | Win/Loss Anatomy (`Blowout ≥+50 / CloseW / D / CloseL / CascadeL <-30`) | Diversity (`Open / Board`) |
+|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| **0 (`TF-B13` C10)** | `0.000500` | `115,892 / 500K` | `3.645 → 2.905` | — | **100.0%** (`172.9 – 3.5`) | `73.0%` (`73W/27L/0D`) | `80% / 66%` | `114.1 – 65.8` (`+48.3`) | — | `4.63 / 1.83` |
+| **1** | `0.000400` | `12,973 / 45K` (`12,973`) | `3.933 → 2.829` | `54 / 46 / 0` | **100.0%** (`171.3 – 3.5`) | **`83.0%`** (`83W/17L/0D`) | `82% / 84%` | `120.4 – 58.3` (`+62.0`) | `58 / 25 / 0 / 8 / 9` | `4.06 / 1.86` |
+| **2** | `0.000391` | `25,939 / 45K` (`25,939`) | `3.710 → 2.823` | `49 / 51 / 0` | **100.0%** (`171.7 – 3.5`) | **`76.0%`** (`76W/24L/0D`) | `86% / 66%` | `113.5 – 65.8` (`+47.7`) | `53 / 23 / 0 / 9 / 15` | `4.59 / 1.87` |
+| **3** | `0.000365` | `38,972 / 45K` (`38,972`) | `3.743 → 2.863` | `53 / 47 / 0` | **100.0%** (`173.5 – 2.9`) | **`80.0%`** (`80W/20L/0D`) | `82% / 78%` | `117.4 – 63.3` (`+54.1`) | `61 / 19 / 0 / 7 / 13` | `4.67 / 1.88` |
+| **4** | `0.000325` | **`45,000 / 45K`** (`52,062`) | `3.820 → 2.901` | `47 / 52 / 1` | **100.0%** (`172.7 – 3.2`) | **`79.0%`** (`79W/21L/0D`) | `80% / 78%` | `113.8 – 65.2` (`+48.6`) | `50 / 29 / 0 / 5 / 16` | `4.40 / 1.88` |
+| **5** | `0.000276` | **`45,000 / 45K`** (`65,123`) | `3.817 → 2.963` | `43 / 56 / 1` | **100.0%** (`173.5 – 3.2`) | **`82.0%`** (`82W/18L/0D`) | `84% / 80%` | `122.2 – 59.0` (`+63.2`) | `63 / 19 / 0 / 7 / 11` | `4.38 / 1.87` |
+| **6** | `0.000224` | **`45,000 / 45K`** (`78,036`) | `3.800 → 2.970` | `46 / 53 / 1` | **100.0%** (`173.2 – 2.9`) | **`76.0%`** (`76W/24L/0D`) | `78% / 74%` | `116.0 – 63.8` (`+52.3`) | `53 / 23 / 0 / 12 / 12` | `4.33 / 1.87` |
+| **7** | `0.000175` | **`45,000 / 45K`** (`90,998`) | `3.886 → 2.977` | `67 / 33 / 0` | **100.0%** (`175.0 – 2.8`) | **`78.0%`** (`78W/22L/0D`) | `80% / 76%` | `118.7 – 60.6` (`+58.1`) | `62 / 16 / 0 / 8 / 14` | `3.99 / 1.86` |
+| **8** | `0.000135` | **`45,000 / 45K`** (`104,004`) | `3.804 → 3.017` | `44 / 56 / 0` | **100.0%** (`174.2 – 3.0`) | **`79.0%`** (`79W/20L/1D`) | `82% / 76%` | `114.8 – 63.2` (`+51.7`) | `57 / 22 / 1 / 7 / 13` | `4.02 / 1.87` |
+| **9** | `0.000109` | **`45,000 / 45K`** (`117,017`) | `3.916 → 3.081` | `41 / 59 / 0` | **100.0%** (`174.6 – 2.9`) | **🏆 `90.0%`** (`90W/9L/1D`) | **`88% / 92%`** | **`123.8 – 54.2` (`+69.7`)** | **`62 / 28 / 1 / 2 / 7`** | `4.43 / 1.87` |
+| **10** | `0.000100` | **`45,000 / 45K`** (`129,962`) | `3.860 → 3.089` | `48 / 51 / 1` | **100.0%** (**`175.3 – 2.6`**) | **`78.0%`** (`78W/21L/1D`) | `78% / 78%` | `118.4 – 62.0` (`+56.5`) | `51 / 27 / 1 / 9 / 12` | **`5.03 / 1.85`** |
+
+**Key Takeaways from `TF-B14` (Official 2D Baseline Champion — `v1.0.0-2d`):**
+1. **New All-Time Record Peak (`90.0%` vs Heuristic in Cycle 9):**
+   - In Cycle 9 (`LR = 0.000109`), the 1-ply ConvNet achieved **`90.0%` (`90W / 9L / 1D`, `88.0%` as P1 and `92.0%` as P2)** with an all-time record mean cluster score of **`123.8` vs `54.2` (`+69.7` margin)**, reducing close positional losses to just `2` games and cascade blunders to `7` games out of `100`.
+   - Automatic peak checkpointing captured this exact model in **`dashboard/data/TF-B14_best_network.json`** (`MD5: f2eb302a23dc4a38397a7ed34bd27b2a`), which has been promoted to **`trainedAI_network.json`** as the official 2D Triantica AI.
+2. **Massive Gain in 10-Cycle Stability (`80.1%` Avg vs `71.6%` in `TF-B13`):**
+   - Across all 1,000 evaluation games vs `HeuristicPlayer`, `TF-B14` won **`801W / 196L / 3D` (`80.1%`)**—an **+8.5 percentage point increase** over `TF-B13` (`71.6%`), never dropping below `76.0%` in any cycle (`76%–90%` range vs `52%–89%` in `TF-B13`).
+   - Against `RandomPlayer`, `TF-B14` went **`1,000W / 0L / 0D` (`100.0%`)**, reaching a record **`175.3` vs `2.6`** mean cluster score in Cycle 10 (`3,000` consecutive wins across `TF-B12`–`TF-B14`).
+3. **Pure Network Self-Play Requires Zero Heuristic Teacher:**
+   - Even with `0%` `HeuristicPlayer` games in training, `Dual-Side QuiescenceMCTS-50` (`riskPenalty = 0.25`, `enclosureBonus = 0.15`) retained and improved anti-Heuristic mastery purely from self-play.
+4. **Confirming the 1-Ply `3×3` ConvNet Architectural Ceiling:**
+   - The win/loss anatomy confirms that when the 1-ply ConvNet avoids blunders, it dominates `HeuristicPlayer` (`57.0%` of all games are `+50` point blowouts, plus `23.1%` close wins = `80.1%`). The remaining `~19.6%` losses consist of `~7.4%` close positional races and `~12.2%` sporadic 1-ply cascade blunders (where the `7×7` receptive field and zero-padded borders miss a 1-move hole over a 40-move game, $0.995^{40} \approx 82\%$). Breaking into `95%–99%` requires the Phase 3 upgrades (Inference-Time Safety Filter, Toroidal Circular Padding, and 3D Mesh/Graph Global Context).
+
 ---
 
 ### Phase 6: Self-Play Tournament + Iterative Retraining
@@ -2825,6 +2856,7 @@ Use this table to track implementation progress. Update after each experiment.
 | 5: MCTS-50 Mixed | TF-B10 | ✅ Done | 87% | 0% | 50% Network / 50% Heuristic; record 87% vs Random |
 | 5.5: Quiescence MCTS | TF-B12 | ✅ Done | **100%** | **63%** | **Heuristic Wall Broken!** 100% vs Random (all 10 cycles), 63% vs Heuristic (66% P1, 60% P2; random 2-ply eval C8–C10) |
 | 5.6: Dual-Side Quiescence | TF-B13 | ✅ Done | **100%** | **73% (89% peak)** | **New Record vs Heuristic!** 89% peak (C8: 90% P1, 88% P2), 73% final (C10: 80% P1, 66% P2), 71.6% 10-cycle avg; 115.9K dual-side MCTS samples |
+| 5.7: Sliding-Window Pure SP | TF-B14 | ✅ Done | **100%** | **78% (90% peak, 80.1% avg)** | **Official 2D Release Champion (`v1.0.0-2d`)!** 90% peak (C9: 88% P1, 92% P2, score `123.8–54.2`), 80.1% 10-cycle avg (`76%–90%` band) under 100% pure network self-play + 45K sliding buffer + Cosine LR. See [`docs/EXECUTION_ROADMAP.md`](./EXECUTION_ROADMAP.md). |
 
 **Status Legend:**
 - ✅ Done — Experiment complete, documented
@@ -2914,6 +2946,7 @@ triantica/
 │   ├── experiments.json       # Experiment metadata
 │   └── data/                  # Published training outputs & checkpoints
 ├── docs/
+│   ├── EXECUTION_ROADMAP.md   # Official 2D release & 3D manifold execution plan
 │   ├── TRAINING_BOOK.md       # This guide
 │   └── QUIESCENCE_MCTS.md     # Quiescence MCTS design & results
 └── browser/

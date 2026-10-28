@@ -486,9 +486,13 @@ class TFConvNetwork {
    */
   async trainBatchWithIsolation(inputs, policyTargets, chosenIndices, valueTargets, iterations = 10, learningRate = 0.001, batchSize = 256, isolateChosenOnly = true) {
     // Use Adam optimizer (cap legacy high momentum LR >= 0.01 down to 0.001 for Adam stability)
+    // Preserve first/second moments across LR schedules by updating learningRate in-place when possible
     const adamLr = learningRate >= 0.01 ? 0.001 : learningRate;
-    if (!this._adamOptimizer || this._adamLr !== adamLr) {
+    if (!this._adamOptimizer) {
       this._adamOptimizer = tf.train.adam(adamLr);
+      this._adamLr = adamLr;
+    } else if (this._adamLr !== adamLr) {
+      this._adamOptimizer.learningRate = adamLr;
       this._adamLr = adamLr;
     }
     const optimizer = this._adamOptimizer;
@@ -1022,9 +1026,11 @@ async function main() {
   const useGradientIsolation = getArg('gradient-isolation', 'true') === 'true';
   const batchSize = parseInt(getArg('batch-size', '256'));
   const useReplayBuffer = getArg('replay-buffer', 'true') === 'true';
-  const replayBufferSize = parseInt(getArg('replay-buffer-size', '500000'));
+  const replayBufferSize = parseInt(getArg('replay-buffer-size', '45000'));
   const replayBatchSize = parseInt(getArg('replay-batch-size', '256'));
   const replayRatio = parseFloat(getArg('replay-ratio', '2.0')); // How many replay batches per cycle vs new data batches
+  const lrSchedule = getArg('lr-schedule', 'cosine'); // 'constant' | 'cosine' | 'step'
+  const minLearningRate = parseFloat(getArg('min-learning-rate', String(Math.max(1e-5, learningRate * 0.2))));
   const architecture = getArg('architecture', 'dense'); // 'dense' or 'conv'
   const mctsSims = parseInt(getArg('mcts-sims', '0')); // MCTS simulations per move (0 = disabled)
   const mctsBatchSize = parseInt(getArg('mcts-batch-size', '8')); // Batch size for parallel MCTS evaluation
@@ -1051,7 +1057,7 @@ async function main() {
   }
   console.log(`  Eval games:      ${evalGames}`);
   console.log(`  Train iters:     ${iterations}`);
-  console.log(`  Learning rate:   ${learningRate}`);
+  console.log(`  Learning rate:   ${learningRate} (schedule: ${lrSchedule}, min: ${minLearningRate})`);
   console.log(`  Batch size:      ${batchSize}`);
   console.log(`  Gradient iso:    ${useGradientIsolation}`);
   console.log(`  Exploration:      ${exploration}`);
@@ -1133,6 +1139,8 @@ async function main() {
       enableClusterReward,
       iterations,
       learningRate,
+      lrSchedule,
+      minLearningRate,
       batchSize,
       gradientIsolation: useGradientIsolation,
       architecture: architecture,
@@ -1184,9 +1192,25 @@ async function main() {
   const minCombinedReward = minImmediateReward - (1.0 * finalRewardWeight);
   const maxCombinedReward = maxImmediateReward + (1.0 * finalRewardWeight);
   const combinedRewardRange = maxCombinedReward - minCombinedReward;
+
+  // Track best model across cycles to prevent late-cycle drift from overwriting peak checkpoints
+  let bestHeuristicWinRate = -1;
+  let bestHeuristicMeanMargin = -Infinity;
+  let bestCycle = 0;
   
   for (let cycle = 1; cycle <= cycles; cycle++) {
-    console.log(`\n🔄 Cycle ${cycle}/${cycles}`);
+    // Compute scheduled learning rate for this cycle
+    let currentLearningRate = learningRate;
+    if (cycles > 1) {
+      const progress = (cycle - 1) / (cycles - 1);
+      if (lrSchedule === 'cosine') {
+        currentLearningRate = minLearningRate + 0.5 * (learningRate - minLearningRate) * (1 + Math.cos(Math.PI * progress));
+      } else if (lrSchedule === 'step') {
+        const factor = progress >= 0.7 ? 0.25 : (progress >= 0.4 ? 0.5 : 1.0);
+        currentLearningRate = Math.max(minLearningRate, learningRate * factor);
+      }
+    }
+    console.log(`\n🔄 Cycle ${cycle}/${cycles} (LR=${currentLearningRate.toFixed(6)})`);
     const cycleStart = Date.now();
     
     // Self-play with opponent tracking
@@ -1573,12 +1597,12 @@ async function main() {
         return await network.trainBatchWithIsolation(
           inputs, outputs, chosenIndices,
           valueTargets || new Array(inputs.length).fill(0),
-          iters, learningRate, batchSize, isolateChosenOnly
+          iters, currentLearningRate, batchSize, isolateChosenOnly
         );
       } else if (useGradientIsolation) {
-        return await network.trainBatchWithIsolation(inputs, outputs, chosenIndices, iters, learningRate, batchSize);
+        return await network.trainBatchWithIsolation(inputs, outputs, chosenIndices, iters, currentLearningRate, batchSize);
       } else {
-        return await network.trainBatch(inputs, outputs, iters, learningRate, batchSize);
+        return await network.trainBatch(inputs, outputs, iters, currentLearningRate, batchSize);
       }
     }
 
@@ -1786,7 +1810,7 @@ async function main() {
         samples: allInputs.length,
         totalSamplesUsed: trainingSamplesUsed || allInputs.length,
         iterations,
-        learningRate,
+        learningRate: currentLearningRate,
         initialError: trainResult.initialError,
         finalError: trainResult.finalError,
         errorSnapshots: trainResult.errorHistory.map((err, i) => ({ iteration: i, error: err })),
@@ -1839,17 +1863,40 @@ async function main() {
       const outputDir = path.dirname(outputPath);
       if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
       
+      const networkJson = JSON.stringify(network.toJSON(), null, 2);
       const networkPath = outputPath.replace('.json', '_network.json');
-      fs.writeFileSync(networkPath, JSON.stringify(network.toJSON(), null, 2));
+      fs.writeFileSync(networkPath, networkJson);
+
+      // Compute mean score margin vs Heuristic as tie-breaker for peak checkpointing
+      const meanHeurAI = heurAIScores.length > 0 ? heurAIScores.reduce((a, b) => a + b, 0) / heurAIScores.length : 0;
+      const meanHeurOpp = heurOppScores.length > 0 ? heurOppScores.reduce((a, b) => a + b, 0) / heurOppScores.length : 0;
+      const heurMargin = meanHeurAI - meanHeurOpp;
+
+      const bestNetworkPath = outputPath.replace('.json', '_best_network.json');
+      if (heurRate > bestHeuristicWinRate || (heurRate === bestHeuristicWinRate && heurMargin > bestHeuristicMeanMargin)) {
+        bestHeuristicWinRate = heurRate;
+        bestHeuristicMeanMargin = heurMargin;
+        bestCycle = cycle;
+        fs.writeFileSync(bestNetworkPath, networkJson);
+        console.log(`🏆 New peak checkpoint saved: ${path.basename(bestNetworkPath)} (Cycle ${cycle}: ${heurRate.toFixed(1)}% vs Heuristic, margin ${heurMargin >= 0 ? '+' : ''}${heurMargin.toFixed(1)})`);
+      }
       
       log.endedAt = new Date().toISOString();
+      log.bestResult = {
+        cycle: bestCycle,
+        vsHeuristic: bestHeuristicWinRate,
+        meanScoreMarginVsHeuristic: bestHeuristicMeanMargin,
+        checkpoint: path.basename(bestNetworkPath)
+      };
       log.finalResult = { 
         vsRandom: evalRate, 
         vsHeuristic: heurRate,
         vsRandomP1: evalP1Rate,
         vsRandomP2: evalP2Rate,
         vsHeuristicP1: heurP1Rate,
-        vsHeuristicP2: heurP2Rate
+        vsHeuristicP2: heurP2Rate,
+        bestCycle,
+        bestVsHeuristic: bestHeuristicWinRate
       };
       fs.writeFileSync(outputPath, JSON.stringify(log, null, 2));
       

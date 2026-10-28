@@ -1,7 +1,8 @@
 # Triantica Project Context
 
-**Last Updated:** 2026-10-24 23:08 CET
-**Status:** ✅ Dashboard Working — 9 experiments with full plots, TF.js baselines complete
+**Last Updated:** 2026-10-28 18:35 CET
+**Status:** ✅ `TF-B14` Completed — **New Record `90.0%` Peak (`88%` P1 / `92%` P2) & `80.1%` 10-Cycle Avg vs Heuristic (`100%` vs Random)**; `TF-B14_best_network.json` promoted to `trainedAI_network.json`
+**Official Execution Plan:** [`docs/EXECUTION_ROADMAP.md`](./docs/EXECUTION_ROADMAP.md)
 
 ## Quick Start (for Augusto)
 
@@ -98,12 +99,12 @@ See `README_QUICKSTART.md` for full instructions.
 4. **Cluster adjacency:** Same-cell triangles share a corner, not a diagonal group.
 5. **AI performance:** Pre-trained network is barely above random. This is the baseline to improve.
 
-## Next Steps
+## Next Steps (See [`docs/EXECUTION_ROADMAP.md`](./docs/EXECUTION_ROADMAP.md))
 
-1. **Retrain the AI** — The current network hasn't learned meaningful strategy
-2. **Create AgentPlayer** — For spawned agent opponents (me playing your AI)
-3. **Worker pool** — Parallel games on M2 Ultra for faster training
-4. **Training automation** — Script to run N self-play games + train cycles
+1. **Phase 1 (Active — `TF-B14`):** Fix Bottleneck 1 (`45,000` sliding-window replay buffer + Cosine LR `0.0004 → 0.0001` + automatic `*_best_network.json` checkpointing) and evaluate the ceiling of **100% pure network self-play** (`Dual-Side QuiescenceMCTS-50`) under the current 2D hybrid topology (`Bounded Placement / Toroidal Enclosure`).
+2. **Phase 2 (Official 2D Release — `2d-variant` branch & `v1.0.0-2d` tag):** Finalize `TF-B14` metrics, promote the best checkpoint to `trainedAI_network.json`, commit, push, tag `v1.0.0-2d`, and publish the completed 2D game to its own dedicated **`2d-variant`** GitHub branch (so GitHub Pages can be pointed to `2d-variant` anytime for A/B comparison), while continuing 3D development under `main`.
+3. **Phase 3 (3D Capability & Full Edge Symmetry):** Enable full toroidal corner placement (`hasCorner` wrapping), implement Bottleneck 2 (Toroidal Circular Padding in `TFConvNetwork`) and Bottleneck 3 (Inference-Time Tactical Safety Filter in `ConvNetwork.predictMove`), and generalize `GridManager` to arbitrary 3D triangulated manifolds $G = (V_T, E_{\text{edge}}, E_{\text{vertex}})$.
+4. **Phase 4 (Manifold Symmetry Augmentation):** Tackle Bottleneck 4 ($D_4$ dihedral / toroidal / gauge symmetry exploitation) after all 3D-compatible training upgrades are verified.
 
 ---
 
