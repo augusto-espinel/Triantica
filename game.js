@@ -2669,18 +2669,22 @@ triggerAIMove() {
     }
 
     if (step.type === 'rotate') {
-      // Reset the board cleanly after the Step 0 cluster demo loop
+      // Empty board for Exercise 1 so any square is a valid opening position
       this.gridManager.reset();
-      this.gridManager.placeTriangle(5, 5, 1, 2);
       this.gridManager.currentPlayer = 1;
       this.tutorialRotateCount = 0;
       this.cursorPos = { x: 4, y: 5 };
       this.gridManager.selectedRotation = 0;
       this.updateScore();
     } else if (step.type === 'place1') {
+      // Seed the opening Blue (P2) triangle at (5, 5, rot 1) so the player must touch its corner
+      this.gridManager.reset();
+      this.gridManager.placeTriangle(5, 5, 1, 2);
+      this.gridManager.currentPlayer = 1;
       // Start the red cursor behind/near the instruction card, away from the green target socket
       this.cursorPos = { x: step.startCursor.x, y: step.startCursor.y };
       this.gridManager.selectedRotation = step.startCursor.rot;
+      this.updateScore();
     } else if (step.type === 'place2') {
       // Ensure the setup triangle at (6, 5, rot 1) is present so (5, 5, rot 3) is 2/3 enclosed
       const cell65 = this.gridManager.grid[5][6];
