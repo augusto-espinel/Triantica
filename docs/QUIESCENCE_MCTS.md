@@ -1,7 +1,7 @@
 # Quiescence MCTS for Enclosure-Aware Search
 
-**Updated:** 2026-10-28  
-**Status:** ✅ Completed in **TF-B12**, **TF-B13** & **TF-B14** — **Heuristic Wall Broken (`100.0%` vs Random across all 30 cycles; `63.0%` vs Heuristic in TF-B12 → `89.0%` Peak / `71.6%` Avg in TF-B13 → 🏆 `90.0%` Peak / `80.1%` 10-Cycle Avg in TF-B14)**
+**Updated:** 2026-10-29  
+**Status:** ✅ Completed in **TF-B12**, **TF-B13**, **TF-B14** & **TF-B15** — **Heuristic Wall Conquered (`100.0%` vs Random across all 40 cycles; `63.0%` in TF-B12 → `89.0%` Peak in TF-B13 → `90.0%` Peak in TF-B14 → 🏆 `99.0%` Peak / `95.9%` Avg Raw & `100.0%` +Safety Filter in TF-B15)**
 
 ---
 
@@ -142,6 +142,20 @@ Warm-started from `TF-B13_network.json`, **`TF-B14`** resolved **Bottleneck 1** 
   - Cycle-by-cycle vs Heuristic: **`83%` (C1) → `76%` (C2) → `80%` (C3) → `79%` (C4) → `82%` (C5) → `76%` (C6) → `78%` (C7) → `79%` (C8) → 🏆 `90%` (C9) → `78%` (C10)** (`801W / 196L / 3D` total).
   - Never dropped below `76.0%` in any cycle, proving that `QuiescenceMCTS-50` pure self-play maintains and refines anti-Heuristic mastery without needing `HeuristicPlayer` in the training loop.
 - **Flawless vs Random:** **`100.0%` (`1,000W / 0L / 0D`)** across all 10 cycles, reaching **`175.3` vs `2.6`** mean cluster score in Cycle 10.
+
+---
+
+## 9. Experiment `TF-B15` Final Results: Phase 3 Full Torus ($T^2$) + Circular Conv + Tactical Safety Filter
+
+Warm-started from `TF-B14_best_network.json`, **`TF-B15`** unified the board topology into a true periodic torus $T^2$ (`toroidalPlacement = true` so both corner placement and enclosure wrap seamlessly across all 4 borders), replaced zero-padded convolutions with **`ToroidalPad2D` circular convolutions** (Bottleneck 2), and evaluated the **`O(1)` Inference-Time Tactical Safety Filter** (`topK = 12`, Bottleneck 3) across a 3-way evaluation protocol (`585.2 min` total runtime, `129,628` self-play samples):
+
+- **All-Time Record Raw 1-Ply Policy (`99.0%` Peak, `95.9%` 10-Cycle Average vs Heuristic):**
+  - Cycle-by-cycle raw policy win rate vs Heuristic: **`87%` (C1) → `93%` (C2) → `95%` (C3) → `96%` (C4) → `98%` (C5) → `98%` (C6) → 🏆 `99%` (C7: `98% P1 / 100% P2`, score `157.3` vs `26.0`, margin `+131.3`) → `97%` (C8) → `97%` (C9) → 🏆 `99%` (C10: `100% P1 / 98% P2`, score `154.6` vs `28.2`)**.
+  - Removing artificial border asymmetry and zero-padding edge distortion raised the raw 1-ply policy 10-cycle average by **`+15.8` percentage points** over `TF-B14` (`80.1% → 95.9%`).
+- **Perfect `100.0%` with Tactical Safety Filter (`1,000W / 0L / 0D`):**
+  - Across all 10 cycles (`1,000` evaluation games with random 2-ply openings), the safety-filtered policy achieved **`100.0%` in every single cycle** (mean score `~174.2` vs `14.7`).
+- **Promoted to Browser Champion (`trainedAI_network.json`):**
+  - `TF-B15_best_network.json` (Cycle 7) is deployed as `trainedAI_network.json` and powers all three browser difficulty tiers (`Easy`: temperature/exploration sampling, `Medium`: raw ConvNet policy `99%`, `Hard`: Master ConvNet + Tactical Safety Filter `100%`).
 
 
 

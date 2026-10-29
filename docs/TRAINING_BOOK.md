@@ -2908,6 +2908,7 @@ Use this table to track implementation progress. Update after each experiment.
 | 5.5: Quiescence MCTS | TF-B12 | ✅ Done | **100%** | **63%** | **Heuristic Wall Broken!** 100% vs Random (all 10 cycles), 63% vs Heuristic (66% P1, 60% P2; random 2-ply eval C8–C10) |
 | 5.6: Dual-Side Quiescence | TF-B13 | ✅ Done | **100%** | **73% (89% peak)** | **New Record vs Heuristic!** 89% peak (C8: 90% P1, 88% P2), 73% final (C10: 80% P1, 66% P2), 71.6% 10-cycle avg; 115.9K dual-side MCTS samples |
 | 5.7: Sliding-Window Pure SP | TF-B14 | ✅ Done | **100%** | **78% (90% peak, 80.1% avg)** | **Official 2D Release Champion (`v1.0.0-2d`)!** 90% peak (C9: 88% P1, 92% P2, score `123.8–54.2`), 80.1% 10-cycle avg (`76%–90%` band) under 100% pure network self-play + 45K sliding buffer + Cosine LR. See [`docs/EXECUTION_ROADMAP.md`](./EXECUTION_ROADMAP.md). |
+| 6.0: Phase 3 Full Torus ($T^2$) | TF-B15 | ✅ Done | **100%** | **99% Raw (95.9% avg) / 100% +Safety** | **All-Time Record!** Full $T^2$ toroidal placement + `ToroidalPad2D` circular convolutions + Tactical Safety Filter (`topK=12`). `1,000W/0L/0D` (`100.0%`) with safety filter; `99.0%` peak (`95.9%` avg) raw policy. Promoted to `trainedAI_network.json`. |
 
 **Status Legend:**
 - ✅ Done — Experiment complete, documented
@@ -3034,7 +3035,7 @@ The training dashboard (`dashboard/index.html`, hosted at `/dashboard/`) shows t
 
 ---
 
-*Last updated: 2026-10-28*
-*Version: 3.3 (Phase 5.6 Dual-Side Quiescence MCTS — TF-B13)*
+*Last updated: 2026-10-29*
+*Version: 3.4 (Phase 3 Full Torus $T^2$ + Circular Conv + Safety Filter — TF-B15)*
 *Framework: TensorFlow.js with Metal GPU*
 *Hardware: Mac Studio M2 Ultra*

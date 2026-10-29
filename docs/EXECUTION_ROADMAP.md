@@ -1,9 +1,10 @@
 # Triantica Execution Roadmap: Official 2D Variant Release & 3D Manifold Transition
 
-**Last Updated:** 2026-10-28  
-**Completed Experiment:** `TF-B14` (`90.0%` Peak / `80.1%` 10-Cycle Avg vs Heuristic, `100.0%` vs Random)  
+**Last Updated:** 2026-10-29  
+**Completed Experiment:** `TF-B15` (`99.0%` Peak / `95.9%` 10-Cycle Avg Raw Policy, **`100.0%` Across All 10 Cycles with Safety Filter** vs Heuristic, `100.0%` vs Random)  
 **Milestone 1 Status:** ✅ Tagged & Published (`v1.0.0-2d` on `2d-variant` branch)  
-**Milestone 2 Status:** ✅ Phase 3 Implemented on `main` (Full Toroidal Symmetry + `ToroidalPad2D`/`3D` + Tactical Safety Filter + Manifold Graph $G=(V_T,E_{\text{edge}},E_{\text{vertex}})$)
+**Milestone 2 Status:** ✅ Phase 3 Completed on `main` (`TF-B15` Champion Deployed + Mobile UI & Difficulty Tiers Ready)  
+**Milestone 3 Status:** 💡 Phase 3.5 / Phase 4 Concept & Visual Architecture Exploration (`docs/TOROIDAL_3D_VISUALIZATION_CONCEPT.md`)
 
 ---
 
@@ -44,13 +45,20 @@ To maintain rigorous scientific discipline, execution is divided into **four seq
 │  PHASE 3: 3D Capability, Full Edge Symmetry & Bottlenecks 2 & 3      [DONE]  │
 │    • Unify toroidal edge symmetry: wrap hasCorner(x, y) modulo (cols, rows)  │
 │    • Bottleneck 2: Toroidal Circular Padding in TFConvNetwork / ConvNetwork  │
-│    • Bottleneck 3: Inference-Time Tactical Safety Filter (predictMove): 99%! │
-│    • Generalize GridManager to Dual Face-Adjacency Mesh Graph G=(V_T,E_e,E_v)│
+│    • Bottleneck 3: Inference-Time Tactical Safety Filter (predictMove)       │
+│    • TF-B15: 99.0% Peak / 95.9% Avg Raw Policy, 100.0% (+Safety) vs Heur!    │
+│    • Pre-3D Mobile UI Revamp + Easy/Medium/Hard AI Tiers + P1/P2 Side Select │
 │                                      │                                       │
 │                                      ▼                                       │
-│  PHASE 4: Manifold Symmetry Exploitation (Bottleneck 4)              [NEXT]  │
-│    • Tackle dihedral (D_4) / toroidal / mesh gauge symmetry augmentation     │
-│      after all 3D-compatible training & architectural upgrades are proven    │
+│  PHASE 3.5: Playable Toroidal Visualization & Dual-View Concept   [EXPLORE]  │
+│    • Isometric Infinite-Plane / Ghost-Border Tile View (Primary Play Surface)│
+│    • Synchronized 3D Closed Surface / Hinged Folding Companion View          │
+│    • Concept & UX Blueprint: docs/TOROIDAL_3D_VISUALIZATION_CONCEPT.md       │
+│                                      │                                       │
+│                                      ▼                                       │
+│  PHASE 4: Manifold Symmetry Exploitation (Bottleneck 4)          [BRAINSTORM]│
+│    • Explore dihedral (D_4) / toroidal / mesh gauge symmetry augmentation    │
+│      once visual dynamics & 3D manifold gameplay feel are finalized          │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -141,12 +149,27 @@ Transition Triantica from a bounded 2D planar-placement board to a **seam-free 3
 
 ---
 
-### Phase 4: Symmetry Exploitation (Bottleneck 4) — ⏳ DEFERRED UNTIL POST-3D
+#### Step 3.5: Experiment `TF-B15` & Pre-3D Mobile UI Revamp — ✅ DONE
+- **Completed `TF-B15` (`10` cycles, `585.2 min`, warm-started from `TF-B14_best_network.json`):**
+  - **vs Random (Raw Policy):** **`100.0%`** (`1,000W / 0L / 0D` across all 10 cycles, mean score `178.0` vs `2.4`).
+  - **vs Heuristic (Raw 1-Ply Policy):** **`99.0%` Peak** (Cycles 7 & 10) and **`95.9%` 10-Cycle Average** (`959W / 40L / 1D`, up `+15.8%` from `TF-B14`'s `80.1%` average).
+  - **vs Heuristic (+Safety Filter, `topK = 12`):** **`100.0%` across all 10 cycles (`1,000W / 0L / 0D`)**, mean cluster score `~174.2` vs `14.7`.
+  - Promoted `TF-B15_best_network.json` to `trainedAI_network.json`.
+- **Pre-3D Mobile UI & Multi-Tier Difficulty Revamp (`game.js`, `index.html`, `AIPlayer.js`):**
+  - Responsive `Phaser.Scale.FIT` + `CENTER_BOTH` viewport scaling for mobile & desktop playtesting.
+  - 2-step **Human vs AI** menu flow: **Difficulty Selection** (`Easy` casual temperature sampling, `Medium` raw ConvNet `99%`, `Hard` Master ConvNet + Safety Filter `100%`) $\to$ **Side Selection** (`Play as P1 Red` or `Play as P2 Blue`).
+  - Gated AI benchmark modes (`AvR`, `AvH`, `AvA`) behind `const DEBUG_MODE = false`.
 
-**Objective:**  
-Once the 3D-compatible architecture, full edge symmetry, circular/mesh convolutions, and inference-time safety filter have been thoroughly explored and benchmarked:
-- Implement **Dihedral ($D_4$) / Toroidal Translation / Mesh Gauge Symmetry Augmentation** during replay buffer ingestion or canonical state encoding.
-- Provides an **8× sample efficiency multiplier** on the square torus (and local gauge equivariance on general 3D triangle meshes) as the final polish stage.
+---
+
+### Phase 3.5 & Phase 4: Visual Concept Exploration & Symmetry Brainstorming — 💡 EXPLORATION PHASE
+
+Before committing to low-level symmetry augmentation (`D_4` / gauge equivariance) or locking in a final 3D mesh ruleset, the immediate priority is **experiencing the toroidal game dynamics with friends** and developing a clear **visual concept** that makes wrap-around topology intuitive to human players.
+
+See **[`docs/TOROIDAL_3D_VISUALIZATION_CONCEPT.md`](./TOROIDAL_3D_VISUALIZATION_CONCEPT.md)** for the full design exploration covering:
+1. **Isometric Infinite Repeating Plane (Primary Play Surface):** Playing on the flattened surface with an angled/isometric camera and translucent repeating "ghost tiles" (or seamless panning) around the $10\times 10$ fundamental domain so cross-border enclosures and corner contacts are immediately visible.
+2. **Synchronized 3D Closed-Surface Companion Viewport:** A secondary 3D preview showing how the flat grid folds along triangle/cell hinges (`u`, `v` folding parameters) into a closed 3D surface (torus or polyhedral manifold), updating live with every move.
+3. **Phase 4 Brainstorming Notes:** How visual feedback and playtesting insights will guide future 3D manifold variants and symmetry exploitation.
 
 ---
 
