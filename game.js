@@ -2393,8 +2393,8 @@ triggerAIMove() {
       {
         type: 'place1',
         title: 'EXERCISE 2: MOVE & PLACE',
-        body: 'Your red cursor is in an illegal position (not touching any corner). Move it into the green target (touching the blue corner) & tap PLACE TRIANGLE.',
-        prompt: 'TAP GREEN TARGET → TAP PLACE TRIANGLE',
+        body: 'Your red cursor is in an illegal position (not touching any corner). Move & rotate it to fit inside the green target, then tap PLACE TRIANGLE.',
+        prompt: 'FIT INSIDE GREEN TARGET → TAP PLACE',
         view: { u: -0.5, v: 0.5, zoom: 1.5 },
         startCursor: { x: 3, y: 5, rot: 0 },
         targetCell: { x: 4, y: 5, rot: 2 },
@@ -2405,8 +2405,8 @@ triggerAIMove() {
       {
         type: 'place2',
         title: 'EXERCISE 3: CLOSE A GAP (EXTRA TURN!)',
-        body: 'The yellow-outlined gap has 2 of 3 sides blocked! Move your red cursor into the green target above it & tap PLACE TRIANGLE.',
-        prompt: 'MOVE TO GREEN TARGET → TAP PLACE TRIANGLE',
+        body: 'The yellow-outlined gap has 2 of 3 sides blocked! Move & rotate your red triangle to fit inside the green target above it, then tap PLACE TRIANGLE.',
+        prompt: 'FIT INSIDE GREEN TARGET → TAP PLACE',
         view: { u: -0.5, v: 0.8, zoom: 1.5 },
         startCursor: { x: 3, y: 5, rot: 0 },
         targetCell: { x: 5, y: 4, rot: 1 },
@@ -2702,14 +2702,15 @@ triggerAIMove() {
 
     const target = step.targetCell;
     if (this.cursorPos.x !== target.x || this.cursorPos.y !== target.y) {
-      this.tutorialPromptText.setText('FIRST TAP THE GREEN TARGET ON THE BOARD!');
+      this.cameras.main.flash(180, 255, 42, 84);
+      this.tutorialPromptText.setText('MOVE INTO THE GREEN TARGET CELL FIRST!');
       return;
     }
 
     if (this.gridManager.selectedRotation !== target.rot) {
-      // Auto-align rotation if the user already moved the cursor into the green target cell
-      this.gridManager.selectedRotation = target.rot;
-      this.updateCursor();
+      this.cameras.main.flash(180, 255, 42, 84);
+      this.tutorialPromptText.setText('ROTATE (↻ OR TAP CELL) TO MATCH GREEN TARGET!');
+      return;
     }
 
     this.gridManager.currentPlayer = 1;
