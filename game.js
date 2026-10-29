@@ -754,27 +754,80 @@ class GameScene extends Phaser.Scene {
       }
   }
 
+  drawChamferedPanel(gfx, cx, cy, width, height, cut, fillColor, fillAlpha, strokeColor, strokeAlpha = 1.0, lineWidth = 2) {
+    const x0 = cx - width / 2;
+    const y0 = cy - height / 2;
+    const x1 = cx + width / 2;
+    const y1 = cy + height / 2;
+
+    const tracePath = () => {
+      gfx.beginPath();
+      gfx.moveTo(x0 + cut, y0);
+      gfx.lineTo(x1 - cut, y0);
+      gfx.lineTo(x1, y0 + cut);
+      gfx.lineTo(x1, y1 - cut);
+      gfx.lineTo(x1 - cut, y1);
+      gfx.lineTo(x0 + cut, y1);
+      gfx.lineTo(x0, y1 - cut);
+      gfx.lineTo(x0, y0 + cut);
+      gfx.closePath();
+    };
+
+    gfx.clear();
+    // Outer neon halo
+    gfx.lineStyle(lineWidth + 4, strokeColor, strokeAlpha * 0.22);
+    tracePath();
+    gfx.strokePath();
+
+    // Dark cyber-glass fill
+    gfx.fillStyle(fillColor, fillAlpha);
+    tracePath();
+    gfx.fillPath();
+
+    // Crisp neon perimeter
+    gfx.lineStyle(lineWidth, strokeColor, strokeAlpha);
+    tracePath();
+    gfx.strokePath();
+  }
+
   createForfeitButton() {
-    const buttonRadius = 40;
-    const buttonX = this.cameras.main.width - 80;
-    const buttonY = this.cameras.main.height - 80;
+    const btnWidth = 76;
+    const btnHeight = 56;
+    const buttonX = this.cameras.main.width - 76;
+    const buttonY = this.cameras.main.height - 62;
 
-    this.forfeitButton = this.add.graphics()
-      .fillStyle(0xFF5252, 1)
-      .fillCircle(buttonX, buttonY, buttonRadius)
-      .lineStyle(4, 0xFFFFFF)
-      .strokeCircle(buttonX, buttonY, buttonRadius);
+    this.forfeitButton = this.add.graphics().setScrollFactor(0).setDepth(150);
+    const drawForfeit = (hover = false) => {
+      this.drawChamferedPanel(
+        this.forfeitButton,
+        buttonX,
+        buttonY,
+        btnWidth,
+        btnHeight,
+        10,
+        hover ? 0x2A0814 : 0x14060D,
+        0.92,
+        0xFF2A54,
+        hover ? 1.0 : 0.85,
+        2
+      );
+    };
+    drawForfeit(false);
 
-    this.add.text(buttonX, buttonY, '😞', {
-      font: '30px Arial',
-      fill: '#FFFFFF'
-    }).setOrigin(0.5);
+    this.add.text(buttonX, buttonY, '⚑', {
+      fontFamily: '"Orbitron", "Share Tech Mono", Arial',
+      fontSize: '24px',
+      color: '#FF4D6D',
+      align: 'center'
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(151);
 
     this.forfeitButton.setInteractive(
-      new Phaser.Geom.Circle(buttonX, buttonY, buttonRadius),
-      Phaser.Geom.Circle.Contains
+      new Phaser.Geom.Rectangle(buttonX - btnWidth / 2, buttonY - btnHeight / 2, btnWidth, btnHeight),
+      Phaser.Geom.Rectangle.Contains
     );
 
+    this.forfeitButton.on('pointerover', () => drawForfeit(true));
+    this.forfeitButton.on('pointerout', () => drawForfeit(false));
     this.forfeitButton.on('pointerdown', () => this.handleForfeit());
   }
 
@@ -799,22 +852,33 @@ class GameScene extends Phaser.Scene {
   }
 
   createMenuReturnButton() {
-    const btnWidth = 92;
-    const btnHeight = 36;
-    const btnX = 60;
+    const btnWidth = 96;
+    const btnHeight = 34;
+    const btnX = 62;
     const btnY = 48;
 
-    this.menuReturnBg = this.add.graphics()
-      .fillStyle(0x333333, 1)
-      .fillRoundedRect(btnX - btnWidth / 2, btnY - btnHeight / 2, btnWidth, btnHeight, 8)
-      .lineStyle(2, 0xAAAAAA)
-      .strokeRoundedRect(btnX - btnWidth / 2, btnY - btnHeight / 2, btnWidth, btnHeight, 8)
-      .setScrollFactor(0)
-      .setDepth(150);
+    this.menuReturnBg = this.add.graphics().setScrollFactor(0).setDepth(150);
+    const drawMenuBtn = (hover = false) => {
+      this.drawChamferedPanel(
+        this.menuReturnBg,
+        btnX,
+        btnY,
+        btnWidth,
+        btnHeight,
+        7,
+        hover ? 0x0D2238 : 0x071120,
+        0.92,
+        0x00F0FF,
+        hover ? 1.0 : 0.75,
+        1.8
+      );
+    };
+    drawMenuBtn(false);
 
-    this.menuReturnText = this.add.text(btnX, btnY, '◀ Menu', {
-      font: 'bold 16px Arial',
-      fill: '#FFFFFF',
+    this.menuReturnText = this.add.text(btnX, btnY, '◀ MENU', {
+      fontFamily: '"Share Tech Mono", monospace',
+      fontSize: '15px',
+      color: '#E6F9FF',
       align: 'center'
     }).setOrigin(0.5).setScrollFactor(0).setDepth(151);
 
@@ -828,139 +892,105 @@ class GameScene extends Phaser.Scene {
       this.scene.start('Menu');
     });
 
-    this.menuReturnBg.on('pointerover', () => {
-      this.menuReturnBg.clear()
-        .fillStyle(0x555555, 1)
-        .fillRoundedRect(btnX - btnWidth / 2, btnY - btnHeight / 2, btnWidth, btnHeight, 8)
-        .lineStyle(2, 0xFFFFFF)
-        .strokeRoundedRect(btnX - btnWidth / 2, btnY - btnHeight / 2, btnWidth, btnHeight, 8);
-    });
-
-    this.menuReturnBg.on('pointerout', () => {
-      this.menuReturnBg.clear()
-        .fillStyle(0x333333, 1)
-        .fillRoundedRect(btnX - btnWidth / 2, btnY - btnHeight / 2, btnWidth, btnHeight, 8)
-        .lineStyle(2, 0xAAAAAA)
-        .strokeRoundedRect(btnX - btnWidth / 2, btnY - btnHeight / 2, btnWidth, btnHeight, 8);
-    });
+    this.menuReturnBg.on('pointerover', () => drawMenuBtn(true));
+    this.menuReturnBg.on('pointerout', () => drawMenuBtn(false));
   }
 
   createRotateButton() {
-    const buttonRadius = 40;
-    const buttonX = 80; // Left side of screen
-    const buttonY = this.cameras.main.height - 80; // Same vertical position as place button
+    const btnWidth = 76;
+    const btnHeight = 56;
+    const buttonX = 76;
+    const buttonY = this.cameras.main.height - 62;
 
-    // Create button graphics
-    this.rotateButton = this.add.graphics()
-      .fillStyle(0x2196F3, 1)
-      .fillCircle(buttonX, buttonY, buttonRadius)
-      .lineStyle(4, 0xFFFFFF)
-      .strokeCircle(buttonX, buttonY, buttonRadius);
+    this.rotateButton = this.add.graphics().setScrollFactor(0).setDepth(150);
+    const drawRotate = (hover = false) => {
+      this.drawChamferedPanel(
+        this.rotateButton,
+        buttonX,
+        buttonY,
+        btnWidth,
+        btnHeight,
+        10,
+        hover ? 0x0D2644 : 0x071324,
+        0.92,
+        0x00F0FF,
+        hover ? 1.0 : 0.85,
+        2
+      );
+    };
+    drawRotate(false);
 
-    // Create icon
     this.add.text(buttonX, buttonY, '↻', {
-      font: '40px Arial',
-      fill: '#FFFFFF',
+      fontFamily: '"Orbitron", Arial',
+      fontSize: '28px',
+      color: '#00F0FF',
       align: 'center'
-    }).setOrigin(0.5);
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(151);
 
-    // Make interactive
     this.rotateButton.setInteractive(
-      new Phaser.Geom.Circle(buttonX, buttonY, buttonRadius),
-      Phaser.Geom.Circle.Contains
+      new Phaser.Geom.Rectangle(buttonX - btnWidth / 2, buttonY - btnHeight / 2, btnWidth, btnHeight),
+      Phaser.Geom.Rectangle.Contains
     );
 
-    // Add click/touch handlers
     this.rotateButton.on('pointerdown', () => {
       this.gridManager.rotateTriangle();
       this.updateCursor();
-      
-      // Animate press
-      this.rotateButton.fillStyle(0x1976D2);
-      this.rotateButton.fillCircle(buttonX, buttonY, buttonRadius);
+      drawRotate(true);
     });
 
-    // Add release animation
-    this.rotateButton.on('pointerup', () => {
-      this.rotateButton.fillStyle(0x2196F3);
-      this.rotateButton.fillCircle(buttonX, buttonY, buttonRadius);
-    });
-
-    this.rotateButton.on('pointerout', () => {
-      this.rotateButton.fillStyle(0x2196F3);
-      this.rotateButton.fillCircle(buttonX, buttonY, buttonRadius);
-    });
+    this.rotateButton.on('pointerup', () => drawRotate(false));
+    this.rotateButton.on('pointerover', () => drawRotate(true));
+    this.rotateButton.on('pointerout', () => drawRotate(false));
   }
 
   createPlaceButton() {
-    // Create button graphics
-    const buttonWidth = 200;
-    const buttonHeight = 60;
+    const buttonWidth = 248;
+    const buttonHeight = 56;
     const buttonX = this.cameras.main.width / 2;
-    const buttonY = this.cameras.main.height - 80;
+    const buttonY = this.cameras.main.height - 62;
 
-    // Button background
-    this.placeButton = this.add.graphics()
-      .fillStyle(0x4CAF50, 1)
-      .fillRoundedRect(
-        buttonX - buttonWidth/2, 
-        buttonY - buttonHeight/2, 
-        buttonWidth, 
-        buttonHeight, 
-        15
-      )
-      .lineStyle(4, 0xFFFFFF)
-      .strokeRoundedRect(
-        buttonX - buttonWidth/2, 
-        buttonY - buttonHeight/2, 
-        buttonWidth, 
-        buttonHeight, 
-        15
+    this.placeButton = this.add.graphics().setScrollFactor(0).setDepth(150);
+    this.drawPlaceButtonState = (hover = false) => {
+      const cur = this.gridManager?.currentPlayer || 1;
+      const stroke = cur === 1 ? 0xFF2A54 : 0x00F0FF;
+      const fill = cur === 1 ? (hover ? 0x2E0916 : 0x19060E) : (hover ? 0x0A2542 : 0x061326);
+      this.drawChamferedPanel(
+        this.placeButton,
+        buttonX,
+        buttonY,
+        buttonWidth,
+        buttonHeight,
+        12,
+        fill,
+        0.94,
+        stroke,
+        hover ? 1.0 : 0.9,
+        2.4
       );
+    };
+    this.drawPlaceButtonState(false);
 
-    // Button text
     this.placeButtonText = this.add.text(buttonX, buttonY, 'PLACE TRIANGLE', {
-      font: '24px Arial',
-      fill: '#FFFFFF',
+      fontFamily: '"Orbitron", "Share Tech Mono", Arial',
+      fontSize: '18px',
+      fontStyle: 'bold',
+      color: '#E6F9FF',
       align: 'center'
-    }).setOrigin(0.5);
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(151);
 
-    // Make interactive
     this.placeButton.setInteractive(
       new Phaser.Geom.Rectangle(
-        buttonX - buttonWidth/2,
-        buttonY - buttonHeight/2,
+        buttonX - buttonWidth / 2,
+        buttonY - buttonHeight / 2,
         buttonWidth,
         buttonHeight
       ),
       Phaser.Geom.Rectangle.Contains
     );
 
-    // Add click/touch handlers
     this.placeButton.on('pointerdown', () => this.placeCurrentTriangle());
-    
-    // Add hover effects
-    this.placeButton.on('pointerover', () => {
-      this.placeButton.fillStyle(0x45a049);
-      this.placeButton.fillRoundedRect(
-        buttonX - buttonWidth/2, 
-        buttonY - buttonHeight/2, 
-        buttonWidth, 
-        buttonHeight, 
-        15
-      );
-    });
-
-    this.placeButton.on('pointerout', () => {
-      this.placeButton.fillStyle(0x4CAF50);
-      this.placeButton.fillRoundedRect(
-        buttonX - buttonWidth/2, 
-        buttonY - buttonHeight/2, 
-        buttonWidth, 
-        buttonHeight, 
-        15
-      );
-    });
+    this.placeButton.on('pointerover', () => this.drawPlaceButtonState(true));
+    this.placeButton.on('pointerout', () => this.drawPlaceButtonState(false));
   }
 
   calculateGridBounds() {
@@ -1094,13 +1124,13 @@ class GameScene extends Phaser.Scene {
     this.maskShape.closePath();
     this.maskShape.fillPath();
 
-    // Draw 3D slab thickness / drop-shadow and board surface
+    // Draw 3D slab thickness / drop-shadow and board surface (Choice 2-A: Deep Cyber-Cyan & Obsidian)
     if (this.slabBgGraphics) {
       this.slabBgGraphics.clear();
       if (this.isTiltedView) {
         const thickness = 12;
-        // Bottom-left / bottom-right 3D slab bevel
-        this.slabBgGraphics.fillStyle(0x262626, 1);
+        // Bottom-left 3D slab bevel
+        this.slabBgGraphics.fillStyle(0x091526, 1);
         this.slabBgGraphics.beginPath();
         this.slabBgGraphics.moveTo(p01.x, p01.y);
         this.slabBgGraphics.lineTo(p11.x, p11.y);
@@ -1109,7 +1139,8 @@ class GameScene extends Phaser.Scene {
         this.slabBgGraphics.closePath();
         this.slabBgGraphics.fillPath();
 
-        this.slabBgGraphics.fillStyle(0x1b1b1b, 1);
+        // Bottom-right 3D slab bevel
+        this.slabBgGraphics.fillStyle(0x050D1A, 1);
         this.slabBgGraphics.beginPath();
         this.slabBgGraphics.moveTo(p10.x, p10.y);
         this.slabBgGraphics.lineTo(p11.x, p11.y);
@@ -1117,10 +1148,18 @@ class GameScene extends Phaser.Scene {
         this.slabBgGraphics.lineTo(p10.x, p10.y + thickness);
         this.slabBgGraphics.closePath();
         this.slabBgGraphics.fillPath();
+
+        // Neon cyan bevel edge trace
+        this.slabBgGraphics.lineStyle(1.5, 0x00F0FF, 0.45);
+        this.slabBgGraphics.beginPath();
+        this.slabBgGraphics.moveTo(p01.x, p01.y + thickness);
+        this.slabBgGraphics.lineTo(p11.x, p11.y + thickness);
+        this.slabBgGraphics.lineTo(p10.x, p10.y + thickness);
+        this.slabBgGraphics.strokePath();
       }
 
-      // Main 10x10 board surface fill
-      this.slabBgGraphics.fillStyle(0x808080, 1);
+      // Main 10x10 board surface fill (Obsidian Cyber-Glass)
+      this.slabBgGraphics.fillStyle(0x060B14, 1);
       this.slabBgGraphics.beginPath();
       this.slabBgGraphics.moveTo(p00.x, p00.y);
       this.slabBgGraphics.lineTo(p10.x, p10.y);
@@ -1141,19 +1180,17 @@ class GameScene extends Phaser.Scene {
     const createPillBtn = (x, y, width, label, onClick) => {
       const bg = this.add.graphics().setScrollFactor(0).setDepth(150);
       const txt = this.add.text(x, y, label, {
-        font: 'bold 13px Arial',
-        fill: '#FFFFFF',
+        fontFamily: '"Share Tech Mono", monospace',
+        fontSize: '13px',
+        color: '#E6F9FF',
         align: 'center'
       }).setOrigin(0.5).setScrollFactor(0).setDepth(151);
 
       const drawPill = (active, hover = false) => {
-        const fill = active ? (hover ? 0x1E88E5 : 0x1565C0) : (hover ? 0x444444 : 0x2B2B2B);
-        const stroke = active ? 0x90CAF9 : 0x888888;
-        bg.clear()
-          .fillStyle(fill, 1)
-          .fillRoundedRect(x - width / 2, y - 16, width, 32, 7)
-          .lineStyle(2, stroke, 1)
-          .strokeRoundedRect(x - width / 2, y - 16, width, 32, 7);
+        const fill = active ? (hover ? 0x0E2A47 : 0x091D34) : (hover ? 0x0B1829 : 0x060E1A);
+        const stroke = active ? 0x00F0FF : 0x1E4E68;
+        this.drawChamferedPanel(bg, x, y, width, 32, 6, fill, 0.92, stroke, active ? 0.95 : 0.7, 1.6);
+        txt.setColor(active ? '#00F0FF' : '#8AB4C9');
       };
 
       bg.setInteractive(
@@ -1180,7 +1217,7 @@ class GameScene extends Phaser.Scene {
     });
 
     // 3. Center / Reset Pan & Zoom Button
-    this.centerBtn = createPillBtn(540, 48, 88, '⌖ Center', () => {
+    this.centerBtn = createPillBtn(540, 48, 88, '⌖ CENTER', () => {
       const startU = this.panOffset.u;
       const startV = this.panOffset.v;
       const startZ = this.zoomLevel;
@@ -1209,10 +1246,11 @@ class GameScene extends Phaser.Scene {
     this.panHintText = this.add.text(
       this.cameras.main.width / 2,
       86,
-      'Drag to pan torus • Pinch to zoom (up to 4×4) • Tap cell to select/rotate',
+      'DRAG: PAN TORUS  •  PINCH: ZOOM (4×4)  •  TAP: SELECT / ROTATE',
       {
-        font: '13px Arial',
-        fill: '#BBBBBB',
+        fontFamily: '"Share Tech Mono", monospace',
+        fontSize: '12px',
+        color: '#5CE1E6',
         align: 'center'
       }
     ).setOrigin(0.5).setScrollFactor(0).setDepth(150);
@@ -1222,17 +1260,17 @@ class GameScene extends Phaser.Scene {
 
   refreshViewControlsHUD() {
     if (this.tiltBtn) {
-      this.tiltBtn.txt.setText(this.isTiltedView ? '◈ 2.5D Tilt' : '▢ 2D Flat');
+      this.tiltBtn.txt.setText(this.isTiltedView ? '◈ 2.5D TILT' : '▢ 2D FLAT');
       this.tiltBtn.drawPill(this.isTiltedView);
     }
     if (this.ghostBtn) {
-      this.ghostBtn.txt.setText(this.showGhostRing ? '👻 Ghost: ON' : '👻 Ghost: OFF');
+      this.ghostBtn.txt.setText(this.showGhostRing ? '👻 GHOST: ON' : '👻 GHOST: OFF');
       this.ghostBtn.drawPill(this.showGhostRing);
     }
     if (this.centerBtn) {
       const isPanned = Math.abs(this.panOffset.u) > 0.01 || Math.abs(this.panOffset.v) > 0.01;
       const isZoomed = Math.abs(this.zoomLevel - 1.0) > 0.01;
-      this.centerBtn.txt.setText(isZoomed ? `⌖ ${this.zoomLevel.toFixed(1)}×` : '⌖ Center');
+      this.centerBtn.txt.setText(isZoomed ? `⌖ ${this.zoomLevel.toFixed(1)}×` : '⌖ CENTER');
       this.centerBtn.drawPill(isPanned || isZoomed);
     }
   }
@@ -1255,8 +1293,23 @@ class GameScene extends Phaser.Scene {
     const originU = ((this.panOffset.u % cols) + cols) % cols;
     const originV = ((this.panOffset.v % rows) + rows) % rows;
 
-    // Draw moving grid lines inside the 10x10 clipped window
-    this.graphics.lineStyle(2, 0x111111, 0.9);
+    // 1. Draw subtle sub-grid diagonal circuit traces inside each cell
+    this.graphics.lineStyle(1, 0x082433, 0.55);
+    for (let i = -1; i <= cols; i++) {
+      const u = i + fracU;
+      for (let j = -1; j <= rows; j++) {
+        const v = j + fracV;
+        const p00 = this.boardToScreen(u, v);
+        const p10 = this.boardToScreen(u + 1, v);
+        const p11 = this.boardToScreen(u + 1, v + 1);
+        const p01 = this.boardToScreen(u, v + 1);
+        this.graphics.lineBetween(p00.x, p00.y, p11.x, p11.y);
+        this.graphics.lineBetween(p01.x, p01.y, p10.x, p10.y);
+      }
+    }
+
+    // 2. Draw primary Cyber-Cyan matrix grid lines (Choice 2-A: #0D4054)
+    this.graphics.lineStyle(1.8, 0x0D4054, 0.92);
     for (let i = -1; i <= cols + 1; i++) {
       const u = i + fracU;
       const pTop = this.boardToScreen(u, -1);
@@ -1270,19 +1323,33 @@ class GameScene extends Phaser.Scene {
       this.graphics.lineBetween(pLeft.x, pLeft.y, pRight.x, pRight.y);
     }
 
-    // Subtle cyan seam indicator showing where canonical (0,0) border currently sits when panned
+    // 3. Draw glowing micro-nodes at matrix vertex intersections
+    this.graphics.fillStyle(0x00F0FF, 0.38);
+    for (let i = -1; i <= cols + 1; i++) {
+      const u = i + fracU;
+      for (let j = -1; j <= rows + 1; j++) {
+        const v = j + fracV;
+        const pt = this.boardToScreen(u, v);
+        this.graphics.fillRect(pt.x - 1.5, pt.y - 1.5, 3, 3);
+      }
+    }
+
+    // 4. Laser-cyan seam indicator showing where canonical (0,0) wrap boundary sits when panned
     if (Math.abs(this.panOffset.u) > 0.01 || Math.abs(this.panOffset.v) > 0.01) {
-      this.graphics.lineStyle(2, 0x00E5FF, 0.45);
+      this.graphics.lineStyle(5, 0x00FFCC, 0.16);
       const sTop = this.boardToScreen(originU, 0);
       const sBot = this.boardToScreen(originU, rows);
       this.graphics.lineBetween(sTop.x, sTop.y, sBot.x, sBot.y);
-
       const sLeft = this.boardToScreen(0, originV);
       const sRight = this.boardToScreen(cols, originV);
       this.graphics.lineBetween(sLeft.x, sLeft.y, sRight.x, sRight.y);
+
+      this.graphics.lineStyle(1.8, 0x00FFCC, 0.65);
+      this.graphics.lineBetween(sTop.x, sTop.y, sBot.x, sBot.y);
+      this.graphics.lineBetween(sLeft.x, sLeft.y, sRight.x, sRight.y);
     }
 
-    // Draw crisp white border around the fixed 10x10 viewport slab
+    // 5. Draw double-pass neon cyan border (#00F0FF) around the fixed 10x10 viewport slab
     if (this.borderGraphics) {
       this.borderGraphics.clear();
       const p00 = this.boardToScreen(0, 0, false);
@@ -1296,7 +1363,7 @@ class GameScene extends Phaser.Scene {
         const g10 = this.boardToScreen(cols + 1, -1, false);
         const g11 = this.boardToScreen(cols + 1, rows + 1, false);
         const g01 = this.boardToScreen(-1, rows + 1, false);
-        this.borderGraphics.lineStyle(1.5, 0x888888, 0.45);
+        this.borderGraphics.lineStyle(1.5, 0x00F0FF, 0.28);
         this.borderGraphics.beginPath();
         this.borderGraphics.moveTo(g00.x, g00.y);
         this.borderGraphics.lineTo(g10.x, g10.y);
@@ -1306,7 +1373,18 @@ class GameScene extends Phaser.Scene {
         this.borderGraphics.strokePath();
       }
 
-      this.borderGraphics.lineStyle(3.5, 0xffffff, 1);
+      // Outer neon cyan halo
+      this.borderGraphics.lineStyle(8, 0x00F0FF, 0.20);
+      this.borderGraphics.beginPath();
+      this.borderGraphics.moveTo(p00.x, p00.y);
+      this.borderGraphics.lineTo(p10.x, p10.y);
+      this.borderGraphics.lineTo(p11.x, p11.y);
+      this.borderGraphics.lineTo(p01.x, p01.y);
+      this.borderGraphics.closePath();
+      this.borderGraphics.strokePath();
+
+      // Core laser cyan frame
+      this.borderGraphics.lineStyle(2.5, 0x00F0FF, 0.96);
       this.borderGraphics.beginPath();
       this.borderGraphics.moveTo(p00.x, p00.y);
       this.borderGraphics.lineTo(p10.x, p10.y);
@@ -1399,8 +1477,9 @@ class GameScene extends Phaser.Scene {
       if (!this.cursorTriangle) return;
       this.cursorTriangle.clear();
 
-      const playerColor = this.gridManager.currentPlayer === 1 ? 0xff5555 : 0x5555ff;
-      this.cursorTriangle.lineStyle(4, playerColor, 1);
+      const isP1 = this.gridManager.currentPlayer === 1;
+      const rimColor = isP1 ? 0xFF2A54 : 0x00F0FF;
+      const coreColor = isP1 ? 0xFF99AA : 0xB8FFFF;
 
       const cols = this.gridManager.cols;
       const rows = this.gridManager.rows;
@@ -1416,6 +1495,27 @@ class GameScene extends Phaser.Scene {
           const v = baseV + ky * rows;
           if (v + 1 < 0 || v > rows) continue;
           const [v0, v1, v2] = this.getProjectedTriangleVertices(u, v, this.gridManager.selectedRotation);
+
+          // 1. Subtle holographic target preview fill
+          this.cursorTriangle.fillStyle(rimColor, 0.18);
+          this.cursorTriangle.beginPath();
+          this.cursorTriangle.moveTo(v0.x, v0.y);
+          this.cursorTriangle.lineTo(v1.x, v1.y);
+          this.cursorTriangle.lineTo(v2.x, v2.y);
+          this.cursorTriangle.closePath();
+          this.cursorTriangle.fillPath();
+
+          // 2. Wide outer neon halo
+          this.cursorTriangle.lineStyle(6.5, rimColor, 0.35);
+          this.cursorTriangle.beginPath();
+          this.cursorTriangle.moveTo(v0.x, v0.y);
+          this.cursorTriangle.lineTo(v1.x, v1.y);
+          this.cursorTriangle.lineTo(v2.x, v2.y);
+          this.cursorTriangle.closePath();
+          this.cursorTriangle.strokePath();
+
+          // 3. Crisp laser-hot filament rim
+          this.cursorTriangle.lineStyle(2.5, coreColor, 0.98);
           this.cursorTriangle.beginPath();
           this.cursorTriangle.moveTo(v0.x, v0.y);
           this.cursorTriangle.lineTo(v1.x, v1.y);
@@ -1500,17 +1600,25 @@ class GameScene extends Phaser.Scene {
   }
   showGameOver(message) {
     if (this.gameOverText) this.gameOverText.destroy();
-    
+    if (this.gameOverPanel) this.gameOverPanel.destroy();
+
+    const cx = this.cameras.main.width / 2;
+    const cy = this.cameras.main.height / 2;
+
+    this.gameOverPanel = this.add.graphics().setScrollFactor(0).setDepth(249);
+    this.drawChamferedPanel(this.gameOverPanel, cx, cy, 440, 175, 16, 0x050C18, 0.96, 0x00F0FF, 1.0, 2.5);
+
     this.gameOverText = this.add.text(
-      this.cameras.main.width / 2,
-      this.cameras.main.height / 2,
+      cx,
+      cy,
       message,
-      { 
-        font: 'bold 34px Arial',
-        fill: '#FFFFFF',
-        backgroundColor: '#000000DD',
-        padding: { x: 24, y: 16 },
-        align: 'center'
+      {
+        fontFamily: '"Orbitron", "Share Tech Mono", Arial',
+        fontSize: '24px',
+        fontStyle: 'bold',
+        color: '#E6F9FF',
+        align: 'center',
+        lineSpacing: 8
       }
     ).setOrigin(0.5).setScrollFactor(0).setDepth(250);
   }
@@ -1522,6 +1630,7 @@ class GameScene extends Phaser.Scene {
     this.updateScore();
     this.updateCursor();
     if (this.gameOverText) this.gameOverText.destroy();
+    if (this.gameOverPanel) this.gameOverPanel.destroy();
   }
 
   handleTurnSwitch() {
@@ -1581,8 +1690,6 @@ class GameScene extends Phaser.Scene {
         const baseV = ((y + this.panOffset.v) % rows + rows) % rows;
 
         cell.triangles.forEach(triangle => {
-          const color = triangle.player === 1 ? 0xff2222 : 0x2266ff;
-
           // 1. Draw inside the 10x10 Stencil Mask (Mode A: Strict Zero Duplication)
           for (let kx = -1; kx <= 1; kx++) {
             const u = baseU + kx * cols;
@@ -1590,7 +1697,7 @@ class GameScene extends Phaser.Scene {
             for (let ky = -1; ky <= 1; ky++) {
               const v = baseV + ky * rows;
               if (v + 1 < 0 || v > rows) continue;
-              this.drawProjectedTriangleOnGraphics(this.triangleGraphics, u, v, triangle.rotation, color, 1.0);
+              this.drawProjectedTriangleOnGraphics(this.triangleGraphics, u, v, triangle.rotation, triangle.player, 1.0);
             }
           }
 
@@ -1604,7 +1711,7 @@ class GameScene extends Phaser.Scene {
                 if (v + 1 < -1 || v > rows + 1) continue;
                 // Only draw copies that extend into the outer 1-cell ghost border
                 if (u < 0 || u + 1 > cols || v < 0 || v + 1 > rows) {
-                  this.drawProjectedTriangleOnGraphics(this.ghostGraphics, u, v, triangle.rotation, color, 0.28);
+                  this.drawProjectedTriangleOnGraphics(this.ghostGraphics, u, v, triangle.rotation, triangle.player, 0.34);
                 }
               }
             }
@@ -1614,15 +1721,42 @@ class GameScene extends Phaser.Scene {
     });
   }
 
-  drawProjectedTriangleOnGraphics(gfx, u, v, rotation, color, alpha = 1.0) {
-    const [v0, v1, v2] = this.getProjectedTriangleVertices(u, v, rotation);
-    gfx.fillStyle(color, alpha);
+  /**
+   * Choice 3-B: High-Opacity Neon Solid Triangle Rendering
+   * Slightly insets vertices (~3.5% toward centroid) so adjacent triangles form a crisp
+   * cyber-circuit seam, filled at 82% neon saturation with a 100% glowing laser rim.
+   */
+  drawProjectedTriangleOnGraphics(gfx, u, v, rotation, playerOrColor, alphaScale = 1.0) {
+    const [raw0, raw1, raw2] = this.getProjectedTriangleVertices(u, v, rotation);
+    const cx = (raw0.x + raw1.x + raw2.x) / 3;
+    const cy = (raw0.y + raw1.y + raw2.y) / 3;
+    const inset = 0.038;
+
+    const v0 = { x: raw0.x + (cx - raw0.x) * inset, y: raw0.y + (cy - raw0.y) * inset };
+    const v1 = { x: raw1.x + (cx - raw1.x) * inset, y: raw1.y + (cy - raw1.y) * inset };
+    const v2 = { x: raw2.x + (cx - raw2.x) * inset, y: raw2.y + (cy - raw2.y) * inset };
+
+    const isP1 = playerOrColor === 1 || playerOrColor === 0xff2222;
+    const fillColor = isP1 ? 0xE6193C : 0x0066FF;
+    const rimColor = isP1 ? 0xFF4D6D : 0x00F0FF;
+
+    // High-opacity neon solid interior (82% base alpha)
+    gfx.fillStyle(fillColor, 0.82 * alphaScale);
     gfx.beginPath();
     gfx.moveTo(v0.x, v0.y);
     gfx.lineTo(v1.x, v1.y);
     gfx.lineTo(v2.x, v2.y);
     gfx.closePath();
     gfx.fillPath();
+
+    // Crisp neon circuit rim
+    gfx.lineStyle(1.6, rimColor, 0.96 * alphaScale);
+    gfx.beginPath();
+    gfx.moveTo(v0.x, v0.y);
+    gfx.lineTo(v1.x, v1.y);
+    gfx.lineTo(v2.x, v2.y);
+    gfx.closePath();
+    gfx.strokePath();
   }
 
   // Add this method to GameScene
@@ -1904,23 +2038,23 @@ triggerAIMove() {
       const rows = this.gridManager.rows;
       const u = ((x + this.panOffset.u) % cols + cols) % cols;
       const v = ((y + this.panOffset.v) % rows + rows) % rows;
-      const color = player === 1 ? 0xff2222 : 0x2266ff;
-      this.drawProjectedTriangleOnGraphics(this.triangleGraphics, u, v, rotation, color, 1.0);
+      this.drawProjectedTriangleOnGraphics(this.triangleGraphics, u, v, rotation, player, 1.0);
   }
 
   createScoreboard() {
+    this.scorePanelBg = this.add.graphics().setScrollFactor(0).setDepth(149);
     this.scoreText = this.add.text(
       this.cameras.main.width / 2,
-      648,
+      676,
       '',
       {
-        font: 'bold 20px Arial',
-        fill: '#ffffff',
-        backgroundColor: '#111111',
-        padding: { x: 16, y: 8 },
-        align: 'center'
+        fontFamily: '"Share Tech Mono", monospace',
+        fontSize: '18px',
+        color: '#E6F9FF',
+        align: 'center',
+        lineSpacing: 4
       }
-    ).setOrigin(0.5, 0).setScrollFactor(0).setDepth(150);
+    ).setOrigin(0.5).setScrollFactor(0).setDepth(150);
     this.updateScore();
   }
 
@@ -1929,12 +2063,32 @@ triggerAIMove() {
     const p1Score = this.gridManager.getLargestContiguous(1);
     const p2Score = this.gridManager.getLargestContiguous(2);
     const cur = this.gridManager.currentPlayer;
-    const p1Turn = cur === 1 ? '▶ ' : '   ';
-    const p2Turn = cur === 2 ? '▶ ' : '   ';
+    const p1Turn = cur === 1 ? '▶ ' : '  ';
+    const p2Turn = cur === 2 ? '▶ ' : '  ';
     this.scoreText.setText([
-      `${p1Turn}P1 (Red): ${p1Score}   [Wins: ${this.gridManager.winRounds[1]}]`,
-      `${p2Turn}P2 (Blue): ${p2Score}   [Wins: ${this.gridManager.winRounds[2]}]`
+      `${p1Turn}P1 [ARES RED] : ${String(p1Score).padStart(3, ' ')}   | WINS: ${this.gridManager.winRounds[1]}`,
+      `${p2Turn}P2 [TRON BLU] : ${String(p2Score).padStart(3, ' ')}   | WINS: ${this.gridManager.winRounds[2]}`
     ].join('\n'));
+
+    if (this.scorePanelBg) {
+      const borderStroke = cur === 1 ? 0xFF2A54 : 0x00F0FF;
+      this.drawChamferedPanel(
+        this.scorePanelBg,
+        this.cameras.main.width / 2,
+        676,
+        430,
+        58,
+        10,
+        0x060E1B,
+        0.92,
+        borderStroke,
+        0.85,
+        1.8
+      );
+    }
+    if (this.drawPlaceButtonState) {
+      this.drawPlaceButtonState(false);
+    }
   }
 
   /**
