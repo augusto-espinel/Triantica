@@ -1139,6 +1139,7 @@ async function main() {
   };
   
   const cycles = parseInt(getArg('cycles', '10'));
+  const startCycle = parseInt(getArg('start-cycle', '1'));
   const games = parseInt(getArg('games', '100'));
   const evalGames = parseInt(getArg('eval-games', '100'));
   const iterations = parseInt(getArg('iterations', '10'));
@@ -1338,8 +1339,27 @@ async function main() {
   let bestHeuristicMeanMargin = -Infinity;
   let bestHeuristicSafetyWinRate = -1;
   let bestCycle = 0;
+
+  if (startCycle > 1 && fs.existsSync(path.resolve(output))) {
+    try {
+      const existingLog = JSON.parse(fs.readFileSync(path.resolve(output), 'utf-8'));
+      if (existingLog.startedAt) log.startedAt = existingLog.startedAt;
+      if (Array.isArray(existingLog.cycles)) {
+        log.cycles = existingLog.cycles.filter(c => c.cycle < startCycle);
+      }
+      if (existingLog.bestResult) {
+        bestCycle = existingLog.bestResult.cycle || 0;
+        bestHeuristicWinRate = existingLog.bestResult.vsHeuristic ?? -1;
+        bestHeuristicSafetyWinRate = existingLog.bestResult.vsHeuristicWithSafety ?? -1;
+        bestHeuristicMeanMargin = existingLog.bestResult.meanScoreMarginVsHeuristic ?? -Infinity;
+      }
+      console.log(`🔄 Resuming training at Cycle ${startCycle}/${cycles} (preserved ${log.cycles.length} prior cycles, current peak: Cycle ${bestCycle} @ ${bestHeuristicWinRate}% raw / ${bestHeuristicSafetyWinRate}% +safety, margin +${bestHeuristicMeanMargin.toFixed(1)})`);
+    } catch (err) {
+      console.warn(`⚠️ Could not load existing log for resume: ${err.message}`);
+    }
+  }
   
-  for (let cycle = 1; cycle <= cycles; cycle++) {
+  for (let cycle = startCycle; cycle <= cycles; cycle++) {
     // Compute scheduled learning rate for this cycle
     let currentLearningRate = learningRate;
     if (cycles > 1) {

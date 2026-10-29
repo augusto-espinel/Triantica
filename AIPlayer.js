@@ -244,10 +244,25 @@ class AIPlayer {
 
         this.gridManager = gridManager;
         this.playerNumber = playerNumber;
-        this.difficulty = difficulty;
-        this.network = this._createNetwork(difficulty);
-        this.explorationFactor = 0.2; // Example: 10% chance to explore (choose random move)
-        this.immediacyFactor = 0.9; // Example: 10% chance to choose based on neural network or short term cluster maximization
+        this.difficulty = (difficulty || 'medium').toLowerCase();
+        this.network = this._createNetwork(this.difficulty);
+
+        // Configure behavior by difficulty:
+        // - easy:   35% random exploration, raw policy (no tactical safety filter)
+        // - medium: 0% random exploration, raw 1-ply ConvNetwork policy (no safety filter)
+        // - hard:   0% random exploration, ConvNetwork policy + O(1) Tactical Safety Filter (topK=12)
+        if (this.difficulty === 'easy') {
+            this.explorationFactor = 0.35;
+            this.useSafetyFilter = false;
+        } else if (this.difficulty === 'medium') {
+            this.explorationFactor = 0.0;
+            this.useSafetyFilter = false;
+        } else {
+            this.explorationFactor = 0.0;
+            this.useSafetyFilter = true;
+        }
+
+        this.immediacyFactor = 0.9;
         this.isNetworkLoaded = false; // Flag to check if the network is loaded/trained
 
         // Placeholder for training data - ideally loaded/saved
@@ -330,29 +345,16 @@ class AIPlayer {
                 const cell = this.gridManager.grid[r][c];
                 const cellOffset = (r * cols + c) * 18;
 
-                let slashTriangle = null;
-                let backslashTriangle = null;
-                for (const t of cell.triangles) {
-                    if (t.rotation % 2 === 0) slashTriangle = t;
-                    else backslashTriangle = t;
-                }
+                for (let slot = 0; slot < 2; slot++) {
+                    const slotOffset = cellOffset + slot * 9;
+                    const tri = cell.triangles.find(t => (slot === 0 ? t.rotation < 2 : t.rotation >= 2));
 
-                // Group 0: slash (rotations 0, 2)
-                if (!slashTriangle) {
-                    state[cellOffset + 0] = 1;
-                } else if (slashTriangle.player === this.playerNumber) {
-                    state[cellOffset + 1 + slashTriangle.rotation] = 1;
-                } else {
-                    state[cellOffset + 5 + slashTriangle.rotation] = 1;
-                }
-
-                // Group 1: backslash (rotations 1, 3)
-                if (!backslashTriangle) {
-                    state[cellOffset + 9] = 1;
-                } else if (backslashTriangle.player === this.playerNumber) {
-                    state[cellOffset + 10 + backslashTriangle.rotation] = 1;
-                } else {
-                    state[cellOffset + 14 + backslashTriangle.rotation] = 1;
+                    if (!tri) {
+                        state[slotOffset] = 1;
+                    } else {
+                        const ownerOffset = tri.player === this.playerNumber ? 0 : 4;
+                        state[slotOffset + 1 + ownerOffset + tri.rotation] = 1;
+                    }
                 }
             }
         }
@@ -486,8 +488,8 @@ class AIPlayer {
             // Sort moves by score in descending order
             moves.sort((a, b) => b.score - a.score);
 
-            // Apply 1-ply tactical safety filter for ConvNetwork
-            if (this.networkType === 'ConvNetwork' || this.network.type === 'ConvNetwork') {
+            // Apply 1-ply tactical safety filter for ConvNetwork when enabled (e.g. 'hard' difficulty)
+            if ((this.networkType === 'ConvNetwork' || this.network.type === 'ConvNetwork') && this.useSafetyFilter !== false) {
                 const K = Math.min(12, moves.length);
                 let bestMove = moves[0];
                 let bestAdjustedScore = -Infinity;

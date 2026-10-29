@@ -1,3 +1,10 @@
+// Global debug mode flag: gates benchmark/debug modes (AI vs Random, AI vs Heuristic, AI vs AI)
+// and on-screen debug overlays. Enabled by default during development.
+const DEBUG_MODE = true;
+if (typeof window !== 'undefined') {
+  window.DEBUG_MODE = DEBUG_MODE;
+}
+
 class GridManager {
   constructor(rows, cols, options = {}) {
     this.rows = rows;
@@ -540,7 +547,7 @@ class GameScene extends Phaser.Scene {
   constructor() {
       super({ key: 'Game' });
       this.cellSize = 50;
-      this.gridOffset = { x: 50, y: 50 };
+      this.gridOffset = { x: 50, y: 120 };
       this.gridManager = new GridManager(10, 10);
       this.cursorPos = { x: 0, y: 0 };
       this.isDragging = false;
@@ -548,7 +555,9 @@ class GameScene extends Phaser.Scene {
       this.dragStart = { x: 0, y: 0 };
       this.cursorStart = { x: 0, y: 0 };
       this.gridBounds = { x: 0, y: 0, width: 0, height: 0 };
-      this.gameMode = 'HvH'; // Default, or set based on selection ('HvH', 'HvAI', 'AvA')
+      this.gameMode = 'HvH'; // Default, or set based on selection ('HvH', 'HvAI', 'AvR', 'AvH', 'AvA')
+      this.aiDifficulty = 'medium'; // 'easy' | 'medium' | 'hard'
+      this.humanPlayerNumber = 1; // 1 (Red - First Move) | 2 (Blue - Second Move)
       this.players = { 1: { type: 'human' }, 2: { type: 'human' } }; // Player setup
       this.aiInstances = { 1: null, 2: null }; // To hold AI instances
       this.totalMovesPlayed = 0; // Track move count for opening diversity
@@ -560,18 +569,26 @@ class GameScene extends Phaser.Scene {
 
   init(data) {
     console.log('GameScene init with data:', data);
-    // Set the gameMode based on data passed from MenuScene, otherwise use default
+    // Set the gameMode, difficulty, and human side based on data passed from MenuScene
     this.gameMode = data.mode || 'HvH';
+    this.aiDifficulty = (data.difficulty || 'medium').toLowerCase();
+    this.humanPlayerNumber = data.humanPlayerNumber === 2 ? 2 : 1;
+    this.players = { 1: { type: 'human' }, 2: { type: 'human' } };
+    this.aiInstances = { 1: null, 2: null };
+    this.totalMovesPlayed = 0;
+    this.gridManager.reset();
+    this.gridManager.winRounds = { 1: 0, 2: 0 };
   }
 
   async create() {
-    console.log(`Creating GameScene in mode: ${this.gameMode}`);
+    console.log(`Creating GameScene in mode: ${this.gameMode} (difficulty: ${this.aiDifficulty}, human: P${this.humanPlayerNumber})`);
 
     // --- Function to handle AI initialization (including preload check) ---
-    const initializeAI = async (playerNumber) => {
-      console.log(`Initializing AI Player ${playerNumber}...`);
-      this.players[playerNumber] = { type: 'ai' };
-      const newAI = new AIPlayer(this.gridManager, 'medium', playerNumber);
+    const initializeAI = async (playerNumber, difficultyOverride = null) => {
+      const diff = (difficultyOverride || this.aiDifficulty || 'medium').toLowerCase();
+      console.log(`Initializing AI Player ${playerNumber} (difficulty: ${diff})...`);
+      this.players[playerNumber] = { type: 'ai', difficulty: diff };
+      const newAI = new AIPlayer(this.gridManager, diff, playerNumber);
       this.aiInstances[playerNumber] = newAI;
 
       // Check if preloading was attempted
@@ -582,17 +599,14 @@ class GameScene extends Phaser.Scene {
       if (loadPromise && tempAI) {
           console.log(`AI ${playerNumber}: Found preload promise. Waiting for it to settle...`);
           try {
-              // Wait for the promise initiated by BootScene to finish
-              const preloadFinished = await loadPromise; // Waits if still pending, resolves quickly if already done
+              await loadPromise;
 
-              // Check the status flag on the temporary AI instance used in BootScene
               if (tempAI.isNetworkLoaded) {
                   console.log(`AI ${playerNumber}: Preload successful. Copying network state...`);
                   const networkState = tempAI.exportNetwork();
                   if (networkState) {
-                        // Apply the preloaded state to the actual game AI instance
                       newAI.loadNetworkJSON(networkState);
-                      newAI.isNetworkLoaded = true; // Mark this instance as ready
+                      newAI.isNetworkLoaded = true;
                       loadedSuccessfully = true;
                   } else {
                       console.error(`AI ${playerNumber}: Preload seemed successful but failed to export network state from temporary AI.`);
@@ -610,7 +624,7 @@ class GameScene extends Phaser.Scene {
       // Fallback: If preloading didn't succeed, try loading normally
       if (!loadedSuccessfully) {
             console.log(`AI ${playerNumber}: Attempting standard network load...`);
-            await newAI.importNetwork(); // Run the normal import logic
+            await newAI.importNetwork();
             if (!newAI.isNetworkLoaded) {
                 console.warn(`AI Player ${playerNumber} will start untrained.`);
             }
@@ -619,27 +633,24 @@ class GameScene extends Phaser.Scene {
 
     // --- Initialize AI based on gameMode ---
     if (this.gameMode === 'HvAI') {
-        const aiPlayerNumber = 2;
-        await initializeAI(aiPlayerNumber); // Use the helper function
+        const humanNum = this.humanPlayerNumber === 2 ? 2 : 1;
+        const aiPlayerNumber = humanNum === 1 ? 2 : 1;
+        this.players[humanNum] = { type: 'human' };
+        await initializeAI(aiPlayerNumber, this.aiDifficulty);
 
     } else if (this.gameMode === 'AvR') {
-        // AI vs Random: P1 is AI, P2 is Random
-        await initializeAI(1);
+        // AI vs Random: P1 is AI (hard), P2 is Random
+        await initializeAI(1, 'hard');
         this.players[2] = { type: 'random' };
-        this.time.delayedCall(100, this.triggerAIMove, [], this);
 
     } else if (this.gameMode === 'AvH') {
-        // AI vs Heuristic: P1 is AI, P2 is Heuristic
-        await initializeAI(1);
+        // AI vs Heuristic: P1 is AI (hard), P2 is Heuristic
+        await initializeAI(1, 'hard');
         this.players[2] = { type: 'heuristic' };
-        this.time.delayedCall(100, this.triggerAIMove, [], this);
 
     } else if (this.gameMode === 'AvA') {
-        await initializeAI(1); // Initialize P1
-        await initializeAI(2); // Initialize P2
-
-          // Start AvA game automatically only after both AIs are initialized
-          this.time.delayedCall(100, this.triggerAIMove, [], this);
+        await initializeAI(1, 'hard'); // Initialize P1
+        await initializeAI(2, 'hard'); // Initialize P2
     }
 
     // --- Rest of your create method ---
@@ -662,37 +673,28 @@ class GameScene extends Phaser.Scene {
     this.createPlaceButton();
     this.createRotateButton(); 
     this.createForfeitButton();
+    this.createMenuReturnButton();
     this.gameOverText = null;
 
     // Make sure human input is enabled/disabled correctly at the start
     this.updateInputStateForCurrentPlayer();
 
-    // Add on-screen debug text for mobile debugging
-    this.debugText = this.add.text(10, 10, 'Debug: Initializing...', {
-      font: '14px Arial',
+    // Add on-screen debug text for mobile debugging (visible when DEBUG_MODE is enabled)
+    this.debugText = this.add.text(12, 95, 'Debug: Initializing...', {
+      font: '12px Arial',
       fill: '#FFFF00',
       backgroundColor: '#000000',
       padding: { x: 5, y: 2 }
-    }).setDepth(200).setScrollFactor(0);
-    this.debugText.setText(`Mode: ${this.gameMode} | P1: ${this.players[1]?.type || '?'} | P2: ${this.players[2]?.type || '?'}`);
+    }).setDepth(200).setScrollFactor(0).setVisible(DEBUG_MODE);
+    const modeDetail = this.gameMode === 'HvAI' ? `${this.gameMode} (${this.aiDifficulty.toUpperCase()})` : this.gameMode;
+    this.debugText.setText(`Mode: ${modeDetail} | P1: ${this.players[1]?.type || '?'} | P2: ${this.players[2]?.type || '?'}`);
 
-    // 'Train AI' button if mode is AvA
-    if (this.gameMode === 'AvA') {
-      this.trainButton = this.add.text(this.cameras.main.width - 250, 20, 'Run Training Game', { /* style */ })
-          .setInteractive()
-          .on('pointerdown', async () => {
-              if (this.aiInstances[1]) {
-                  console.log("Starting AI self-play training game...");
-                  this.trainButton.setText('Training...'); // Provide feedback
-                  await this.aiInstances[1].runSelfPlayGame(); // [cite: 62]
-                  console.log("Training game finished.");
-                  // Optionally trigger the network training process itself
-                  // this.aiInstances[1].trainNetwork(50); [cite: 55, 88]
-                  // Optionally save the updated network
-                  // localStorage.setItem('aiNetworkP1', JSON.stringify(this.aiInstances[1].exportNetwork())); [cite: 89]
-                    this.trainButton.setText('Run Training Game');
-              }
-          });
+    // If Player 1 is non-human (e.g., HvAI with Human as P2, or AvR/AvH/AvA), trigger P1's first move
+    const p1Type = this.players[this.gridManager.currentPlayer]?.type;
+    if (p1Type === 'ai') {
+      this.time.delayedCall(150, this.triggerAIMove, [], this);
+    } else if (p1Type === 'random' || p1Type === 'heuristic') {
+      this.time.delayedCall(150, this.triggerNonHumanMove, [], this);
     }
   }
 
@@ -760,17 +762,67 @@ class GameScene extends Phaser.Scene {
   handleForfeit() {
     const winner = this.gridManager.currentPlayer === 1 ? 2 : 1; // [cite: 171]
     this.gridManager.winRounds[winner]++;
-     const p1Score = this.gridManager.getLargestContiguous(1);
-     const p2Score = this.gridManager.getLargestContiguous(2);
+    const p1Score = this.gridManager.getLargestContiguous(1);
+    const p2Score = this.gridManager.getLargestContiguous(2);
     this.showGameOver(`Player ${this.gridManager.currentPlayer} forfeits!\nPlayer ${winner} wins!\nFinal Score: P1: ${p1Score}, P2: ${p2Score}`); // [cite: 172]
     this.updateScore();
-     this.disableHumanInput();
+    this.disableHumanInput();
     this.time.delayedCall(3000, () => {
          this.resetGame();
          this.updateInputStateForCurrentPlayer();
-          if (this.players[this.gridManager.currentPlayer].type === 'ai') {
-               this.time.delayedCall(100, this.triggerAIMove, [], this);
-          }
+         const pType = this.players[this.gridManager.currentPlayer]?.type;
+         if (pType === 'ai') {
+             this.time.delayedCall(100, this.triggerAIMove, [], this);
+         } else if (pType === 'random' || pType === 'heuristic') {
+             this.time.delayedCall(100, this.triggerNonHumanMove, [], this);
+         }
+    });
+  }
+
+  createMenuReturnButton() {
+    const btnWidth = 92;
+    const btnHeight = 36;
+    const btnX = 60;
+    const btnY = 48;
+
+    this.menuReturnBg = this.add.graphics()
+      .fillStyle(0x333333, 1)
+      .fillRoundedRect(btnX - btnWidth / 2, btnY - btnHeight / 2, btnWidth, btnHeight, 8)
+      .lineStyle(2, 0xAAAAAA)
+      .strokeRoundedRect(btnX - btnWidth / 2, btnY - btnHeight / 2, btnWidth, btnHeight, 8)
+      .setScrollFactor(0)
+      .setDepth(150);
+
+    this.menuReturnText = this.add.text(btnX, btnY, '◀ Menu', {
+      font: 'bold 16px Arial',
+      fill: '#FFFFFF',
+      align: 'center'
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(151);
+
+    this.menuReturnBg.setInteractive(
+      new Phaser.Geom.Rectangle(btnX - btnWidth / 2, btnY - btnHeight / 2, btnWidth, btnHeight),
+      Phaser.Geom.Rectangle.Contains
+    );
+
+    this.menuReturnBg.on('pointerdown', () => {
+      this.time.removeAllEvents();
+      this.scene.start('Menu');
+    });
+
+    this.menuReturnBg.on('pointerover', () => {
+      this.menuReturnBg.clear()
+        .fillStyle(0x555555, 1)
+        .fillRoundedRect(btnX - btnWidth / 2, btnY - btnHeight / 2, btnWidth, btnHeight, 8)
+        .lineStyle(2, 0xFFFFFF)
+        .strokeRoundedRect(btnX - btnWidth / 2, btnY - btnHeight / 2, btnWidth, btnHeight, 8);
+    });
+
+    this.menuReturnBg.on('pointerout', () => {
+      this.menuReturnBg.clear()
+        .fillStyle(0x333333, 1)
+        .fillRoundedRect(btnX - btnWidth / 2, btnY - btnHeight / 2, btnWidth, btnHeight, 8)
+        .lineStyle(2, 0xAAAAAA)
+        .strokeRoundedRect(btnX - btnWidth / 2, btnY - btnHeight / 2, btnWidth, btnHeight, 8);
     });
   }
 
@@ -1067,23 +1119,6 @@ class GameScene extends Phaser.Scene {
           this.handleTurnSwitch(); // Only switch turn if game is not over
       }
 
-      if (this.gridManager.isGridFull()) {
-        const p1Score = this.gridManager.getLargestContiguous(1);
-        const p2Score = this.gridManager.getLargestContiguous(2);
-        
-        let message = "It's a draw!";
-        if (p1Score > p2Score) {
-          this.gridManager.winRounds[1]++;
-          message = "Player 1 wins!";
-        } else if (p2Score > p1Score) {
-          this.gridManager.winRounds[2]++;
-          message = "Player 2 wins!";
-        }
-        
-        this.showGameOver(message);
-        this.time.delayedCall(2000, () => this.resetGame());
-      }
-
     } else {
       this.cameras.main.flash(200, 255, 0, 0); // Red flash on invalid
     }
@@ -1116,8 +1151,11 @@ class GameScene extends Phaser.Scene {
       this.resetGame(); // [cite: 228]
       // After reset, need to re-check game mode and trigger AI if needed
       this.updateInputStateForCurrentPlayer();
-      if (this.players[this.gridManager.currentPlayer].type === 'ai') {
-            this.time.delayedCall(100, this.triggerAIMove, [], this);
+      const pType = this.players[this.gridManager.currentPlayer]?.type;
+      if (pType === 'ai') {
+          this.time.delayedCall(100, this.triggerAIMove, [], this);
+      } else if (pType === 'random' || pType === 'heuristic') {
+          this.time.delayedCall(100, this.triggerNonHumanMove, [], this);
       }
     });
   }
@@ -1129,12 +1167,13 @@ class GameScene extends Phaser.Scene {
       this.cameras.main.height / 2,
       message,
       { 
-        font: '48px Arial',
+        font: 'bold 34px Arial',
         fill: '#FFFFFF',
-        backgroundColor: '#000000',
-        padding: { x: 20, y: 10 }
+        backgroundColor: '#000000DD',
+        padding: { x: 24, y: 16 },
+        align: 'center'
       }
-    ).setOrigin(0.5).setScrollFactor(0);
+    ).setOrigin(0.5).setScrollFactor(0).setDepth(250);
   }
 
   resetGame() {
@@ -1167,6 +1206,7 @@ class GameScene extends Phaser.Scene {
         // Switch player
         this.gridManager.currentPlayer = this.gridManager.currentPlayer === 1 ? 2 : 1; // [cite: 230]
         this.updateCursor(); // Update cursor color [cite: 204]
+        this.updateScore(); // Refresh turn indicator in HUD
 
         // Check the type of the NEW current player
         const pType = this.players[this.gridManager.currentPlayer].type;
@@ -1241,11 +1281,11 @@ triggerAIMove() {
       move = validMoves.length > 0 ? validMoves[Math.floor(Math.random() * validMoves.length)] : null;
       this.debugText.setText(`Mode: ${this.gameMode} | P${currentPlayerNum} Opening Random (ply ${this.totalMovesPlayed + 1}/2)`);
     } else if (aiInstance.networkType === 'ConvNetwork') {
-      aiInstance.explorationFactor = 0.0; // Pure network play for ConvNetwork inspection
-      console.log(`AI Player ${currentPlayerNum} ConvNetwork prediction...`);
+      // Respect difficulty-configured explorationFactor & useSafetyFilter inside aiInstance.predictMove()
+      console.log(`AI Player ${currentPlayerNum} ConvNetwork (${aiInstance.difficulty}) prediction...`);
       move = aiInstance.predictMove();
       if (aiInstance.lastPredictedValue !== undefined) {
-        this.debugText.setText(`Mode: ${this.gameMode} | P${currentPlayerNum} ConvNet Val: ${aiInstance.lastPredictedValue.toFixed(2)}`);
+        this.debugText.setText(`Mode: ${this.gameMode} | P${currentPlayerNum} (${aiInstance.difficulty}) Val: ${aiInstance.lastPredictedValue.toFixed(2)}`);
       }
     } else if (rand < openingRandomFactor) {
       // Opening diversity: random move
@@ -1550,18 +1590,30 @@ triggerAIMove() {
 
   createScoreboard() {
     this.scoreText = this.add.text(
-      180, 590,
-      'Player 1: 0\nPlayer 2: 0',
-      { font: '24px Arial', fill: '#ffffff', backgroundColor: '#000000' }
-    ).setScrollFactor(0);
+      this.cameras.main.width / 2,
+      648,
+      '',
+      {
+        font: 'bold 20px Arial',
+        fill: '#ffffff',
+        backgroundColor: '#111111',
+        padding: { x: 16, y: 8 },
+        align: 'center'
+      }
+    ).setOrigin(0.5, 0).setScrollFactor(0).setDepth(150);
+    this.updateScore();
   }
 
   updateScore() {
+    if (!this.scoreText) return;
     const p1Score = this.gridManager.getLargestContiguous(1);
     const p2Score = this.gridManager.getLargestContiguous(2);
+    const cur = this.gridManager.currentPlayer;
+    const p1Turn = cur === 1 ? '▶ ' : '   ';
+    const p2Turn = cur === 2 ? '▶ ' : '   ';
     this.scoreText.setText([
-      `Player 1: ${p1Score} (Wins: ${this.gridManager.winRounds[1]})`,
-      `Player 2: ${p2Score} (Wins: ${this.gridManager.winRounds[2]})`
+      `${p1Turn}P1 (Red): ${p1Score}   [Wins: ${this.gridManager.winRounds[1]}]`,
+      `${p2Turn}P2 (Blue): ${p2Score}   [Wins: ${this.gridManager.winRounds[2]}]`
     ].join('\n'));
   }
 
@@ -1652,209 +1704,239 @@ class MenuScene extends Phaser.Scene {
   }
 
   create() {
+      this.menuContainer = this.add.container(0, 0);
+      this.renderMainMenu();
+  }
+
+  clearMenu() {
+      if (this.menuContainer) {
+          this.menuContainer.removeAll(true);
+      } else {
+          this.menuContainer = this.add.container(0, 0);
+      }
+  }
+
+  createStyledButton(x, y, text, baseColor, hoverColor, onClick, width = 340, fontSize = '26px') {
+      const style = {
+          font: `bold ${fontSize} Arial`,
+          fill: '#ffffff',
+          backgroundColor: baseColor,
+          padding: { x: 24, y: 12 },
+          fixedWidth: width,
+          align: 'center'
+      };
+      const btn = this.add.text(x, y, text, style)
+          .setOrigin(0.5)
+          .setInteractive({ useHandCursor: true });
+
+      btn.on('pointerdown', onClick);
+      btn.on('pointerover', () => btn.setStyle({ ...style, backgroundColor: hoverColor }));
+      btn.on('pointerout', () => btn.setStyle(style));
+
+      this.menuContainer.add(btn);
+      return btn;
+  }
+
+  renderMainMenu() {
+      this.clearMenu();
       const centerX = this.cameras.main.width / 2;
       const centerY = this.cameras.main.height / 2;
 
-      // --- Game Title ---
-      this.add.text(centerX, centerY - 200, 'Triantica', {
-          font: '48px Arial',
+      const title = this.add.text(centerX, 130, 'TRIANTICA', {
+          font: 'bold 54px Arial',
           fill: '#ffffff',
           align: 'center'
       }).setOrigin(0.5);
 
-      // --- Button Styling ---
-      const buttonStyle = {
-          font: '32px Arial',
-          fill: '#ffffff',
-          backgroundColor: '#555555', // A distinct background color
-          padding: { x: 20, y: 10 },
+      const subtitle = this.add.text(centerX, 185, 'Toroidal Territory Strategy', {
+          font: '20px Arial',
+          fill: '#aaaaaa',
           align: 'center'
-      };
-      const buttonHoverStyle = {
-          fill: '#ffffff', // Keep text white
-          backgroundColor: '#777777' // Slightly lighter on hover
-      };
+      }).setOrigin(0.5);
 
-      // --- Helper Function to Create Buttons ---
-      const createMenuButton = (yPos, text, mode) => {
-          const button = this.add.text(centerX, yPos, text, buttonStyle)
-              .setOrigin(0.5)
-              .setInteractive({ useHandCursor: true }); // Make it interactive and show hand cursor
+      this.menuContainer.add([title, subtitle]);
 
-          // Click Action
-          button.on('pointerdown', () => {
-              console.log(`Starting game mode: ${mode}`);
-              // Start the GameScene and pass the selected mode as data
-              this.scene.start('Game', { mode: mode });
-          });
+      // Primary Game Modes
+      this.createStyledButton(
+          centerX,
+          280,
+          'Human vs AI',
+          '#2E7D32',
+          '#388E3C',
+          () => this.renderDifficultyMenu()
+      );
 
-          // Hover Effects
-          button.on('pointerover', () => {
-              button.setStyle(buttonHoverStyle);
-          });
-          button.on('pointerout', () => {
-              button.setStyle(buttonStyle);
-          });
+      this.createStyledButton(
+          centerX,
+          360,
+          'Human vs Human',
+          '#1565C0',
+          '#1976D2',
+          () => this.scene.start('Game', { mode: 'HvH' })
+      );
 
-          return button;
-      };
+      // Debug / Benchmark Modes (gated by DEBUG_MODE)
+      if (typeof DEBUG_MODE !== 'undefined' && DEBUG_MODE) {
+          const debugLabel = this.add.text(centerX, 445, '— AI Benchmark Modes (DEBUG) —', {
+              font: '16px Arial',
+              fill: '#888888',
+              align: 'center'
+          }).setOrigin(0.5);
+          this.menuContainer.add(debugLabel);
 
-      // --- Create the Buttons ---
-      createMenuButton(centerY - 100, 'Human vs Human', 'HvH');
-      createMenuButton(centerY - 20, 'Human vs AI', 'HvAI');
-      createMenuButton(centerY + 60, 'AI vs Random', 'AvR');
-      createMenuButton(centerY + 140, 'AI vs Heuristic', 'AvH');
-      createMenuButton(centerY + 220, 'AI vs AI (Network)', 'AvA');
-      // Optional: Add a button for dedicated AI training if you implement that separately
-      // createMenuButton(centerY + 250, 'Train AI (Fast)', 'TrainAI');
-      // --- Create the Training Button ---
-      const trainButtonY = centerY + 310; // Moved down to avoid overlap
-      const trainButton = this.add.text(centerX, trainButtonY, 'Train AI (Self-Play)', buttonStyle)
-          .setOrigin(0.5)
-          .setInteractive({ useHandCursor: true });
+          this.createStyledButton(
+              centerX,
+              500,
+              'AI vs Random',
+              '#444444',
+              '#666666',
+              () => this.scene.start('Game', { mode: 'AvR', difficulty: 'hard' }),
+              320,
+              '22px'
+          );
 
-      // --- Training Button Action ---
-      trainButton.on('pointerdown', async () => {
-          // Prevent clicking again while training
-          trainButton.disableInteractive();
-          trainButton.setText('Training...'); // Update text
-          trainButton.setStyle({ ...buttonStyle, backgroundColor: '#888888' }); // Visual feedback: busy
+          this.createStyledButton(
+              centerX,
+              570,
+              'AI vs Heuristic',
+              '#444444',
+              '#666666',
+              () => this.scene.start('Game', { mode: 'AvH', difficulty: 'hard' }),
+              320,
+              '22px'
+          );
 
-          console.log("--- Starting AI Training Process ---");
+          this.createStyledButton(
+              centerX,
+              640,
+              'AI vs AI (Network)',
+              '#444444',
+              '#666666',
+              () => this.scene.start('Game', { mode: 'AvA', difficulty: 'hard' }),
+              320,
+              '22px'
+          );
+      }
+  }
 
-          try {
-              // Ensure necessary classes are available (assuming global scope based on previous discussions)
-              if (typeof GridManager === 'undefined' || typeof AIPlayer === 'undefined' || typeof brain === 'undefined') {
-                  console.error("Error: GridManager, AIPlayer, or brain.js class not available globally!");
-                  trainButton.setText('Error: Classes Missing');
-                  // Re-enable after delay
-                  this.time.delayedCall(3000, () => {
-                      trainButton.setText('Train AI (Self-Play)');
-                      trainButton.setStyle(buttonStyle);
-                      trainButton.setInteractive();
-                  });
-                  return;
-              }
+  renderDifficultyMenu() {
+      this.clearMenu();
+      const centerX = this.cameras.main.width / 2;
 
-              // Create temporary instances for training simulation
-              const tempGridManager = new GridManager(10, 10); // Or use actual grid dimensions
-              const trainingAI = new AIPlayer(tempGridManager, 'medium', 1); // Train AI as player 1 perspective
+      const title = this.add.text(centerX, 140, 'Select AI Difficulty', {
+          font: 'bold 40px Arial',
+          fill: '#ffffff',
+          align: 'center'
+      }).setOrigin(0.5);
 
-              // console.log(`Loading saved network for AI Player 1`);
-              // const success = trainingAI.importNetwork(); // [cite: 90]
-              // if (!success) { console.error("Failed to import network data."); }
+      const subtitle = this.add.text(centerX, 195, 'Choose your opponent strength', {
+          font: '18px Arial',
+          fill: '#aaaaaa',
+          align: 'center'
+      }).setOrigin(0.5);
 
-              // Check if preloading was attempted
-              const loadPromise = this.registry.get('networkLoadPromise');
-              const tempAI = this.registry.get('tempAIInstanceForStatus');
-        
-              let loadedSuccessfully = false;
-              if (loadPromise && tempAI) {
-                  console.log(`AI: Found preload promise. Waiting for it to settle...`);
-                  try {
-                      // Wait for the promise initiated by BootScene to finish
-                      const preloadFinished = await loadPromise; // Waits if still pending, resolves quickly if already done
-        
-                      // Check the status flag on the temporary AI instance used in BootScene
-                      if (tempAI.isNetworkLoaded) {
-                          console.log(`AI: Preload successful. Copying network state...`);
-                          const networkState = tempAI.exportNetwork();
-                          if (networkState) {
-                                // Apply the preloaded state to the actual game AI instance
-                              trainingAI.loadNetworkJSON(networkState);
-                              trainingAI.isNetworkLoaded = true; // Mark this instance as ready
-                              loadedSuccessfully = true;
-                          } else {
-                              console.error(`AI: Preload seemed successful but failed to export network state from temporary AI.`);
-                          }
-                      } else {
-                            console.log(`AI: Preload attempt finished but was unsuccessful or network was not marked as loaded.`);
-                      }
-                  } catch (promiseError) {
-                        console.error(`AI: Error occurred while awaiting preload promise:`, promiseError);
-                  }
-              } else {
-                    console.log(`AI: No preload attempt found in registry.`);
-              }
+      this.menuContainer.add([title, subtitle]);
 
-              // --- Step 1: Generate Training Data via Self-Play ---
-              const numTrainingGames = 500; // << CONFIGURABLE: Number of games to simulate for data
-              console.log(`Simulating ${numTrainingGames} self-play game(s)...`);
-              for (let i = 0; i < numTrainingGames; i++) {
-                  await trainingAI.runSelfPlayGame(); // runSelfPlayGame is async [cite: 62]
-                  console.log(`Finished self-play game ${i + 1} / ${numTrainingGames}`);
-                  // Optional: Update button text periodically, e.g., trainButton.setText(`Simulating ${i+1}/${numTrainingGames}`);
-              }
-              trainButton.setText('Training Network...'); // Update status
+      this.createStyledButton(
+          centerX,
+          285,
+          'Easy (Casual)',
+          '#388E3C',
+          '#4CAF50',
+          () => this.renderSideSelectionMenu('easy'),
+          360
+      );
 
-              // --- Step 2: Train the Network ---
-              if (trainingAI.trainingData.length > 0) {
-                  console.log(`Training network with ${trainingAI.trainingData.length} samples...`);
-                  // Train the network with collected data. Adjust iterations as needed.
-                  trainingAI.trainNetwork(20); // << CONFIGURABLE: Number of training iterations [cite: 54, 55]
-                  console.log("Network training complete.");
+      this.createStyledButton(
+          centerX,
+          375,
+          'Medium (Raw ConvNet)',
+          '#F57C00',
+          '#FB8C00',
+          () => this.renderSideSelectionMenu('medium'),
+          360
+      );
 
-                  // --- Step 3: Save the Trained Network ---
-                  const trainedNetworkJSON = trainingAI.exportNetwork(); // Get network state [cite: 89]
-                  if (trainedNetworkJSON) {
-                      try {
-                        const networkString = JSON.stringify(trainedNetworkJSON, null, 2);
-                        // Action 1: Save to localStorage (Default)
-                          localStorage.setItem('trainedAI_P1', networkString);
-                          console.log("Trained network saved to localStorage key 'trainedAI_P1'.");
+      this.createStyledButton(
+          centerX,
+          465,
+          'Hard (Master + Safety)',
+          '#C62828',
+          '#E53935',
+          () => this.renderSideSelectionMenu('hard'),
+          360
+      );
 
-                        // Action 2: Trigger File Download
-                          const blob = new Blob([networkString], { type: 'application/json' });
-                          const url = URL.createObjectURL(blob);
-                          const a = document.createElement('a');
-                          a.href = url;
-                          a.download = 'trainedAI_network.json'; // Filename
-                          document.body.appendChild(a);
-                          a.click();
-                          document.body.removeChild(a);
-                          URL.revokeObjectURL(url);
-                          console.log("Trained network download initiated.");
+      this.createStyledButton(
+          centerX,
+          585,
+          '◀ Back',
+          '#444444',
+          '#666666',
+          () => this.renderMainMenu(),
+          220,
+          '22px'
+      );
+  }
 
-                          trainButton.setText('Training Complete!'); // Success message
-                      } catch (e) {
-                          console.error("Error saving network to localStorage or initiating download:", e);
-                          trainButton.setText('Save Error!');
-                      }
-                  } else {
-                        console.log("Could not export network data after training.");
-                        trainButton.setText('Export Error!');
-                  }
-              } else {
-                  console.log("No training data was generated. Skipping training and saving.");
-                  trainButton.setText('No Data Generated');
-              }
+  renderSideSelectionMenu(difficulty) {
+      this.clearMenu();
+      const centerX = this.cameras.main.width / 2;
 
-          } catch (error) {
-              console.error("An error occurred during the AI training process:", error);
-              trainButton.setText('Training Error!'); // Error message
-              trainButton.setStyle({ ...buttonStyle, backgroundColor: '#AA0000' }); // Error color
-          } finally {
-              // Re-enable the button after a delay, allowing user to see the final message
-              this.time.delayedCall(3000, () => { // 3-second delay
-                  trainButton.setText('Train AI (Self-Play)'); // Reset text
-                  trainButton.setStyle(buttonStyle); // Reset style
-                  trainButton.setInteractive(); // Re-enable
-              });
-              console.log("--- AI Training Process Finished ---");
-          }
-      });
+      const title = this.add.text(centerX, 140, 'Choose Your Side', {
+          font: 'bold 40px Arial',
+          fill: '#ffffff',
+          align: 'center'
+      }).setOrigin(0.5);
 
-      // Add hover effects (only when enabled)
-      trainButton.on('pointerover', () => {
-          if (trainButton.input.enabled) { // Check if interactive before changing style
-                trainButton.setStyle(buttonHoverStyle);
-          }
-      });
-      trainButton.on('pointerout', () => {
-          if (trainButton.input.enabled) {
-                trainButton.setStyle(buttonStyle);
-          }
-      });
+      const subtitle = this.add.text(centerX, 195, `AI Difficulty: ${difficulty.toUpperCase()}`, {
+          font: '20px Arial',
+          fill: '#cccccc',
+          align: 'center'
+      }).setOrigin(0.5);
+
+      this.menuContainer.add([title, subtitle]);
+
+      this.createStyledButton(
+          centerX,
+          300,
+          'Play as P1 (Red - First Move)',
+          '#D32F2F',
+          '#E53935',
+          () => this.scene.start('Game', {
+              mode: 'HvAI',
+              difficulty: difficulty,
+              humanPlayerNumber: 1
+          }),
+          420,
+          '24px'
+      );
+
+      this.createStyledButton(
+          centerX,
+          400,
+          'Play as P2 (Blue - Second Move)',
+          '#1976D2',
+          '#2196F3',
+          () => this.scene.start('Game', {
+              mode: 'HvAI',
+              difficulty: difficulty,
+              humanPlayerNumber: 2
+          }),
+          420,
+          '24px'
+      );
+
+      this.createStyledButton(
+          centerX,
+          530,
+          '◀ Back to Difficulty',
+          '#444444',
+          '#666666',
+          () => this.renderDifficultyMenu(),
+          260,
+          '22px'
+      );
   }
 }
 
@@ -1910,9 +1992,15 @@ class BootScene extends Phaser.Scene {
 
 const config = {
   type: Phaser.AUTO,
+  parent: 'game-container',
   width: 600,
   height: 800,
-  scene:  [BootScene, MenuScene, GameScene] 
+  backgroundColor: '#000000',
+  scale: {
+    mode: Phaser.Scale.FIT,
+    autoCenter: Phaser.Scale.CENTER_BOTH
+  },
+  scene: [BootScene, MenuScene, GameScene]
 };
 
 new Phaser.Game(config);
