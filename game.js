@@ -1501,6 +1501,7 @@ class GameScene extends Phaser.Scene {
   updateCursor() {
       if (!this.cursorTriangle) return;
       this.cursorTriangle.clear();
+      if (this.hideTutorialCursor) return;
 
       const isP1 = this.gridManager.currentPlayer === 1;
       const rimColor = isP1 ? 0xFF2A54 : 0x00F0FF;
@@ -2375,10 +2376,12 @@ triggerAIMove() {
       {
         type: 'info',
         title: 'WELCOME TO TRIANTICA',
-        body: 'Connect your triangles into the largest contiguous territory on a seamless 10×10 wrap-around grid.',
+        body: 'MAIN OBJECTIVE: Build the largest single contiguous cluster of connected triangles! When the 10×10 wrap-around board fills up, only your biggest connected territory counts.',
         prompt: 'TAP HERE TO START EXERCISES ▸',
-        view: { u: -0.5, v: 0.5, zoom: 1.5 },
-        highlights: []
+        view: { u: 0.0, v: 0.4, zoom: 1.35 },
+        highlights: [
+          { x: 300, y: 676, w: 444, h: 70, color: 0x00F0FF }
+        ]
       },
       {
         type: 'rotate',
@@ -2449,7 +2452,7 @@ triggerAIMove() {
     const cx = this.cameras.main.width / 2;
     const cardY = 200;
     const cardW = 556;
-    const cardH = 176;
+    const cardH = 192;
     this.tutorialCardBounds = { cx, cy: cardY, w: cardW, h: cardH };
 
     this.tutorialCardGfx = this.add.graphics().setScrollFactor(0).setDepth(220);
@@ -2548,10 +2551,84 @@ triggerAIMove() {
     });
   }
 
+  stopIntroClusterLoop() {
+    if (this.introLoopEvent) {
+      this.introLoopEvent.remove(false);
+      this.introLoopEvent = null;
+    }
+    this.hideTutorialCursor = false;
+  }
+
+  startIntroClusterLoop() {
+    this.stopIntroClusterLoop();
+    this.hideTutorialCursor = true;
+
+    const keyframes = [
+      // Keyframe 1: Opening seed clusters (Red: 2, Blue: 2)
+      [
+        { x: 4, y: 5, r: 0, p: 1 }, { x: 4, y: 5, r: 2, p: 1 },
+        { x: 5, y: 5, r: 1, p: 2 }, { x: 5, y: 5, r: 3, p: 2 }
+      ],
+      // Keyframe 2: Expanding contiguous clusters (Red: 7, Blue: 7)
+      [
+        { x: 4, y: 5, r: 0, p: 1 }, { x: 4, y: 5, r: 2, p: 1 },
+        { x: 3, y: 5, r: 1, p: 1 }, { x: 3, y: 5, r: 3, p: 1 },
+        { x: 4, y: 6, r: 0, p: 1 }, { x: 4, y: 6, r: 2, p: 1 },
+        { x: 3, y: 6, r: 3, p: 1 },
+        { x: 5, y: 5, r: 1, p: 2 }, { x: 5, y: 5, r: 3, p: 2 },
+        { x: 6, y: 5, r: 0, p: 2 }, { x: 6, y: 5, r: 2, p: 2 },
+        { x: 5, y: 6, r: 3, p: 2 }, { x: 5, y: 6, r: 1, p: 2 },
+        { x: 6, y: 6, r: 0, p: 2 }
+      ],
+      // Keyframe 3: Large competing territories (Red: 15, Blue: 13)
+      [
+        { x: 4, y: 5, r: 0, p: 1 }, { x: 4, y: 5, r: 2, p: 1 },
+        { x: 3, y: 5, r: 1, p: 1 }, { x: 3, y: 5, r: 3, p: 1 },
+        { x: 4, y: 6, r: 0, p: 1 }, { x: 4, y: 6, r: 2, p: 1 },
+        { x: 3, y: 6, r: 1, p: 1 }, { x: 3, y: 6, r: 3, p: 1 },
+        { x: 2, y: 5, r: 0, p: 1 }, { x: 2, y: 5, r: 2, p: 1 },
+        { x: 2, y: 6, r: 1, p: 1 }, { x: 2, y: 6, r: 3, p: 1 },
+        { x: 4, y: 7, r: 0, p: 1 }, { x: 4, y: 7, r: 2, p: 1 },
+        { x: 3, y: 7, r: 3, p: 1 },
+        { x: 5, y: 5, r: 1, p: 2 }, { x: 5, y: 5, r: 3, p: 2 },
+        { x: 6, y: 5, r: 0, p: 2 }, { x: 6, y: 5, r: 2, p: 2 },
+        { x: 5, y: 6, r: 3, p: 2 }, { x: 5, y: 6, r: 1, p: 2 },
+        { x: 6, y: 6, r: 0, p: 2 }, { x: 6, y: 6, r: 2, p: 2 },
+        { x: 7, y: 5, r: 1, p: 2 }, { x: 7, y: 5, r: 3, p: 2 },
+        { x: 7, y: 6, r: 0, p: 2 }, { x: 7, y: 6, r: 2, p: 2 },
+        { x: 6, y: 7, r: 3, p: 2 }
+      ]
+    ];
+
+    let frameIdx = 0;
+    const applyKeyframe = (kf) => {
+      this.gridManager.reset();
+      for (const m of kf) {
+        this.gridManager.placeTriangle(m.x, m.y, m.r, m.p);
+      }
+      this.gridManager.currentPlayer = 1;
+      this.updateScore();
+      this.refreshBoardView();
+    };
+
+    applyKeyframe(keyframes[0]);
+    this.introLoopEvent = this.time.addEvent({
+      delay: 1100,
+      loop: true,
+      callback: () => {
+        if (!this.tutorialActive || this.tutorialStep !== 0) return;
+        frameIdx = (frameIdx + 1) % keyframes.length;
+        applyKeyframe(keyframes[frameIdx]);
+      }
+    });
+  }
+
   setTutorialStep(index) {
     this.tutorialStep = index;
     const step = this.tutorialSteps[index];
     if (!step) return;
+
+    this.stopIntroClusterLoop();
 
     const { cx, cy, w, h } = this.tutorialCardBounds;
     const borderColor = (step.type === 'info' || step.type === 'done') ? 0x00F0FF : 0x00FFCC;
@@ -2570,10 +2647,20 @@ triggerAIMove() {
       this.zoomLevel = step.view.zoom || 1.0;
     }
 
+    if (index === 0) {
+      this.startIntroClusterLoop();
+      return;
+    }
+
     if (step.type === 'rotate') {
+      // Reset the board cleanly after the Step 0 cluster demo loop
+      this.gridManager.reset();
+      this.gridManager.placeTriangle(5, 5, 1, 2);
+      this.gridManager.currentPlayer = 1;
       this.tutorialRotateCount = 0;
       this.cursorPos = { x: 4, y: 5 };
       this.gridManager.selectedRotation = 0;
+      this.updateScore();
     } else if (step.type === 'place1') {
       // Start the red cursor behind/near the instruction card, away from the green target socket
       this.cursorPos = { x: step.startCursor.x, y: step.startCursor.y };
