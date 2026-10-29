@@ -2386,7 +2386,7 @@ triggerAIMove() {
       {
         type: 'rotate',
         title: 'EXERCISE 1: ROTATE 4 TIMES',
-        body: 'To proceed, you MUST rotate your red triangle 4 times!\nTap the red triangle on the board or the ↻ button 4 times.',
+        body: 'Tap any square on the board to move your red triangle there. Tap the SAME square again (or the ↻ button) to rotate it!\nRotate your red triangle 4 times to proceed.',
         prompt: 'ROTATE 4 TIMES TO PROCEED: 0 / 4',
         view: { u: -0.5, v: 0.5, zoom: 1.5 },
         highlights: [
@@ -2396,8 +2396,8 @@ triggerAIMove() {
       {
         type: 'place1',
         title: 'EXERCISE 2: MOVE & PLACE',
-        body: 'Your red cursor is in an illegal position (not touching any corner). Move & rotate it to fit inside the green target, then tap PLACE TRIANGLE.',
-        prompt: 'FIT INSIDE GREEN TARGET → TAP PLACE',
+        body: 'Your red cursor is in an illegal position (not touching any corner). Tap the green target square on the board to move there, rotate to fit inside the green outline, then tap PLACE TRIANGLE.',
+        prompt: 'TAP GREEN TARGET → ROTATE TO FIT → TAP PLACE',
         view: { u: -0.5, v: 0.5, zoom: 1.5 },
         startCursor: { x: 3, y: 5, rot: 0 },
         targetCell: { x: 4, y: 5, rot: 2 },
@@ -2408,8 +2408,8 @@ triggerAIMove() {
       {
         type: 'place2',
         title: 'EXERCISE 3: CLOSE A GAP (EXTRA TURN!)',
-        body: 'The yellow-outlined gap has 2 of 3 sides blocked! Move & rotate your red triangle to fit inside the green target above it, then tap PLACE TRIANGLE.',
-        prompt: 'FIT INSIDE GREEN TARGET → TAP PLACE',
+        body: 'The yellow-outlined gap has 2 of 3 sides blocked! Tap the green target square above it to move there, rotate to fit inside the green outline, then tap PLACE TRIANGLE.',
+        prompt: 'TAP GREEN TARGET → ROTATE TO FIT → TAP PLACE',
         view: { u: -0.5, v: 0.8, zoom: 1.5 },
         startCursor: { x: 3, y: 5, rot: 0 },
         targetCell: { x: 5, y: 4, rot: 1 },
@@ -2548,6 +2548,22 @@ triggerAIMove() {
       duration: 650,
       yoyo: true,
       repeat: -1
+    });
+
+    // Continuous zoom-in + fade-in loop for the green target triangle socket
+    this.targetPulseProgress = 0;
+    this.targetPulseTween = this.tweens.addCounter({
+      from: 0,
+      to: 1,
+      duration: 1250,
+      repeat: -1,
+      onUpdate: (tween) => {
+        this.targetPulseProgress = tween.getValue();
+        const step = this.tutorialSteps?.[this.tutorialStep];
+        if (this.tutorialActive && step && step.targetCell) {
+          this.drawTutorialHighlights();
+        }
+      }
     });
   }
 
@@ -2698,7 +2714,7 @@ triggerAIMove() {
       }
     }
 
-    // 2. Highlight target board cell + expanded, semi-transparent green target triangle socket
+    // 2. Highlight target board cell + animated zooming-in green target triangle socket
     if (step.targetCell) {
       const cols = this.gridManager.cols;
       const rows = this.gridManager.rows;
@@ -2706,34 +2722,55 @@ triggerAIMove() {
       const v = ((step.targetCell.y + this.panOffset.v) % rows + rows) % rows;
       const [raw0, raw1, raw2] = this.getProjectedTriangleVertices(u, v, step.targetCell.rot);
 
-      // Expand target triangle ~15% outward from its centroid so the red preview triangle sits cleanly inside
       const midX = (raw0.x + raw1.x + raw2.x) / 3;
       const midY = (raw0.y + raw1.y + raw2.y) / 3;
-      const expand = 1.15;
-      const v0 = { x: midX + (raw0.x - midX) * expand, y: midY + (raw0.y - midY) * expand };
-      const v1 = { x: midX + (raw1.x - midX) * expand, y: midY + (raw1.y - midY) * expand };
-      const v2 = { x: midX + (raw2.x - midX) * expand, y: midY + (raw2.y - midY) * expand };
 
-      // Very light, transparent fill so the red cursor triangle clearly shines through when seated inside
-      this.tutorialHighlightGfx.fillStyle(0x00FFCC, 0.08);
+      // Animated zoom-in from larger scale & zero transparency into the target socket in a loop
+      const t = this.targetPulseProgress ?? 0.5;
+      const easeOut = 1 - Math.pow(1 - t, 2.6);
+      const animScale = 2.05 - 0.90 * easeOut; // Zooms in from 2.05x down to the 1.15x socket
+      const animAlpha = t < 0.82
+        ? Math.min(1, t / 0.35)
+        : Math.max(0, (1 - t) / 0.18); // Starts at 0 alpha, ramps up while zooming in, fades out cleanly at end of loop
+
+      const a0 = { x: midX + (raw0.x - midX) * animScale, y: midY + (raw0.y - midY) * animScale };
+      const a1 = { x: midX + (raw1.x - midX) * animScale, y: midY + (raw1.y - midY) * animScale };
+      const a2 = { x: midX + (raw2.x - midX) * animScale, y: midY + (raw2.y - midY) * animScale };
+
+      // Steady inner socket reference so the player always sees the exact destination boundary
+      const baseExpand = 1.15;
+      const v0 = { x: midX + (raw0.x - midX) * baseExpand, y: midY + (raw0.y - midY) * baseExpand };
+      const v1 = { x: midX + (raw1.x - midX) * baseExpand, y: midY + (raw1.y - midY) * baseExpand };
+      const v2 = { x: midX + (raw2.x - midX) * baseExpand, y: midY + (raw2.y - midY) * baseExpand };
+
+      this.tutorialHighlightGfx.fillStyle(0x00FFCC, 0.06 * animAlpha);
       this.tutorialHighlightGfx.beginPath();
-      this.tutorialHighlightGfx.moveTo(v0.x, v0.y);
-      this.tutorialHighlightGfx.lineTo(v1.x, v1.y);
-      this.tutorialHighlightGfx.lineTo(v2.x, v2.y);
+      this.tutorialHighlightGfx.moveTo(a0.x, a0.y);
+      this.tutorialHighlightGfx.lineTo(a1.x, a1.y);
+      this.tutorialHighlightGfx.lineTo(a2.x, a2.y);
       this.tutorialHighlightGfx.closePath();
       this.tutorialHighlightGfx.fillPath();
 
-      // Soft outer green halo
-      this.tutorialHighlightGfx.lineStyle(6, 0x00FFCC, 0.20);
+      // Zooming outer green halo
+      this.tutorialHighlightGfx.lineStyle(6, 0x00FFCC, 0.28 * animAlpha);
       this.tutorialHighlightGfx.beginPath();
-      this.tutorialHighlightGfx.moveTo(v0.x, v0.y);
-      this.tutorialHighlightGfx.lineTo(v1.x, v1.y);
-      this.tutorialHighlightGfx.lineTo(v2.x, v2.y);
+      this.tutorialHighlightGfx.moveTo(a0.x, a0.y);
+      this.tutorialHighlightGfx.lineTo(a1.x, a1.y);
+      this.tutorialHighlightGfx.lineTo(a2.x, a2.y);
       this.tutorialHighlightGfx.closePath();
       this.tutorialHighlightGfx.strokePath();
 
-      // Semi-transparent green socket frame outside the red triangle's perimeter
-      this.tutorialHighlightGfx.lineStyle(2.6, 0x00FFCC, 0.72);
+      // Zooming bright green triangle outline
+      this.tutorialHighlightGfx.lineStyle(2.8, 0x00FFCC, 0.92 * animAlpha);
+      this.tutorialHighlightGfx.beginPath();
+      this.tutorialHighlightGfx.moveTo(a0.x, a0.y);
+      this.tutorialHighlightGfx.lineTo(a1.x, a1.y);
+      this.tutorialHighlightGfx.lineTo(a2.x, a2.y);
+      this.tutorialHighlightGfx.closePath();
+      this.tutorialHighlightGfx.strokePath();
+
+      // Subtle persistent socket outline at 1.15x
+      this.tutorialHighlightGfx.lineStyle(1.6, 0x00FFCC, 0.32);
       this.tutorialHighlightGfx.beginPath();
       this.tutorialHighlightGfx.moveTo(v0.x, v0.y);
       this.tutorialHighlightGfx.lineTo(v1.x, v1.y);
@@ -2764,7 +2801,7 @@ triggerAIMove() {
     const step = this.tutorialSteps?.[this.tutorialStep];
     if (!step) return false;
     if (step.type === 'info' || step.type === 'done') return false;
-    if (step.type === 'rotate') return action === 'rotate';
+    if (step.type === 'rotate') return action === 'rotate' || action === 'grid';
     if (step.type === 'place1' || step.type === 'place2') {
       return action === 'rotate' || action === 'grid' || action === 'place';
     }
