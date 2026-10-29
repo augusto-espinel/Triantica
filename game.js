@@ -1398,7 +1398,6 @@ class GameScene extends Phaser.Scene {
   updateCursor() {
       if (!this.cursorTriangle) return;
       this.cursorTriangle.clear();
-      if (this.isDragging && this.hasMovedBeyondThreshold) return;
 
       const playerColor = this.gridManager.currentPlayer === 1 ? 0xff5555 : 0x5555ff;
       this.cursorTriangle.lineStyle(4, playerColor, 1);
@@ -1961,12 +1960,65 @@ triggerAIMove() {
       return null;
     };
 
-    const hasAnyTouchPointerDown = () => {
-      const p1 = this.input.pointer1;
-      const p2 = this.input.pointer2;
-      const p3 = this.input.pointer3;
-      return Boolean((p1 && p1.isDown) || (p2 && p2.isDown) || (p3 && p3.isDown));
+    const getRemainingDownPointer = (releasedPointer) => {
+      const candidates = [this.input.pointer1, this.input.pointer2, this.input.pointer3];
+      for (const p of candidates) {
+        if (p && p !== releasedPointer && p.isDown) {
+          return p;
+        }
+      }
+      return null;
     };
+
+    const handlePointerRelease = (pointer) => {
+      // If any touch finger was part of a multi-touch/pinch gesture, suppress cursor tap
+      // until EVERY finger has been lifted off the screen
+      if (this.gestureHadMultiTouch) {
+        this.isPinching = false;
+        const remaining = getRemainingDownPointer(pointer);
+        if (remaining) {
+          // Allow the remaining finger to continue panning smoothly, but keep tap suppressed
+          this.isDragging = true;
+          this.hasMovedBeyondThreshold = true;
+          this.dragStart.x = remaining.x;
+          this.dragStart.y = remaining.y;
+          this.panStart.u = this.panOffset.u;
+          this.panStart.v = this.panOffset.v;
+          this.updateCursor();
+          return;
+        }
+        // All fingers are now up after a pinch/zoom gesture: reset state without moving cursor
+        this.gestureHadMultiTouch = false;
+        this.isDragging = false;
+        this.hasMovedBeyondThreshold = false;
+        this.updateCursor();
+        return;
+      }
+
+      if (this.isDragging) {
+        const wasPan = this.hasMovedBeyondThreshold;
+        this.isDragging = false;
+        this.isPinching = false;
+        this.hasMovedBeyondThreshold = false;
+
+        if (!wasPan && this.isWithinGrid(pointer.x, pointer.y)) {
+          if (this.players[this.gridManager.currentPlayer]?.type === 'human') {
+            const logical = this.screenToLogicalCell(pointer.x, pointer.y);
+            if (logical.gx === this.cursorPos.x && logical.gy === this.cursorPos.y) {
+              // Tapping the already-selected cell rotates the preview triangle
+              this.gridManager.rotateTriangle(1);
+            } else {
+              this.cursorPos.x = logical.gx;
+              this.cursorPos.y = logical.gy;
+            }
+          }
+        }
+        this.updateCursor();
+      }
+    };
+
+    this.input.on('pointerup', handlePointerRelease);
+    this.input.on('pointerupoutside', handlePointerRelease);
 
     const startPinchGesture = (p1, p2) => {
       const dist = Phaser.Math.Distance.Between(p1.x, p1.y, p2.x, p2.y);
@@ -2077,58 +2129,6 @@ triggerAIMove() {
       } else if (!pointer.isTouch && this.isWithinGrid(pointer.x, pointer.y)) {
         if (this.players[this.gridManager.currentPlayer]?.type === 'human') {
           this.updateCursorPosition(pointer);
-        }
-      }
-    });
-
-    this.input.on('pointerup', (pointer) => {
-      // If any touch finger was part of a multi-touch/pinch gesture, suppress cursor tap
-      // until EVERY finger has been lifted off the screen
-      if (this.gestureHadMultiTouch) {
-        this.isPinching = false;
-        const remaining = (this.input.pointer1 && this.input.pointer1.isDown)
-          ? this.input.pointer1
-          : ((this.input.pointer2 && this.input.pointer2.isDown) ? this.input.pointer2 : null);
-        if (remaining) {
-          // Allow the remaining finger to continue panning smoothly, but keep tap suppressed
-          this.isDragging = true;
-          this.hasMovedBeyondThreshold = true;
-          this.dragStart.x = remaining.x;
-          this.dragStart.y = remaining.y;
-          this.panStart.u = this.panOffset.u;
-          this.panStart.v = this.panOffset.v;
-          return;
-        }
-        // All fingers are now up after a pinch/zoom gesture: reset state without moving cursor
-        if (!hasAnyTouchPointerDown()) {
-          this.gestureHadMultiTouch = false;
-        }
-        this.isDragging = false;
-        this.hasMovedBeyondThreshold = false;
-        this.updateCursor();
-        return;
-      }
-
-      if (this.isDragging) {
-        const wasPan = this.hasMovedBeyondThreshold;
-        this.isDragging = false;
-        this.isPinching = false;
-        this.hasMovedBeyondThreshold = false;
-
-        if (!wasPan && this.isWithinGrid(pointer.x, pointer.y)) {
-          if (this.players[this.gridManager.currentPlayer]?.type === 'human') {
-            const logical = this.screenToLogicalCell(pointer.x, pointer.y);
-            if (logical.gx === this.cursorPos.x && logical.gy === this.cursorPos.y) {
-              // Tapping the already-selected cell rotates the preview triangle
-              this.gridManager.rotateTriangle(1);
-            } else {
-              this.cursorPos.x = logical.gx;
-              this.cursorPos.y = logical.gy;
-            }
-            this.updateCursor();
-          }
-        } else {
-          this.updateCursor();
         }
       }
     });
