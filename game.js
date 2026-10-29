@@ -596,6 +596,9 @@ class GameScene extends Phaser.Scene {
     this.gestureHadMultiTouch = false;
     this.isDragging = false;
     this.hasMovedBeyondThreshold = false;
+    this.tutorialActive = false;
+    this.tutorialStep = 0;
+    this.tutorialRotateCount = 0;
     this.gridManager.reset();
     this.gridManager.winRounds = { 1: 0, 2: 0 };
   }
@@ -707,6 +710,11 @@ class GameScene extends Phaser.Scene {
     }).setDepth(200).setScrollFactor(0).setVisible(Boolean(typeof DEBUG_MODE !== 'undefined' && DEBUG_MODE));
     const modeDetail = this.gameMode === 'HvAI' ? `${this.gameMode} (${this.aiDifficulty.toUpperCase()})` : this.gameMode;
     this.debugText.setText(`Mode: ${modeDetail} | P1: ${this.players[1]?.type || '?'} | P2: ${this.players[2]?.type || '?'}`);
+
+    if (this.gameMode === 'Tutorial') {
+      this.startTutorial();
+      return;
+    }
 
     // If Player 1 is non-human (e.g., HvAI with Human as P2, or AvR/AvH/AvA), trigger P1's first move
     const p1Type = this.players[this.gridManager.currentPlayer]?.type;
@@ -828,7 +836,10 @@ class GameScene extends Phaser.Scene {
 
     this.forfeitButton.on('pointerover', () => drawForfeit(true));
     this.forfeitButton.on('pointerout', () => drawForfeit(false));
-    this.forfeitButton.on('pointerdown', () => this.handleForfeit());
+    this.forfeitButton.on('pointerdown', () => {
+      if (this.tutorialActive) return;
+      this.handleForfeit();
+    });
   }
 
   handleForfeit() {
@@ -934,9 +945,11 @@ class GameScene extends Phaser.Scene {
     );
 
     this.rotateButton.on('pointerdown', () => {
+      if (this.tutorialActive && !this.tutorialCanInteract('rotate')) return;
       this.gridManager.rotateTriangle();
       this.updateCursor();
       drawRotate(true);
+      if (this.tutorialActive) this.onTutorialRotate();
     });
 
     this.rotateButton.on('pointerup', () => drawRotate(false));
@@ -1284,6 +1297,9 @@ class GameScene extends Phaser.Scene {
     this.redrawTriangles();
     this.updateCursor();
     this.refreshViewControlsHUD();
+    if (this.tutorialActive) {
+      this.drawTutorialHighlights();
+    }
   }
 
   drawGrid() {
@@ -1425,8 +1441,10 @@ class GameScene extends Phaser.Scene {
       });
       this.keys.R.on('down', () => {
       if (this.players[this.gridManager.currentPlayer].type === 'human') {
+        if (this.tutorialActive && !this.tutorialCanInteract('rotate')) return;
         this.gridManager.rotateTriangle();
         this.updateCursor();
+        if (this.tutorialActive) this.onTutorialRotate();
       }
       });
       this.keys.ENTER.on('down', () => {
@@ -1438,14 +1456,17 @@ class GameScene extends Phaser.Scene {
       // Mouse wheel rotation
       this.input.on('wheel', (pointer, deltaX, deltaY) => {
         if (!pointer.isTouch) { // Only for mouse wheel
+          if (this.tutorialActive && !this.tutorialCanInteract('rotate')) return;
           const direction = deltaY > 0 ? 1 : -1;
           this.gridManager.rotateTriangle(direction);
           this.updateCursor();
+          if (this.tutorialActive) this.onTutorialRotate();
         }
       });
   }
 
   moveCursor(dx, dy) {
+      if (this.tutorialActive && !this.tutorialCanInteract('grid')) return;
       const cols = this.gridManager.cols;
       const rows = this.gridManager.rows;
       this.cursorPos.x = ((this.cursorPos.x + dx) % cols + cols) % cols;
@@ -1531,6 +1552,10 @@ class GameScene extends Phaser.Scene {
   }
 
   placeCurrentTriangle() {
+    if (this.tutorialActive) {
+      this.handleTutorialPlace();
+      return;
+    }
 
     if (this.players[this.gridManager.currentPlayer].type !== 'human') {
       console.log("Not human player's turn.");
@@ -2161,10 +2186,17 @@ triggerAIMove() {
 
         if (!wasPan && this.isWithinGrid(pointer.x, pointer.y)) {
           if (this.players[this.gridManager.currentPlayer]?.type === 'human') {
+            if (this.tutorialActive && !this.tutorialCanInteract('grid')) {
+              this.updateCursor();
+              return;
+            }
             const logical = this.screenToLogicalCell(pointer.x, pointer.y);
             if (logical.gx === this.cursorPos.x && logical.gy === this.cursorPos.y) {
-              // Tapping the already-selected cell rotates the preview triangle
-              this.gridManager.rotateTriangle(1);
+              if (!this.tutorialActive || this.tutorialCanInteract('rotate')) {
+                // Tapping the already-selected cell rotates the preview triangle
+                this.gridManager.rotateTriangle(1);
+                if (this.tutorialActive) this.onTutorialRotate();
+              }
             } else {
               this.cursorPos.x = logical.gx;
               this.cursorPos.y = logical.gy;
@@ -2286,7 +2318,9 @@ triggerAIMove() {
         }
       } else if (!pointer.isTouch && this.isWithinGrid(pointer.x, pointer.y)) {
         if (this.players[this.gridManager.currentPlayer]?.type === 'human') {
-          this.updateCursorPosition(pointer);
+          if (!this.tutorialActive || this.tutorialCanInteract('grid')) {
+            this.updateCursorPosition(pointer);
+          }
         }
       }
     });
@@ -2322,6 +2356,365 @@ triggerAIMove() {
       v >= -margin &&
       v <= this.gridManager.rows + margin
     );
+  }
+
+  // =========================================================================
+  // INTERACTIVE "HOW TO PLAY" TUTORIAL FLOW
+  // =========================================================================
+
+  startTutorial() {
+    this.tutorialActive = true;
+    this.tutorialRotateCount = 0;
+
+    // Seed an opening Blue (P2) triangle at (5, 5, rot 1) so the player can learn legal corner contact
+    this.gridManager.reset();
+    this.gridManager.placeTriangle(5, 5, 1, 2);
+    this.gridManager.currentPlayer = 1;
+    this.gridManager.selectedRotation = 0;
+    this.cursorPos = { x: 4, y: 5 };
+    this.refreshBoardView();
+    this.updateScore();
+
+    this.tutorialSteps = [
+      {
+        type: 'info',
+        title: 'WELCOME TO TRIANTICA',
+        body: 'Connect your triangles into the largest contiguous territory on a seamless 10×10 wrap-around grid.',
+        prompt: 'TAP HERE TO CONTINUE ▸',
+        highlights: []
+      },
+      {
+        type: 'info',
+        title: 'SCOREBOARD & TURN HUD',
+        body: 'The bottom panel tracks each player\'s largest connected cluster (▶ marks the active turn).',
+        prompt: 'TAP HERE TO CONTINUE ▸',
+        highlights: [
+          { x: 300, y: 676, w: 444, h: 70, color: 0x00F0FF }
+        ]
+      },
+      {
+        type: 'info',
+        title: 'VIEW & EXIT CONTROLS',
+        body: 'Top-right pills toggle 2.5D Tilt, Ghost Ring, or re-center the view.\nTop-left ◀ MENU or bottom-right ⚑ exits at any time.',
+        prompt: 'TAP HERE TO CONTINUE ▸',
+        highlights: [
+          { x: 410, y: 40, w: 368, h: 52, color: 0x00F0FF },
+          { x: 72, y: 40, w: 126, h: 52, color: 0x00FFCC },
+          { x: 524, y: 738, w: 88, h: 68, color: 0xFF2A54 }
+        ]
+      },
+      {
+        type: 'info',
+        title: 'ROTATE & PLACE BUTTONS',
+        body: 'Use ↻ (or tap the selected cell) to rotate your triangle through 4 orientations, and PLACE TRIANGLE to lock it in.',
+        prompt: 'TAP HERE TO START PRACTICE ▸',
+        highlights: [
+          { x: 76, y: 738, w: 88, h: 68, color: 0x00F0FF },
+          { x: 300, y: 738, w: 260, h: 68, color: 0xFF2A54 }
+        ]
+      },
+      {
+        type: 'rotate',
+        title: 'STEP 1: ROTATE 4 TIMES',
+        body: 'Tap the ↻ button (or press R) 4 times to cycle through all 4 triangle orientations.',
+        prompt: 'ROTATIONS: 0 / 4',
+        highlights: [
+          { x: 76, y: 738, w: 88, h: 68, color: 0x00FFCC }
+        ]
+      },
+      {
+        type: 'place1',
+        title: 'STEP 2: LEGAL PLACEMENT',
+        body: 'Every move must touch an existing triangle\'s corner.\nSelect the highlighted cell and tap PLACE TRIANGLE.',
+        prompt: 'SELECT TARGET CELL & TAP PLACE',
+        targetCell: { x: 4, y: 5, rot: 2 },
+        highlights: [
+          { x: 300, y: 738, w: 260, h: 68, color: 0x00FFCC }
+        ]
+      },
+      {
+        type: 'place2',
+        title: 'STEP 3: CLOSE A GAP (EXTRA TURN!)',
+        body: 'Look at the empty slot in the center cell—2 of its 3 sides are already blocked! Place the highlighted piece to seal the 3rd side.',
+        prompt: 'CLOSE THE GAP TO CLAIM IT!',
+        targetCell: { x: 5, y: 6, rot: 0 },
+        enclosedCell: { x: 5, y: 5 },
+        highlights: [
+          { x: 300, y: 738, w: 260, h: 68, color: 0x00FFCC }
+        ]
+      },
+      {
+        type: 'done',
+        title: 'GAP CLOSED → EXTRA TURN!',
+        body: 'You automatically claimed the enclosed triangle AND earned an Extra Turn! Chaining enclosures is the key to victory.',
+        prompt: 'TAP HERE TO RETURN TO MENU ▸',
+        highlights: [
+          { x: 300, y: 676, w: 444, h: 70, color: 0x00FFCC }
+        ]
+      }
+    ];
+
+    this.createTutorialUI();
+    this.setTutorialStep(0);
+  }
+
+  createTutorialUI() {
+    this.tutorialHighlightGfx = this.add.graphics().setScrollFactor(0).setDepth(210);
+
+    const cx = this.cameras.main.width / 2;
+    const cardY = 215;
+    const cardW = 536;
+    const cardH = 148;
+    this.tutorialCardBounds = { cx, cy: cardY, w: cardW, h: cardH };
+
+    this.tutorialCardGfx = this.add.graphics().setScrollFactor(0).setDepth(220);
+
+    this.tutorialTitleText = this.add.text(cx - cardW / 2 + 20, cardY - cardH / 2 + 16, '', {
+      fontFamily: '"Orbitron", "Share Tech Mono", Arial',
+      fontSize: '18px',
+      fontStyle: 'bold',
+      color: '#00FFCC'
+    }).setOrigin(0, 0).setScrollFactor(0).setDepth(221);
+
+    // Always-visible Exit Instructions button in top-right of the tutorial card
+    const exitW = 106;
+    const exitH = 30;
+    const exitX = cx + cardW / 2 - exitW / 2 - 14;
+    const exitY = cardY - cardH / 2 + 24;
+
+    this.tutorialExitGfx = this.add.graphics().setScrollFactor(0).setDepth(222);
+    const drawExitBtn = (hover = false) => {
+      this.drawChamferedPanel(
+        this.tutorialExitGfx,
+        exitX,
+        exitY,
+        exitW,
+        exitH,
+        6,
+        hover ? 0x380A1C : 0x1F0610,
+        0.95,
+        0xFF2A54,
+        1.0,
+        1.6
+      );
+    };
+    drawExitBtn(false);
+
+    this.tutorialExitText = this.add.text(exitX, exitY, '✕ EXIT', {
+      fontFamily: '"Share Tech Mono", monospace',
+      fontSize: '14px',
+      fontStyle: 'bold',
+      color: '#FF4D6D'
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(223);
+
+    this.tutorialExitGfx.setInteractive(
+      new Phaser.Geom.Rectangle(exitX - exitW / 2, exitY - exitH / 2, exitW, exitH),
+      Phaser.Geom.Rectangle.Contains
+    );
+    this.tutorialExitGfx.on('pointerover', () => drawExitBtn(true));
+    this.tutorialExitGfx.on('pointerout', () => drawExitBtn(false));
+    this.tutorialExitGfx.on('pointerdown', () => {
+      this.time.removeAllEvents();
+      this.scene.start('Menu');
+    });
+
+    this.tutorialBodyText = this.add.text(cx, cardY + 2, '', {
+      fontFamily: '"Share Tech Mono", monospace',
+      fontSize: '15px',
+      color: '#E6F9FF',
+      align: 'center',
+      wordWrap: { width: cardW - 36 },
+      lineSpacing: 4
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(221);
+
+    this.tutorialPromptText = this.add.text(cx, cardY + cardH / 2 - 18, '', {
+      fontFamily: '"Orbitron", "Share Tech Mono", Arial',
+      fontSize: '14px',
+      fontStyle: 'bold',
+      color: '#00F0FF',
+      align: 'center'
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(221);
+
+    // Interactive zone on the card for Tap-to-Continue steps
+    this.tutorialCardZone = this.add.zone(cx, cardY + 14, cardW, cardH - 28)
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(221)
+      .setInteractive({ useHandCursor: true });
+
+    this.tutorialCardZone.on('pointerdown', () => {
+      const step = this.tutorialSteps?.[this.tutorialStep];
+      if (!step) return;
+      if (step.type === 'info') {
+        this.setTutorialStep(this.tutorialStep + 1);
+      } else if (step.type === 'done') {
+        this.time.removeAllEvents();
+        this.scene.start('Menu');
+      }
+    });
+
+    // Subtle pulse animation for highlights & prompt
+    this.tweens.add({
+      targets: this.tutorialPromptText,
+      alpha: { from: 1.0, to: 0.45 },
+      duration: 650,
+      yoyo: true,
+      repeat: -1
+    });
+  }
+
+  setTutorialStep(index) {
+    this.tutorialStep = index;
+    const step = this.tutorialSteps[index];
+    if (!step) return;
+
+    const { cx, cy, w, h } = this.tutorialCardBounds;
+    const borderColor = (step.type === 'info') ? 0x00F0FF : 0x00FFCC;
+    this.drawChamferedPanel(this.tutorialCardGfx, cx, cy, w, h, 12, 0x050D1A, 0.94, borderColor, 0.95, 2.2);
+
+    this.tutorialTitleText.setText(`[${index + 1}/${this.tutorialSteps.length}] ${step.title}`);
+    this.tutorialBodyText.setText(step.body);
+    this.tutorialPromptText.setText(step.prompt);
+
+    if (step.type === 'rotate') {
+      this.tutorialRotateCount = 0;
+      this.cursorPos = { x: 4, y: 5 };
+      this.gridManager.selectedRotation = 0;
+      this.updateCursor();
+    } else if (step.type === 'place1') {
+      this.cursorPos = { x: step.targetCell.x, y: step.targetCell.y };
+      this.gridManager.selectedRotation = step.targetCell.rot;
+      this.updateCursor();
+    } else if (step.type === 'place2') {
+      // Ensure the setup triangle at (6, 5, rot 1) is present so (5, 5, rot 3) is 2/3 enclosed
+      const cell65 = this.gridManager.grid[5][6];
+      if (!cell65.triangles.some(t => t.rotation === 1)) {
+        this.gridManager.placeTriangle(6, 5, 1, 2);
+      }
+      this.gridManager.currentPlayer = 1;
+      this.cursorPos = { x: step.targetCell.x, y: step.targetCell.y };
+      this.gridManager.selectedRotation = step.targetCell.rot;
+      this.redrawTriangles();
+      this.updateScore();
+      this.updateCursor();
+    }
+
+    this.drawTutorialHighlights();
+  }
+
+  drawTutorialHighlights() {
+    if (!this.tutorialHighlightGfx) return;
+    this.tutorialHighlightGfx.clear();
+
+    const step = this.tutorialSteps?.[this.tutorialStep];
+    if (!step) return;
+
+    // 1. Draw HUD button highlight boxes
+    if (step.highlights) {
+      for (const box of step.highlights) {
+        this.tutorialHighlightGfx.lineStyle(6, box.color, 0.28);
+        this.tutorialHighlightGfx.strokeRect(box.x - box.w / 2, box.y - box.h / 2, box.w, box.h);
+        this.tutorialHighlightGfx.lineStyle(2.2, box.color, 0.95);
+        this.tutorialHighlightGfx.strokeRect(box.x - box.w / 2, box.y - box.h / 2, box.w, box.h);
+      }
+    }
+
+    // 2. Highlight target board cell + target triangle silhouette if applicable
+    if (step.targetCell) {
+      const cols = this.gridManager.cols;
+      const rows = this.gridManager.rows;
+      const u = ((step.targetCell.x + this.panOffset.u) % cols + cols) % cols;
+      const v = ((step.targetCell.y + this.panOffset.v) % rows + rows) % rows;
+      const [v0, v1, v2] = this.getProjectedTriangleVertices(u, v, step.targetCell.rot);
+
+      this.tutorialHighlightGfx.fillStyle(0x00FFCC, 0.22);
+      this.tutorialHighlightGfx.beginPath();
+      this.tutorialHighlightGfx.moveTo(v0.x, v0.y);
+      this.tutorialHighlightGfx.lineTo(v1.x, v1.y);
+      this.tutorialHighlightGfx.lineTo(v2.x, v2.y);
+      this.tutorialHighlightGfx.closePath();
+      this.tutorialHighlightGfx.fillPath();
+
+      this.tutorialHighlightGfx.lineStyle(3, 0x00FFCC, 0.98);
+      this.tutorialHighlightGfx.beginPath();
+      this.tutorialHighlightGfx.moveTo(v0.x, v0.y);
+      this.tutorialHighlightGfx.lineTo(v1.x, v1.y);
+      this.tutorialHighlightGfx.lineTo(v2.x, v2.y);
+      this.tutorialHighlightGfx.closePath();
+      this.tutorialHighlightGfx.strokePath();
+    }
+
+    // 3. Highlight the gap about to be enclosed in Step 3
+    if (step.enclosedCell) {
+      const cols = this.gridManager.cols;
+      const rows = this.gridManager.rows;
+      const u = ((step.enclosedCell.x + this.panOffset.u) % cols + cols) % cols;
+      const v = ((step.enclosedCell.y + this.panOffset.v) % rows + rows) % rows;
+      const [e0, e1, e2] = this.getProjectedTriangleVertices(u, v, 3);
+
+      this.tutorialHighlightGfx.lineStyle(2, 0xFFFF00, 0.85);
+      this.tutorialHighlightGfx.beginPath();
+      this.tutorialHighlightGfx.moveTo(e0.x, e0.y);
+      this.tutorialHighlightGfx.lineTo(e1.x, e1.y);
+      this.tutorialHighlightGfx.lineTo(e2.x, e2.y);
+      this.tutorialHighlightGfx.closePath();
+      this.tutorialHighlightGfx.strokePath();
+    }
+  }
+
+  tutorialCanInteract(action) {
+    const step = this.tutorialSteps?.[this.tutorialStep];
+    if (!step) return false;
+    if (step.type === 'info' || step.type === 'done') return false;
+    if (step.type === 'rotate') return action === 'rotate';
+    if (step.type === 'place1' || step.type === 'place2') {
+      return action === 'rotate' || action === 'grid' || action === 'place';
+    }
+    return false;
+  }
+
+  onTutorialRotate() {
+    const step = this.tutorialSteps?.[this.tutorialStep];
+    if (!step) return;
+    if (step.type === 'rotate') {
+      this.tutorialRotateCount++;
+      this.tutorialPromptText.setText(`ROTATIONS: ${Math.min(this.tutorialRotateCount, 4)} / 4`);
+      if (this.tutorialRotateCount >= 4) {
+        this.time.delayedCall(280, () => this.setTutorialStep(this.tutorialStep + 1));
+      }
+    }
+  }
+
+  handleTutorialPlace() {
+    const step = this.tutorialSteps?.[this.tutorialStep];
+    if (!step || (step.type !== 'place1' && step.type !== 'place2')) return;
+
+    const target = step.targetCell;
+    if (
+      this.cursorPos.x !== target.x ||
+      this.cursorPos.y !== target.y ||
+      this.gridManager.selectedRotation !== target.rot
+    ) {
+      // Snap cursor & orientation to the highlighted target so the user never gets stuck
+      this.cursorPos.x = target.x;
+      this.cursorPos.y = target.y;
+      this.gridManager.selectedRotation = target.rot;
+      this.updateCursor();
+      this.tutorialPromptText.setText('ALIGNED TO TARGET — TAP PLACE AGAIN!');
+      return;
+    }
+
+    this.gridManager.currentPlayer = 1;
+    const placed = this.gridManager.placeTriangle(target.x, target.y, target.rot, 1);
+    if (placed) {
+      const enclosed = this.gridManager.claimEnclosedTriangles();
+      if (enclosed > 0) {
+        this.gridManager.extraTurns += Math.floor((1 + enclosed) / 2);
+      }
+      this.redrawTriangles();
+      this.updateScore();
+      this.setTutorialStep(this.tutorialStep + 1);
+    }
   }
 }
 
@@ -2423,8 +2816,11 @@ class MenuScene extends Phaser.Scene {
 
       // Allow tapping the hologram to trigger an instant glitch + territory wave
       this.input.on('pointerdown', (pointer) => {
-          const dist = Math.hypot(pointer.x - 300, pointer.y - 236);
-          if (dist <= 78) {
+          const isDebug = typeof DEBUG_MODE !== 'undefined' && DEBUG_MODE;
+          const stageCy = isDebug ? 225 : 262;
+          const hitRadius = isDebug ? 78 : 102;
+          const dist = Math.hypot(pointer.x - 300, pointer.y - stageCy);
+          if (dist <= hitRadius) {
               this.triggerIcosaGlitch(this.time.now, 200);
               this.stepTerritoryAutomaton(true);
           }
@@ -2485,9 +2881,10 @@ class MenuScene extends Phaser.Scene {
       const gfx = this.icosaGraphics;
       gfx.clear();
 
+      const isDebug = typeof DEBUG_MODE !== 'undefined' && DEBUG_MODE;
       const cx = this.cameras.main.width / 2;
-      const cy = 236;
-      const radius = 64;
+      const cy = isDebug ? 225 : 262;
+      const radius = isDebug ? 62 : 84;
       const isGlitching = this.glitchState.active;
 
       if (this.titleText && isGlitching) {
@@ -2719,39 +3116,92 @@ class MenuScene extends Phaser.Scene {
   renderMainMenu() {
       this.clearMenu();
       const centerX = this.cameras.main.width / 2;
+      const isDebug = typeof DEBUG_MODE !== 'undefined' && DEBUG_MODE;
 
       this.renderHeader('TRIANTICA', 'Toroidal Manifold Strategy // T²');
 
-      // Primary Game Modes (positioned below the (300, 236) D20 Hologram stage)
-      this.createStyledButton(
-          centerX,
-          365,
-          'Human vs AI',
-          0x071A2E,
-          0x0D2E4D,
-          0x00F0FF,
-          () => this.renderDifficultyMenu(),
-          360,
-          54,
-          '21px'
-      );
+      if (!isDebug) {
+          // Standard release layout: larger D20 hologram at y=262, 3 primary buttons placed lower
+          this.createStyledButton(
+              centerX,
+              436,
+              'Human vs AI',
+              0x071A2E,
+              0x0D2E4D,
+              0x00F0FF,
+              () => this.renderDifficultyMenu(),
+              360,
+              54,
+              '21px'
+          );
 
-      this.createStyledButton(
-          centerX,
-          438,
-          'Human vs Human',
-          0x1A0714,
-          0x2E0B22,
-          0xFF2A54,
-          () => this.scene.start('Game', { mode: 'HvH' }),
-          360,
-          54,
-          '21px'
-      );
+          this.createStyledButton(
+              centerX,
+              510,
+              'Human vs Human',
+              0x1A0714,
+              0x2E0B22,
+              0xFF2A54,
+              () => this.scene.start('Game', { mode: 'HvH' }),
+              360,
+              54,
+              '21px'
+          );
 
-      // Debug / Benchmark Modes (gated by DEBUG_MODE)
-      if (typeof DEBUG_MODE !== 'undefined' && DEBUG_MODE) {
-          const debugLabel = this.add.text(centerX, 505, '— AI BENCHMARK TELEMETRY (DEBUG) —', {
+          this.createStyledButton(
+              centerX,
+              584,
+              'How to Play',
+              0x061E1C,
+              0x0B3330,
+              0x00FFCC,
+              () => this.scene.start('Game', { mode: 'Tutorial' }),
+              360,
+              54,
+              '21px'
+          );
+      } else {
+          // Compact debug layout to accommodate benchmark buttons below
+          this.createStyledButton(
+              centerX,
+              342,
+              'Human vs AI',
+              0x071A2E,
+              0x0D2E4D,
+              0x00F0FF,
+              () => this.renderDifficultyMenu(),
+              360,
+              48,
+              '19px'
+          );
+
+          this.createStyledButton(
+              centerX,
+              402,
+              'Human vs Human',
+              0x1A0714,
+              0x2E0B22,
+              0xFF2A54,
+              () => this.scene.start('Game', { mode: 'HvH' }),
+              360,
+              48,
+              '19px'
+          );
+
+          this.createStyledButton(
+              centerX,
+              462,
+              'How to Play',
+              0x061E1C,
+              0x0B3330,
+              0x00FFCC,
+              () => this.scene.start('Game', { mode: 'Tutorial' }),
+              360,
+              48,
+              '19px'
+          );
+
+          const debugLabel = this.add.text(centerX, 518, '— AI BENCHMARK TELEMETRY (DEBUG) —', {
               fontFamily: '"Share Tech Mono", monospace',
               fontSize: '14px',
               color: '#5CE1E6',
@@ -2761,40 +3211,40 @@ class MenuScene extends Phaser.Scene {
 
           this.createStyledButton(
               centerX,
-              555,
+              564,
               'AI vs Random',
               0x081322,
               0x10243E,
               0x0D4054,
               () => this.scene.start('Game', { mode: 'AvR', difficulty: 'hard' }),
               330,
-              44,
+              42,
               '17px'
           );
 
           this.createStyledButton(
               centerX,
-              612,
+              618,
               'AI vs Heuristic',
               0x081322,
               0x10243E,
               0x0D4054,
               () => this.scene.start('Game', { mode: 'AvH', difficulty: 'hard' }),
               330,
-              44,
+              42,
               '17px'
           );
 
           this.createStyledButton(
               centerX,
-              669,
+              672,
               'AI vs AI (Network)',
               0x081322,
               0x10243E,
               0x0D4054,
               () => this.scene.start('Game', { mode: 'AvA', difficulty: 'hard' }),
               330,
-              44,
+              42,
               '17px'
           );
       }
@@ -2808,7 +3258,7 @@ class MenuScene extends Phaser.Scene {
 
       this.createStyledButton(
           centerX,
-          360,
+          412,
           'Easy // Casual',
           0x061E1C,
           0x0B3330,
@@ -2821,7 +3271,7 @@ class MenuScene extends Phaser.Scene {
 
       this.createStyledButton(
           centerX,
-          432,
+          482,
           'Medium // Raw ConvNet',
           0x071A2E,
           0x0D2E4D,
@@ -2834,7 +3284,7 @@ class MenuScene extends Phaser.Scene {
 
       this.createStyledButton(
           centerX,
-          504,
+          552,
           'Hard // Master + Safety',
           0x1F0610,
           0x360A1C,
@@ -2847,7 +3297,7 @@ class MenuScene extends Phaser.Scene {
 
       this.createStyledButton(
           centerX,
-          595,
+          636,
           '◀ Back',
           0x071120,
           0x0E223D,
@@ -2867,7 +3317,7 @@ class MenuScene extends Phaser.Scene {
 
       this.createStyledButton(
           centerX,
-          370,
+          422,
           'P1 [Ares Red] // 1st Move',
           0x220611,
           0x380A1D,
@@ -2884,7 +3334,7 @@ class MenuScene extends Phaser.Scene {
 
       this.createStyledButton(
           centerX,
-          450,
+          500,
           'P2 [Tron Blue] // 2nd Move',
           0x061830,
           0x0B2952,
@@ -2901,7 +3351,7 @@ class MenuScene extends Phaser.Scene {
 
       this.createStyledButton(
           centerX,
-          560,
+          598,
           '◀ Back to Difficulty',
           0x071120,
           0x0E223D,
