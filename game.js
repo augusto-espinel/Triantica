@@ -2186,10 +2186,6 @@ triggerAIMove() {
 
         if (!wasPan && this.isWithinGrid(pointer.x, pointer.y)) {
           if (this.players[this.gridManager.currentPlayer]?.type === 'human') {
-            if (this.tutorialActive && !this.tutorialCanInteract('grid')) {
-              this.updateCursor();
-              return;
-            }
             const logical = this.screenToLogicalCell(pointer.x, pointer.y);
             if (logical.gx === this.cursorPos.x && logical.gy === this.cursorPos.y) {
               if (!this.tutorialActive || this.tutorialCanInteract('rotate')) {
@@ -2197,7 +2193,7 @@ triggerAIMove() {
                 this.gridManager.rotateTriangle(1);
                 if (this.tutorialActive) this.onTutorialRotate();
               }
-            } else {
+            } else if (!this.tutorialActive || this.tutorialCanInteract('grid')) {
               this.cursorPos.x = logical.gx;
               this.cursorPos.y = logical.gy;
             }
@@ -2416,7 +2412,7 @@ triggerAIMove() {
       {
         type: 'rotate',
         title: 'STEP 1: ROTATE 4 TIMES',
-        body: 'Tap the ↻ button (or press R) 4 times to cycle through all 4 triangle orientations.',
+        body: 'Tap the triangle on the board or the ↻ button (or press R) 4 times to cycle through all 4 orientations.',
         prompt: 'ROTATIONS: 0 / 4',
         highlights: [
           { x: 76, y: 738, w: 88, h: 68, color: 0x00FFCC }
@@ -2425,8 +2421,8 @@ triggerAIMove() {
       {
         type: 'place1',
         title: 'STEP 2: LEGAL PLACEMENT',
-        body: 'Every move must touch an existing triangle\'s corner.\nSelect the highlighted cell and tap PLACE TRIANGLE.',
-        prompt: 'SELECT TARGET CELL & TAP PLACE',
+        body: 'Every move must touch an existing triangle\'s corner.\nAlign with the green target and tap PLACE TRIANGLE.',
+        prompt: 'ALIGN WITH TARGET & TAP PLACE',
         targetCell: { x: 4, y: 5, rot: 2 },
         highlights: [
           { x: 300, y: 738, w: 260, h: 68, color: 0x00FFCC }
@@ -2435,9 +2431,9 @@ triggerAIMove() {
       {
         type: 'place2',
         title: 'STEP 3: CLOSE A GAP (EXTRA TURN!)',
-        body: 'Look at the empty slot in the center cell—2 of its 3 sides are already blocked! Place the highlighted piece to seal the 3rd side.',
+        body: 'Look at the yellow-outlined gap in the center cell—2 of its 3 sides are blocked! Place the green target piece above it to seal the 3rd side.',
         prompt: 'CLOSE THE GAP TO CLAIM IT!',
-        targetCell: { x: 5, y: 6, rot: 0 },
+        targetCell: { x: 5, y: 4, rot: 1 },
         enclosedCell: { x: 5, y: 5 },
         highlights: [
           { x: 300, y: 738, w: 260, h: 68, color: 0x00FFCC }
@@ -2462,14 +2458,14 @@ triggerAIMove() {
     this.tutorialHighlightGfx = this.add.graphics().setScrollFactor(0).setDepth(210);
 
     const cx = this.cameras.main.width / 2;
-    const cardY = 215;
-    const cardW = 536;
-    const cardH = 148;
+    const cardY = 200;
+    const cardW = 556;
+    const cardH = 176;
     this.tutorialCardBounds = { cx, cy: cardY, w: cardW, h: cardH };
 
     this.tutorialCardGfx = this.add.graphics().setScrollFactor(0).setDepth(220);
 
-    this.tutorialTitleText = this.add.text(cx - cardW / 2 + 20, cardY - cardH / 2 + 16, '', {
+    this.tutorialTitleText = this.add.text(cx - cardW / 2 + 20, cardY - cardH / 2 + 15, '', {
       fontFamily: '"Orbitron", "Share Tech Mono", Arial',
       fontSize: '18px',
       fontStyle: 'bold',
@@ -2477,10 +2473,10 @@ triggerAIMove() {
     }).setOrigin(0, 0).setScrollFactor(0).setDepth(221);
 
     // Always-visible Exit Instructions button in top-right of the tutorial card
-    const exitW = 106;
-    const exitH = 30;
+    const exitW = 108;
+    const exitH = 32;
     const exitX = cx + cardW / 2 - exitW / 2 - 14;
-    const exitY = cardY - cardH / 2 + 24;
+    const exitY = cardY - cardH / 2 + 26;
 
     this.tutorialExitGfx = this.add.graphics().setScrollFactor(0).setDepth(222);
     const drawExitBtn = (hover = false) => {
@@ -2502,7 +2498,7 @@ triggerAIMove() {
 
     this.tutorialExitText = this.add.text(exitX, exitY, '✕ EXIT', {
       fontFamily: '"Share Tech Mono", monospace',
-      fontSize: '14px',
+      fontSize: '15px',
       fontStyle: 'bold',
       color: '#FF4D6D'
     }).setOrigin(0.5).setScrollFactor(0).setDepth(223);
@@ -2518,18 +2514,18 @@ triggerAIMove() {
       this.scene.start('Menu');
     });
 
-    this.tutorialBodyText = this.add.text(cx, cardY + 2, '', {
+    this.tutorialBodyText = this.add.text(cx, cardY + 4, '', {
       fontFamily: '"Share Tech Mono", monospace',
-      fontSize: '15px',
+      fontSize: '18px',
       color: '#E6F9FF',
       align: 'center',
       wordWrap: { width: cardW - 36 },
-      lineSpacing: 4
+      lineSpacing: 5
     }).setOrigin(0.5).setScrollFactor(0).setDepth(221);
 
-    this.tutorialPromptText = this.add.text(cx, cardY + cardH / 2 - 18, '', {
+    this.tutorialPromptText = this.add.text(cx, cardY + cardH / 2 - 20, '', {
       fontFamily: '"Orbitron", "Share Tech Mono", Arial',
-      fontSize: '14px',
+      fontSize: '16px',
       fontStyle: 'bold',
       color: '#00F0FF',
       align: 'center'
@@ -2619,15 +2615,24 @@ triggerAIMove() {
       }
     }
 
-    // 2. Highlight target board cell + target triangle silhouette if applicable
+    // 2. Highlight target board cell + expanded, semi-transparent green target triangle socket
     if (step.targetCell) {
       const cols = this.gridManager.cols;
       const rows = this.gridManager.rows;
       const u = ((step.targetCell.x + this.panOffset.u) % cols + cols) % cols;
       const v = ((step.targetCell.y + this.panOffset.v) % rows + rows) % rows;
-      const [v0, v1, v2] = this.getProjectedTriangleVertices(u, v, step.targetCell.rot);
+      const [raw0, raw1, raw2] = this.getProjectedTriangleVertices(u, v, step.targetCell.rot);
 
-      this.tutorialHighlightGfx.fillStyle(0x00FFCC, 0.22);
+      // Expand target triangle ~15% outward from its centroid so the red preview triangle sits cleanly inside
+      const midX = (raw0.x + raw1.x + raw2.x) / 3;
+      const midY = (raw0.y + raw1.y + raw2.y) / 3;
+      const expand = 1.15;
+      const v0 = { x: midX + (raw0.x - midX) * expand, y: midY + (raw0.y - midY) * expand };
+      const v1 = { x: midX + (raw1.x - midX) * expand, y: midY + (raw1.y - midY) * expand };
+      const v2 = { x: midX + (raw2.x - midX) * expand, y: midY + (raw2.y - midY) * expand };
+
+      // Very light, transparent fill so the red cursor triangle clearly shines through when seated inside
+      this.tutorialHighlightGfx.fillStyle(0x00FFCC, 0.08);
       this.tutorialHighlightGfx.beginPath();
       this.tutorialHighlightGfx.moveTo(v0.x, v0.y);
       this.tutorialHighlightGfx.lineTo(v1.x, v1.y);
@@ -2635,7 +2640,17 @@ triggerAIMove() {
       this.tutorialHighlightGfx.closePath();
       this.tutorialHighlightGfx.fillPath();
 
-      this.tutorialHighlightGfx.lineStyle(3, 0x00FFCC, 0.98);
+      // Soft outer green halo
+      this.tutorialHighlightGfx.lineStyle(6, 0x00FFCC, 0.20);
+      this.tutorialHighlightGfx.beginPath();
+      this.tutorialHighlightGfx.moveTo(v0.x, v0.y);
+      this.tutorialHighlightGfx.lineTo(v1.x, v1.y);
+      this.tutorialHighlightGfx.lineTo(v2.x, v2.y);
+      this.tutorialHighlightGfx.closePath();
+      this.tutorialHighlightGfx.strokePath();
+
+      // Semi-transparent green socket frame outside the red triangle's perimeter
+      this.tutorialHighlightGfx.lineStyle(2.6, 0x00FFCC, 0.72);
       this.tutorialHighlightGfx.beginPath();
       this.tutorialHighlightGfx.moveTo(v0.x, v0.y);
       this.tutorialHighlightGfx.lineTo(v1.x, v1.y);
