@@ -551,10 +551,16 @@ class GameScene extends Phaser.Scene {
       this.gridManager = new GridManager(10, 10);
       this.cursorPos = { x: 0, y: 0 };
       this.isDragging = false;
+      this.hasMovedBeyondThreshold = false;
       this.lastPinchDistance = 0;
       this.dragStart = { x: 0, y: 0 };
+      this.panStart = { u: 0, v: 0 };
       this.cursorStart = { x: 0, y: 0 };
       this.gridBounds = { x: 0, y: 0, width: 0, height: 0 };
+      // Step 1 View-Projection state (100% isolated from GridManager)
+      this.panOffset = { u: 0, v: 0 }; // Continuous toroidal pan offset in cell units [0, 10)
+      this.isTiltedView = true; // Default to tilted 2.5D tabletop slab
+      this.showGhostRing = false; // Default to Mode A (Strict Zero-Duplication 10x10 Stencil Slab)
       this.gameMode = 'HvH'; // Default, or set based on selection ('HvH', 'HvAI', 'AvR', 'AvH', 'AvA')
       this.aiDifficulty = 'medium'; // 'easy' | 'medium' | 'hard'
       this.humanPlayerNumber = 1; // 1 (Red - First Move) | 2 (Blue - Second Move)
@@ -576,6 +582,7 @@ class GameScene extends Phaser.Scene {
     this.players = { 1: { type: 'human' }, 2: { type: 'human' } };
     this.aiInstances = { 1: null, 2: null };
     this.totalMovesPlayed = 0;
+    this.panOffset = { u: 0, v: 0 };
     this.gridManager.reset();
     this.gridManager.winRounds = { 1: 0, 2: 0 };
   }
@@ -656,24 +663,20 @@ class GameScene extends Phaser.Scene {
     // --- Rest of your create method ---
     console.log("Finished AI initialization. Setting up visuals and input...");
 
+    this.calculateGridBounds();
+    this.setupBoardLayers();
     this.drawGrid();
+    this.redrawTriangles();
     this.setupTouchControls();
     this.setupInput();
     this.updateCursor();
     this.createScoreboard();
-    this.calculateGridBounds();
-
-    // Initialize cursor with high depth (top layer)
-    this.cursorTriangle.setDepth(100); // Higher depth = rendered last
-    
-    // Initialize triangle graphics with lower depth
-    this.triangleGraphics = this.add.graphics();
-    this.triangleGraphics.setDepth(0); // Lower depth = rendered first
 
     this.createPlaceButton();
     this.createRotateButton(); 
     this.createForfeitButton();
     this.createMenuReturnButton();
+    this.createViewControlsHUD();
     this.gameOverText = null;
 
     // Make sure human input is enabled/disabled correctly at the start
@@ -951,35 +954,332 @@ class GameScene extends Phaser.Scene {
     this.gridBounds.height = this.gridManager.rows * this.cellSize;
   }
 
+  // =========================================================================
+  // STEP 1: VIEW-PROJECTION & DRAGGABLE TOROIDAL PLANE (100% Core Isolation)
+  // =========================================================================
+
+  /**
+   * Forward Projection: maps continuous board space (u, v) in [0, 10] x [0, 10]
+   * to screen pixel coordinates (sx, sy) with optional 2.5D tabletop tilt.
+   */
+  boardToScreen(u, v) {
+    const cx = this.gridOffset.x + 5 * this.cellSize;
+    const cy = this.gridOffset.y + 5 * this.cellSize;
+    const du = u - 5;
+    const dv = v - 5;
+
+    if (!this.isTiltedView) {
+      return {
+        x: cx + du * this.cellSize,
+        y: cy + dv * this.cellSize
+      };
+    }
+
+    // 2.5D Tabletop Isometric Skew & Pitch Compression (fits comfortably in 600px width)
+    const scaleX = 0.86;
+    const skewX = -0.22;
+    const skewY = 0.08;
+    const scaleY = 0.76;
+
+    return {
+      x: cx + (du * scaleX + dv * skewX) * this.cellSize,
+      y: cy + (du * skewY + dv * scaleY) * this.cellSize
+    };
+  }
+
+  /**
+   * Inverse Projection: maps screen pixel coordinates (sx, sy) back to
+   * continuous board coordinates (u, v).
+   */
+  screenToBoard(sx, sy) {
+    const cx = this.gridOffset.x + 5 * this.cellSize;
+    const cy = this.gridOffset.y + 5 * this.cellSize;
+    const dx = (sx - cx) / this.cellSize;
+    const dy = (sy - cy) / this.cellSize;
+
+    if (!this.isTiltedView) {
+      return { u: dx + 5, v: dy + 5 };
+    }
+
+    const scaleX = 0.86;
+    const skewX = -0.22;
+    const skewY = 0.08;
+    const scaleY = 0.76;
+    const det = scaleX * scaleY - skewX * skewY;
+
+    const du = (dx * scaleY - dy * skewX) / det;
+    const dv = (-dx * skewY + dy * scaleX) / det;
+
+    return { u: du + 5, v: dv + 5 };
+  }
+
+  /**
+   * Initializes layered graphics and the exact 10x10 Isometric Stencil Mask
+   * (Mode A: Strict Zero Duplication) and optional Ghost Ring layer (Mode B).
+   */
+  setupBoardLayers() {
+    if (this.slabBgGraphics) this.slabBgGraphics.destroy();
+    if (this.ghostGraphics) this.ghostGraphics.destroy();
+    if (this.triangleGraphics) this.triangleGraphics.destroy();
+    if (this.graphics) this.graphics.destroy();
+    if (this.borderGraphics) this.borderGraphics.destroy();
+    if (this.cursorTriangle) this.cursorTriangle.destroy();
+    if (this.maskShape) this.maskShape.destroy();
+
+    // 1. Tabletop Slab Drop-Shadow & Surface Background
+    this.slabBgGraphics = this.add.graphics().setDepth(1);
+    // 2. Optional 1-Cell Ghost Ring Layer (outside mask, 28% alpha)
+    this.ghostGraphics = this.add.graphics().setDepth(2);
+    // 3. Primary 10x10 Clipped Triangles Layer (Zero Duplication)
+    this.triangleGraphics = this.add.graphics().setDepth(5);
+    // 4. Primary 10x10 Clipped Grid Lines & Origin Seam Guides
+    this.graphics = this.add.graphics().setDepth(10);
+    // 5. Outer Frame Border of the 10x10 Slab
+    this.borderGraphics = this.add.graphics().setDepth(20);
+    // 6. Placement Cursor Preview (Clipped to 10x10 Slab)
+    this.cursorTriangle = this.add.graphics().setDepth(100);
+
+    // Geometry Stencil Mask for exact 10x10 Fundamental Domain
+    this.maskShape = this.make.graphics({ x: 0, y: 0, add: false });
+    this.boardMask = this.maskShape.createGeometryMask();
+    this.triangleGraphics.setMask(this.boardMask);
+    this.graphics.setMask(this.boardMask);
+    this.cursorTriangle.setMask(this.boardMask);
+
+    this.updateBoardMask();
+  }
+
+  /**
+   * Updates the 10x10 stencil mask polygon and tabletop slab frame whenever
+   * the user toggles between 2.5D Tilt and 2D Flat projection.
+   */
+  updateBoardMask() {
+    if (!this.maskShape) return;
+    const p00 = this.boardToScreen(0, 0);
+    const p10 = this.boardToScreen(10, 0);
+    const p11 = this.boardToScreen(10, 10);
+    const p01 = this.boardToScreen(0, 10);
+
+    this.maskShape.clear();
+    this.maskShape.fillStyle(0xffffff, 1);
+    this.maskShape.beginPath();
+    this.maskShape.moveTo(p00.x, p00.y);
+    this.maskShape.lineTo(p10.x, p10.y);
+    this.maskShape.lineTo(p11.x, p11.y);
+    this.maskShape.lineTo(p01.x, p01.y);
+    this.maskShape.closePath();
+    this.maskShape.fillPath();
+
+    // Draw 3D slab thickness / drop-shadow and board surface
+    if (this.slabBgGraphics) {
+      this.slabBgGraphics.clear();
+      if (this.isTiltedView) {
+        const thickness = 12;
+        // Bottom-left / bottom-right 3D slab bevel
+        this.slabBgGraphics.fillStyle(0x262626, 1);
+        this.slabBgGraphics.beginPath();
+        this.slabBgGraphics.moveTo(p01.x, p01.y);
+        this.slabBgGraphics.lineTo(p11.x, p11.y);
+        this.slabBgGraphics.lineTo(p11.x, p11.y + thickness);
+        this.slabBgGraphics.lineTo(p01.x, p01.y + thickness);
+        this.slabBgGraphics.closePath();
+        this.slabBgGraphics.fillPath();
+
+        this.slabBgGraphics.fillStyle(0x1b1b1b, 1);
+        this.slabBgGraphics.beginPath();
+        this.slabBgGraphics.moveTo(p10.x, p10.y);
+        this.slabBgGraphics.lineTo(p11.x, p11.y);
+        this.slabBgGraphics.lineTo(p11.x, p11.y + thickness);
+        this.slabBgGraphics.lineTo(p10.x, p10.y + thickness);
+        this.slabBgGraphics.closePath();
+        this.slabBgGraphics.fillPath();
+      }
+
+      // Main 10x10 board surface fill
+      this.slabBgGraphics.fillStyle(0x808080, 1);
+      this.slabBgGraphics.beginPath();
+      this.slabBgGraphics.moveTo(p00.x, p00.y);
+      this.slabBgGraphics.lineTo(p10.x, p10.y);
+      this.slabBgGraphics.lineTo(p11.x, p11.y);
+      this.slabBgGraphics.lineTo(p01.x, p01.y);
+      this.slabBgGraphics.closePath();
+      this.slabBgGraphics.fillPath();
+    }
+  }
+
+  /**
+   * Top-right HUD controls for Step 1:
+   * - [Tilt / 2D]: Toggles 2.5D tabletop tilt vs classic 2D flat view
+   * - [Ghost]: Toggles Mode A (Strict 10x10 Zero-Duplication) vs Mode B (+1-Cell Ghost Ring)
+   * - [Center]: Smoothly resets panOffset (u, v) back to (0, 0)
+   */
+  createViewControlsHUD() {
+    const createPillBtn = (x, y, width, label, onClick) => {
+      const bg = this.add.graphics().setScrollFactor(0).setDepth(150);
+      const txt = this.add.text(x, y, label, {
+        font: 'bold 13px Arial',
+        fill: '#FFFFFF',
+        align: 'center'
+      }).setOrigin(0.5).setScrollFactor(0).setDepth(151);
+
+      const drawPill = (active, hover = false) => {
+        const fill = active ? (hover ? 0x1E88E5 : 0x1565C0) : (hover ? 0x444444 : 0x2B2B2B);
+        const stroke = active ? 0x90CAF9 : 0x888888;
+        bg.clear()
+          .fillStyle(fill, 1)
+          .fillRoundedRect(x - width / 2, y - 16, width, 32, 7)
+          .lineStyle(2, stroke, 1)
+          .strokeRoundedRect(x - width / 2, y - 16, width, 32, 7);
+      };
+
+      bg.setInteractive(
+        new Phaser.Geom.Rectangle(x - width / 2, y - 16, width, 32),
+        Phaser.Geom.Rectangle.Contains
+      );
+      bg.on('pointerdown', onClick);
+      return { bg, txt, drawPill };
+    };
+
+    // 1. Tilt / 2D Toggle
+    this.tiltBtn = createPillBtn(348, 48, 86, '', () => {
+      this.isTiltedView = !this.isTiltedView;
+      this.refreshViewControlsHUD();
+      this.updateBoardMask();
+      this.refreshBoardView();
+    });
+
+    // 2. Ghost Ring Toggle (Mode A vs Mode B)
+    this.ghostBtn = createPillBtn(444, 48, 92, '', () => {
+      this.showGhostRing = !this.showGhostRing;
+      this.refreshViewControlsHUD();
+      this.refreshBoardView();
+    });
+
+    // 3. Center / Reset Pan Button
+    this.centerBtn = createPillBtn(540, 48, 84, '⌖ Center', () => {
+      this.tweens.add({
+        targets: this.panOffset,
+        u: 0,
+        v: 0,
+        duration: 220,
+        ease: 'Cubic.easeOut',
+        onUpdate: () => this.refreshBoardView(),
+        onComplete: () => {
+          this.panOffset.u = 0;
+          this.panOffset.v = 0;
+          this.refreshBoardView();
+        }
+      });
+    });
+
+    // Subtle helper hint above board
+    this.panHintText = this.add.text(
+      this.cameras.main.width / 2,
+      86,
+      'Drag board to pan torus seam • Tap cell or Place button to play',
+      {
+        font: '13px Arial',
+        fill: '#BBBBBB',
+        align: 'center'
+      }
+    ).setOrigin(0.5).setScrollFactor(0).setDepth(150);
+
+    this.refreshViewControlsHUD();
+  }
+
+  refreshViewControlsHUD() {
+    if (this.tiltBtn) {
+      this.tiltBtn.txt.setText(this.isTiltedView ? '◈ 2.5D Tilt' : '▢ 2D Flat');
+      this.tiltBtn.drawPill(this.isTiltedView);
+    }
+    if (this.ghostBtn) {
+      this.ghostBtn.txt.setText(this.showGhostRing ? '👻 Ghost: ON' : '👻 Ghost: OFF');
+      this.ghostBtn.drawPill(this.showGhostRing);
+    }
+    if (this.centerBtn) {
+      const isPanned = Math.abs(this.panOffset.u) > 0.01 || Math.abs(this.panOffset.v) > 0.01;
+      this.centerBtn.drawPill(isPanned);
+    }
+  }
+
+  refreshBoardView() {
+    this.drawGrid();
+    this.redrawTriangles();
+    this.updateCursor();
+    this.refreshViewControlsHUD();
+  }
+
   drawGrid() {
-    this.graphics = this.add.graphics();
-    // Draw grid lines
-    this.graphics.lineStyle(2, 0x000000);
-    for (let y = 0; y <= this.gridManager.rows; y++) {
-        this.graphics.lineBetween(
-            this.gridOffset.x,
-            this.gridOffset.y + y * this.cellSize,
-            this.gridOffset.x + this.gridManager.cols * this.cellSize,
-            this.gridOffset.y + y * this.cellSize
-        );
+    if (!this.graphics) return;
+    this.graphics.clear();
+
+    const cols = this.gridManager.cols;
+    const rows = this.gridManager.rows;
+    const fracU = ((this.panOffset.u % 1) + 1) % 1;
+    const fracV = ((this.panOffset.v % 1) + 1) % 1;
+    const originU = ((this.panOffset.u % cols) + cols) % cols;
+    const originV = ((this.panOffset.v % rows) + rows) % rows;
+
+    // Draw moving grid lines inside the 10x10 clipped window
+    this.graphics.lineStyle(2, 0x111111, 0.9);
+    for (let i = -1; i <= cols + 1; i++) {
+      const u = i + fracU;
+      const pTop = this.boardToScreen(u, -1);
+      const pBot = this.boardToScreen(u, rows + 1);
+      this.graphics.lineBetween(pTop.x, pTop.y, pBot.x, pBot.y);
     }
-    for (let x = 0; x <= this.gridManager.cols; x++) {
-        this.graphics.lineBetween(
-            this.gridOffset.x + x * this.cellSize,
-            this.gridOffset.y,
-            this.gridOffset.x + x * this.cellSize,
-            this.gridOffset.y + this.gridManager.rows * this.cellSize
-        );
+    for (let j = -1; j <= rows + 1; j++) {
+      const v = j + fracV;
+      const pLeft = this.boardToScreen(-1, v);
+      const pRight = this.boardToScreen(cols + 1, v);
+      this.graphics.lineBetween(pLeft.x, pLeft.y, pRight.x, pRight.y);
     }
-    // Add white border around the entire board (new code)
-    const borderGraphics = this.add.graphics();
-    borderGraphics.lineStyle(4, 0xffffff); // White border, thickness 4px
-    borderGraphics.strokeRect(
-      this.gridOffset.x,
-      this.gridOffset.y,
-      this.gridManager.cols * this.cellSize,
-      this.gridManager.rows * this.cellSize
-    );
+
+    // Subtle cyan seam indicator showing where canonical (0,0) border currently sits when panned
+    if (Math.abs(this.panOffset.u) > 0.01 || Math.abs(this.panOffset.v) > 0.01) {
+      this.graphics.lineStyle(2, 0x00E5FF, 0.45);
+      const sTop = this.boardToScreen(originU, 0);
+      const sBot = this.boardToScreen(originU, rows);
+      this.graphics.lineBetween(sTop.x, sTop.y, sBot.x, sBot.y);
+
+      const sLeft = this.boardToScreen(0, originV);
+      const sRight = this.boardToScreen(cols, originV);
+      this.graphics.lineBetween(sLeft.x, sLeft.y, sRight.x, sRight.y);
+    }
+
+    // Draw crisp white border around the 10x10 slab
+    if (this.borderGraphics) {
+      this.borderGraphics.clear();
+      const p00 = this.boardToScreen(0, 0);
+      const p10 = this.boardToScreen(cols, 0);
+      const p11 = this.boardToScreen(cols, rows);
+      const p01 = this.boardToScreen(0, rows);
+
+      // If Ghost Ring is ON, also draw the outer 12x12 ghost frame
+      if (this.showGhostRing) {
+        const g00 = this.boardToScreen(-1, -1);
+        const g10 = this.boardToScreen(cols + 1, -1);
+        const g11 = this.boardToScreen(cols + 1, rows + 1);
+        const g01 = this.boardToScreen(-1, rows + 1);
+        this.borderGraphics.lineStyle(1.5, 0x888888, 0.45);
+        this.borderGraphics.beginPath();
+        this.borderGraphics.moveTo(g00.x, g00.y);
+        this.borderGraphics.lineTo(g10.x, g10.y);
+        this.borderGraphics.lineTo(g11.x, g11.y);
+        this.borderGraphics.lineTo(g01.x, g01.y);
+        this.borderGraphics.closePath();
+        this.borderGraphics.strokePath();
+      }
+
+      this.borderGraphics.lineStyle(3.5, 0xffffff, 1);
+      this.borderGraphics.beginPath();
+      this.borderGraphics.moveTo(p00.x, p00.y);
+      this.borderGraphics.lineTo(p10.x, p10.y);
+      this.borderGraphics.lineTo(p11.x, p11.y);
+      this.borderGraphics.lineTo(p01.x, p01.y);
+      this.borderGraphics.closePath();
+      this.borderGraphics.strokePath();
+    }
   }
 
   setupInput() {
@@ -1033,58 +1333,67 @@ class GameScene extends Phaser.Scene {
   }
 
   moveCursor(dx, dy) {
-      this.cursorPos.x = Phaser.Math.Clamp(
-          this.cursorPos.x + dx,
-          0,
-          this.gridManager.cols - 1
-      );
-      this.cursorPos.y = Phaser.Math.Clamp(
-          this.cursorPos.y + dy,
-          0,
-          this.gridManager.rows - 1
-      );
+      const cols = this.gridManager.cols;
+      const rows = this.gridManager.rows;
+      this.cursorPos.x = ((this.cursorPos.x + dx) % cols + cols) % cols;
+      this.cursorPos.y = ((this.cursorPos.y + dy) % rows + rows) % rows;
       this.updateCursor();
   }
 
+  /**
+   * Helper: returns the 3 projected screen vertices of a triangle at
+   * continuous board cell (u, v) and rotation r in {0, 1, 2, 3}.
+   */
+  getProjectedTriangleVertices(u, v, rotation) {
+      const p00 = this.boardToScreen(u, v);
+      const p10 = this.boardToScreen(u + 1, v);
+      const p11 = this.boardToScreen(u + 1, v + 1);
+      const p01 = this.boardToScreen(u, v + 1);
+
+      switch (rotation) {
+        case 0: // Top-Left triangle (╱)
+          return [p01, p10, p00];
+        case 1: // Bottom-Left triangle (╲)
+          return [p00, p01, p11];
+        case 2: // Bottom-Right triangle (╱)
+          return [p11, p01, p10];
+        case 3: // Top-Right triangle (╲)
+          return [p10, p00, p11];
+        default:
+          return [p00, p10, p01];
+      }
+  }
+
   updateCursor() {
-      if (!this.cursorTriangle) {
-        this.cursorTriangle = this.add.graphics();
-      }
+      if (!this.cursorTriangle) return;
       this.cursorTriangle.clear();
-      
+      if (this.isDragging && this.hasMovedBeyondThreshold) return;
+
       const playerColor = this.gridManager.currentPlayer === 1 ? 0xff5555 : 0x5555ff;
-      this.cursorTriangle.lineStyle(4, playerColor);
-  
-      const cellX = this.gridOffset.x + this.cursorPos.x * this.cellSize;
-      const cellY = this.gridOffset.y + this.cursorPos.y * this.cellSize;
-  
-      // Draw preview based on rotation
-      this.cursorTriangle.beginPath();
-      switch (this.gridManager.selectedRotation) {
-        case 0: // ╱ bottom-right angle
-          this.cursorTriangle.moveTo(cellX, cellY + this.cellSize);
-          this.cursorTriangle.lineTo(cellX + this.cellSize, cellY);
-          this.cursorTriangle.lineTo(cellX, cellY);
-          break;
-        case 1: // ╲ top-right angle
-          this.cursorTriangle.moveTo(cellX, cellY);
-          this.cursorTriangle.lineTo(cellX, cellY + this.cellSize);
-          this.cursorTriangle.lineTo(cellX + this.cellSize, cellY + this.cellSize);
-          break;
-        case 3: // ╱ top-left angle
-          this.cursorTriangle.moveTo(cellX + this.cellSize, cellY);
-          this.cursorTriangle.lineTo(cellX, cellY);
-          this.cursorTriangle.lineTo(cellX + this.cellSize, cellY + this.cellSize);
-          break;
-        case 2: // ╲ bottom-left angle
-          this.cursorTriangle.moveTo(cellX + this.cellSize, cellY + this.cellSize);
-          this.cursorTriangle.lineTo(cellX, cellY + this.cellSize);
-          this.cursorTriangle.lineTo(cellX + this.cellSize, cellY);
-          break;
+      this.cursorTriangle.lineStyle(4, playerColor, 1);
+
+      const cols = this.gridManager.cols;
+      const rows = this.gridManager.rows;
+      const baseU = ((this.cursorPos.x + this.panOffset.u) % cols + cols) % cols;
+      const baseV = ((this.cursorPos.y + this.panOffset.v) % rows + rows) % rows;
+
+      // Render shifts [-10, 0, +10] inside the 10x10 stencil mask so a cell straddling
+      // the boundary during smooth fractional panning is seamlessly completed on both sides
+      for (let kx = -1; kx <= 1; kx++) {
+        const u = baseU + kx * cols;
+        if (u + 1 < 0 || u > cols) continue;
+        for (let ky = -1; ky <= 1; ky++) {
+          const v = baseV + ky * rows;
+          if (v + 1 < 0 || v > rows) continue;
+          const [v0, v1, v2] = this.getProjectedTriangleVertices(u, v, this.gridManager.selectedRotation);
+          this.cursorTriangle.beginPath();
+          this.cursorTriangle.moveTo(v0.x, v0.y);
+          this.cursorTriangle.lineTo(v1.x, v1.y);
+          this.cursorTriangle.lineTo(v2.x, v2.y);
+          this.cursorTriangle.closePath();
+          this.cursorTriangle.strokePath();
+        }
       }
-      this.cursorTriangle.closePath();
-      this.cursorTriangle.strokePath();
-      this.cursorTriangle.setDepth(100);
   }
 
   placeCurrentTriangle() {
@@ -1227,17 +1536,63 @@ class GameScene extends Phaser.Scene {
   }
 
   redrawTriangles() {
-    if (this.triangleGraphics) this.triangleGraphics.clear();
-    this.triangleGraphics = this.add.graphics();
-    this.triangleGraphics.setDepth(0); // Ensure triangles stay below cursor
+    if (!this.triangleGraphics) return;
+    this.triangleGraphics.clear();
+    if (this.ghostGraphics) this.ghostGraphics.clear();
+
+    const cols = this.gridManager.cols;
+    const rows = this.gridManager.rows;
 
     this.gridManager.grid.forEach((row, y) => {
       row.forEach((cell, x) => {
+        if (!cell.triangles || cell.triangles.length === 0) return;
+
+        const baseU = ((x + this.panOffset.u) % cols + cols) % cols;
+        const baseV = ((y + this.panOffset.v) % rows + rows) % rows;
+
         cell.triangles.forEach(triangle => {
-          this.drawTriangle(x, y, triangle.rotation, triangle.player);
+          const color = triangle.player === 1 ? 0xff2222 : 0x2266ff;
+
+          // 1. Draw inside the 10x10 Stencil Mask (Mode A: Strict Zero Duplication)
+          for (let kx = -1; kx <= 1; kx++) {
+            const u = baseU + kx * cols;
+            if (u + 1 < 0 || u > cols) continue;
+            for (let ky = -1; ky <= 1; ky++) {
+              const v = baseV + ky * rows;
+              if (v + 1 < 0 || v > rows) continue;
+              this.drawProjectedTriangleOnGraphics(this.triangleGraphics, u, v, triangle.rotation, color, 1.0);
+            }
+          }
+
+          // 2. Optional Mode B: Draw 1-Cell Translucent Ghost Ring [-1, 11)
+          if (this.showGhostRing && this.ghostGraphics) {
+            for (let kx = -1; kx <= 1; kx++) {
+              const u = baseU + kx * cols;
+              if (u + 1 < -1 || u > cols + 1) continue;
+              for (let ky = -1; ky <= 1; ky++) {
+                const v = baseV + ky * rows;
+                if (v + 1 < -1 || v > rows + 1) continue;
+                // Only draw copies that extend into the outer 1-cell ghost border
+                if (u < 0 || u + 1 > cols || v < 0 || v + 1 > rows) {
+                  this.drawProjectedTriangleOnGraphics(this.ghostGraphics, u, v, triangle.rotation, color, 0.28);
+                }
+              }
+            }
+          }
         });
       });
     });
+  }
+
+  drawProjectedTriangleOnGraphics(gfx, u, v, rotation, color, alpha = 1.0) {
+    const [v0, v1, v2] = this.getProjectedTriangleVertices(u, v, rotation);
+    gfx.fillStyle(color, alpha);
+    gfx.beginPath();
+    gfx.moveTo(v0.x, v0.y);
+    gfx.lineTo(v1.x, v1.y);
+    gfx.lineTo(v2.x, v2.y);
+    gfx.closePath();
+    gfx.fillPath();
   }
 
   // Add this method to GameScene
@@ -1515,77 +1870,12 @@ triggerAIMove() {
   }
 
   drawTriangle(x, y, rotation, player) {
-      const color = player === 1 ? 0xff0000 : 0x0000ff;
-      this.triangleGraphics.fillStyle(color);
-      
-      const cellX = this.gridOffset.x + x * this.cellSize;
-      const cellY = this.gridOffset.y + y * this.cellSize;
-  
-      this.triangleGraphics.beginPath();
-      switch (rotation) {
-        case 0:
-          this.triangleGraphics.moveTo(cellX, cellY + this.cellSize);
-          this.triangleGraphics.lineTo(cellX + this.cellSize, cellY);
-          this.triangleGraphics.lineTo(cellX, cellY);
-          break;
-        case 1:
-          this.triangleGraphics.moveTo(cellX, cellY);
-          this.triangleGraphics.lineTo(cellX, cellY + this.cellSize);
-          this.triangleGraphics.lineTo(cellX + this.cellSize, cellY + this.cellSize);
-          break;
-        case 3:
-          this.triangleGraphics.moveTo(cellX + this.cellSize, cellY);
-          this.triangleGraphics.lineTo(cellX, cellY);
-          this.triangleGraphics.lineTo(cellX + this.cellSize, cellY + this.cellSize);
-          break;
-        case 2:
-          this.triangleGraphics.moveTo(cellX + this.cellSize, cellY + this.cellSize);
-          this.triangleGraphics.lineTo(cellX, cellY + this.cellSize);
-          this.triangleGraphics.lineTo(cellX + this.cellSize, cellY);
-          break;
-      }
-      this.triangleGraphics.closePath();
-      this.triangleGraphics.fill();
-  }
-
-  drawSlashTriangle(x, y, player) {
-      const color = player === 1 ? 0xff0000 : 0x0000ff;
-      this.triangleGraphics.fillStyle(color);
-      this.triangleGraphics.beginPath();
-      this.triangleGraphics.moveTo(
-          this.gridOffset.x + x * this.cellSize,
-          this.gridOffset.y + (y + 1) * this.cellSize
-      );
-      this.triangleGraphics.lineTo(
-          this.gridOffset.x + (x + 1) * this.cellSize,
-          this.gridOffset.y + y * this.cellSize
-      );
-      this.triangleGraphics.lineTo(
-          this.gridOffset.x + x * this.cellSize,
-          this.gridOffset.y + y * this.cellSize
-      );
-      this.triangleGraphics.closePath();
-      this.triangleGraphics.fill();
-  }
-
-  drawBackslashTriangle(x, y, player) {
-      const color = player === 1 ? 0xff0000 : 0x0000ff;
-      this.triangleGraphics.fillStyle(color);
-      this.triangleGraphics.beginPath();
-      this.triangleGraphics.moveTo(
-          this.gridOffset.x + x * this.cellSize,
-          this.gridOffset.y + y * this.cellSize
-      );
-      this.triangleGraphics.lineTo(
-          this.gridOffset.x + (x + 1) * this.cellSize,
-          this.gridOffset.y + (y + 1) * this.cellSize
-      );
-      this.triangleGraphics.lineTo(
-          this.gridOffset.x + (x + 1) * this.cellSize,
-          this.gridOffset.y + y * this.cellSize
-      );
-      this.triangleGraphics.closePath();
-      this.triangleGraphics.fill();
+      const cols = this.gridManager.cols;
+      const rows = this.gridManager.rows;
+      const u = ((x + this.panOffset.u) % cols + cols) % cols;
+      const v = ((y + this.panOffset.v) % rows + rows) % rows;
+      const color = player === 1 ? 0xff2222 : 0x2266ff;
+      this.drawProjectedTriangleOnGraphics(this.triangleGraphics, u, v, rotation, color, 1.0);
   }
 
   createScoreboard() {
@@ -1617,80 +1907,112 @@ triggerAIMove() {
     ].join('\n'));
   }
 
+  /**
+   * Step 1 Input Disambiguation:
+   * - Drag >= 8px on the board smoothly pans the continuous toroidal offset (u, v)
+   *   like a conveyor belt in 2D without duplicating pieces inside the 10x10 mask.
+   * - Tap / Click (< 8px movement) selects the tapped logical cell (gx, gy) (or
+   *   rotates if tapping the already-selected cell).
+   * - Hovering with a mouse updates the cursor preview in real time.
+   */
   setupTouchControls() {
-    // Single-touch drag to move cursor
+    const DRAG_THRESHOLD_PX = 8;
+
     this.input.on('pointerdown', (pointer) => {
-      // Check if touch started within grid bounds
       if (this.isWithinGrid(pointer.x, pointer.y)) {
         this.isDragging = true;
+        this.hasMovedBeyondThreshold = false;
         this.dragStart.x = pointer.x;
         this.dragStart.y = pointer.y;
-        this.cursorStart.x = this.cursorPos.x;
-        this.cursorStart.y = this.cursorPos.y;
+        this.panStart.u = this.panOffset.u;
+        this.panStart.v = this.panOffset.v;
       }
     });
 
     this.input.on('pointermove', (pointer) => {
       if (this.isDragging) {
-        // Calculate delta movement
-        const deltaX = pointer.x - this.dragStart.x;
-        const deltaY = pointer.y - this.dragStart.y;
-        
-        // Convert delta to grid cells
-        const cellsX = Math.round(deltaX / this.cellSize);
-        const cellsY = Math.round(deltaY / this.cellSize);
-        
-        // Update cursor position relative to start
-        const newX = Phaser.Math.Clamp(
-          this.cursorStart.x + cellsX,
-          0,
-          this.gridManager.cols - 1
-        );
-        const newY = Phaser.Math.Clamp(
-          this.cursorStart.y + cellsY,
-          0,
-          this.gridManager.rows - 1
+        const dist = Phaser.Math.Distance.Between(
+          this.dragStart.x,
+          this.dragStart.y,
+          pointer.x,
+          pointer.y
         );
 
-        if (newX !== this.cursorPos.x || newY !== this.cursorPos.y) {
-          this.cursorPos.x = newX;
-          this.cursorPos.y = newY;
-          this.updateCursor();
+        if (dist >= DRAG_THRESHOLD_PX) {
+          this.hasMovedBeyondThreshold = true;
+          const startBoard = this.screenToBoard(this.dragStart.x, this.dragStart.y);
+          const currBoard = this.screenToBoard(pointer.x, pointer.y);
+          const du = currBoard.u - startBoard.u;
+          const dv = currBoard.v - startBoard.v;
+
+          const cols = this.gridManager.cols;
+          const rows = this.gridManager.rows;
+          this.panOffset.u = ((this.panStart.u + du) % cols + cols) % cols;
+          this.panOffset.v = ((this.panStart.v + dv) % rows + rows) % rows;
+
+          this.refreshBoardView();
+        }
+      } else if (!pointer.isTouch && this.isWithinGrid(pointer.x, pointer.y)) {
+        if (this.players[this.gridManager.currentPlayer]?.type === 'human') {
+          this.updateCursorPosition(pointer);
         }
       }
     });
 
-    this.input.on('pointerup', () => {
-      this.isDragging = false;
-    });
+    this.input.on('pointerup', (pointer) => {
+      if (this.isDragging) {
+        const wasPan = this.hasMovedBeyondThreshold;
+        this.isDragging = false;
+        this.hasMovedBeyondThreshold = false;
 
+        if (!wasPan && this.isWithinGrid(pointer.x, pointer.y)) {
+          if (this.players[this.gridManager.currentPlayer]?.type === 'human') {
+            const logical = this.screenToLogicalCell(pointer.x, pointer.y);
+            if (logical.gx === this.cursorPos.x && logical.gy === this.cursorPos.y) {
+              // Tapping the already-selected cell rotates the preview triangle
+              this.gridManager.rotateTriangle(1);
+            } else {
+              this.cursorPos.x = logical.gx;
+              this.cursorPos.y = logical.gy;
+            }
+            this.updateCursor();
+          }
+        } else {
+          this.updateCursor();
+        }
+      }
+    });
+  }
+
+  screenToLogicalCell(sx, sy) {
+    const { u, v } = this.screenToBoard(sx, sy);
+    const cols = this.gridManager.cols;
+    const rows = this.gridManager.rows;
+    const gx = ((Math.floor(u - this.panOffset.u) % cols) + cols) % cols;
+    const gy = ((Math.floor(v - this.panOffset.v) % rows) + rows) % rows;
+    return { gx, gy, u, v };
   }
 
   updateCursorPosition(pointer) {
-    // Convert to grid coordinates (works for both mouse/touch)
-    const gridX = Phaser.Math.Clamp(
-      Math.floor((pointer.x - this.gridOffset.x) / this.cellSize),
-      0,
-      this.gridManager.cols - 1
-    );
-    const gridY = Phaser.Math.Clamp(
-      Math.floor((pointer.y - this.gridOffset.y) / this.cellSize),
-      0,
-      this.gridManager.rows - 1
-    );
+    if (!this.isWithinGrid(pointer.x, pointer.y)) return;
+    const { gx, gy } = this.screenToLogicalCell(pointer.x, pointer.y);
 
-    if (gridX !== this.cursorPos.x || gridY !== this.cursorPos.y) {
-      this.cursorPos.x = gridX;
-      this.cursorPos.y = gridY;
+    if (gx !== this.cursorPos.x || gy !== this.cursorPos.y) {
+      this.cursorPos.x = gx;
+      this.cursorPos.y = gy;
       this.updateCursor();
     }
   }
 
   isWithinGrid(x, y) {
-    return x >= this.gridBounds.x && 
-            y >= this.gridBounds.y && 
-            x <= this.gridBounds.x + this.gridBounds.width && 
-            y <= this.gridBounds.y + this.gridBounds.height;
+    const { u, v } = this.screenToBoard(x, y);
+    const margin = this.showGhostRing ? 1 : 0;
+    return (
+      u >= -margin &&
+      u <= this.gridManager.cols + margin &&
+      v >= -margin &&
+      v <= this.gridManager.rows + margin
+    );
   }
 }
 
