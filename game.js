@@ -2226,6 +2226,11 @@ triggerAIMove() {
     };
 
     this.input.on('pointerdown', (pointer) => {
+      if (this.isInsideTutorialCard(pointer.x, pointer.y)) {
+        this.isDragging = false;
+        return;
+      }
+
       const twoPointers = getTwoTouchPointers();
       if (twoPointers) {
         startPinchGesture(twoPointers[0], twoPointers[1]);
@@ -2313,11 +2318,9 @@ triggerAIMove() {
 
           this.refreshBoardView();
         }
-      } else if (!pointer.isTouch && this.isWithinGrid(pointer.x, pointer.y)) {
+      } else if (!pointer.isTouch && !this.tutorialActive && this.isWithinGrid(pointer.x, pointer.y)) {
         if (this.players[this.gridManager.currentPlayer]?.type === 'human') {
-          if (!this.tutorialActive || this.tutorialCanInteract('grid')) {
-            this.updateCursorPosition(pointer);
-          }
+          this.updateCursorPosition(pointer);
         }
       }
     });
@@ -2359,18 +2362,26 @@ triggerAIMove() {
   // INTERACTIVE "HOW TO PLAY" TUTORIAL FLOW
   // =========================================================================
 
+  isInsideTutorialCard(x, y) {
+    if (!this.tutorialActive || !this.tutorialCardBounds) return false;
+    const { cx, cy, w, h } = this.tutorialCardBounds;
+    return (
+      x >= cx - w / 2 &&
+      x <= cx + w / 2 &&
+      y >= cy - h / 2 &&
+      y <= cy + h / 2
+    );
+  }
+
   startTutorial() {
     this.tutorialActive = true;
     this.tutorialRotateCount = 0;
+    this.hideTutorialCursor = true;
 
-    // Seed an opening Blue (P2) triangle at (5, 5, rot 1) so the player can learn legal corner contact
     this.gridManager.reset();
-    this.gridManager.placeTriangle(5, 5, 1, 2);
     this.gridManager.currentPlayer = 1;
     this.gridManager.selectedRotation = 0;
     this.cursorPos = { x: 4, y: 5 };
-    this.refreshBoardView();
-    this.updateScore();
 
     this.tutorialSteps = [
       {
