@@ -559,6 +559,13 @@ class GameScene extends Phaser.Scene {
       this.gridBounds = { x: 0, y: 0, width: 0, height: 0 };
       // Step 1 View-Projection state (100% isolated from GridManager)
       this.panOffset = { u: 0, v: 0 }; // Continuous toroidal pan offset in cell units [0, 10)
+      this.zoomLevel = 1.0; // Zoom factor: 1.0 (full 10x10 board) up to 2.5 (4x4 magnified view)
+      this.minZoom = 1.0; // Max zoom out = default full 10x10 grid view
+      this.maxZoom = 2.5; // Max zoom in = 10 / 2.5 = 4x4 grid area
+      this.isPinching = false;
+      this.pinchStartDist = 0;
+      this.pinchStartZoom = 1.0;
+      this.pinchAnchorToroidal = { x: 0, y: 0 };
       this.isTiltedView = true; // Default to tilted 2.5D tabletop slab
       this.showGhostRing = false; // Default to Mode A (Strict Zero-Duplication 10x10 Stencil Slab)
       this.gameMode = 'HvH'; // Default, or set based on selection ('HvH', 'HvAI', 'AvR', 'AvH', 'AvA')
@@ -583,6 +590,10 @@ class GameScene extends Phaser.Scene {
     this.aiInstances = { 1: null, 2: null };
     this.totalMovesPlayed = 0;
     this.panOffset = { u: 0, v: 0 };
+    this.zoomLevel = 1.0;
+    this.isPinching = false;
+    this.isDragging = false;
+    this.hasMovedBeyondThreshold = false;
     this.gridManager.reset();
     this.gridManager.winRounds = { 1: 0, 2: 0 };
   }
@@ -662,6 +673,9 @@ class GameScene extends Phaser.Scene {
 
     // --- Rest of your create method ---
     console.log("Finished AI initialization. Setting up visuals and input...");
+
+    // Ensure at least 2 touch pointers are active for two-finger pinch-to-zoom on mobile
+    this.input.addPointer(2);
 
     this.calculateGridBounds();
     this.setupBoardLayers();
@@ -960,13 +974,19 @@ class GameScene extends Phaser.Scene {
 
   /**
    * Forward Projection: maps continuous board space (u, v) in [0, 10] x [0, 10]
-   * to screen pixel coordinates (sx, sy) with optional 2.5D tabletop tilt.
+   * to screen pixel coordinates (sx, sy) with optional 2.5D tabletop tilt
+   * and optional zoom magnification around the board center (5, 5).
+   *
+   * Note: Pass applyZoom = false when computing fixed viewport frame corners
+   * (such as the 10x10 stencil mask and outer tabletop border) so the slab
+   * frame stays locked on screen while its contents magnify from 10x10 down to 4x4.
    */
-  boardToScreen(u, v) {
+  boardToScreen(u, v, applyZoom = true) {
     const cx = this.gridOffset.x + 5 * this.cellSize;
     const cy = this.gridOffset.y + 5 * this.cellSize;
-    const du = u - 5;
-    const dv = v - 5;
+    const zoom = applyZoom ? (this.zoomLevel || 1.0) : 1.0;
+    const du = (u - 5) * zoom;
+    const dv = (v - 5) * zoom;
 
     if (!this.isTiltedView) {
       return {
@@ -990,15 +1010,17 @@ class GameScene extends Phaser.Scene {
   /**
    * Inverse Projection: maps screen pixel coordinates (sx, sy) back to
    * continuous board coordinates (u, v).
+   * Pass applyZoom = false to query unzoomed viewport window coordinates [0, 10].
    */
-  screenToBoard(sx, sy) {
+  screenToBoard(sx, sy, applyZoom = true) {
     const cx = this.gridOffset.x + 5 * this.cellSize;
     const cy = this.gridOffset.y + 5 * this.cellSize;
+    const zoom = applyZoom ? (this.zoomLevel || 1.0) : 1.0;
     const dx = (sx - cx) / this.cellSize;
     const dy = (sy - cy) / this.cellSize;
 
     if (!this.isTiltedView) {
-      return { u: dx + 5, v: dy + 5 };
+      return { u: dx / zoom + 5, v: dy / zoom + 5 };
     }
 
     const scaleX = 0.86;
@@ -1007,8 +1029,8 @@ class GameScene extends Phaser.Scene {
     const scaleY = 0.76;
     const det = scaleX * scaleY - skewX * skewY;
 
-    const du = (dx * scaleY - dy * skewX) / det;
-    const dv = (-dx * skewY + dy * scaleX) / det;
+    const du = (dx * scaleY - dy * skewX) / (det * zoom);
+    const dv = (-dx * skewY + dy * scaleX) / (det * zoom);
 
     return { u: du + 5, v: dv + 5 };
   }
@@ -1055,10 +1077,10 @@ class GameScene extends Phaser.Scene {
    */
   updateBoardMask() {
     if (!this.maskShape) return;
-    const p00 = this.boardToScreen(0, 0);
-    const p10 = this.boardToScreen(10, 0);
-    const p11 = this.boardToScreen(10, 10);
-    const p01 = this.boardToScreen(0, 10);
+    const p00 = this.boardToScreen(0, 0, false);
+    const p10 = this.boardToScreen(10, 0, false);
+    const p11 = this.boardToScreen(10, 10, false);
+    const p01 = this.boardToScreen(0, 10, false);
 
     this.maskShape.clear();
     this.maskShape.fillStyle(0xffffff, 1);
@@ -1155,18 +1177,27 @@ class GameScene extends Phaser.Scene {
       this.refreshBoardView();
     });
 
-    // 3. Center / Reset Pan Button
-    this.centerBtn = createPillBtn(540, 48, 84, '⌖ Center', () => {
-      this.tweens.add({
-        targets: this.panOffset,
-        u: 0,
-        v: 0,
-        duration: 220,
+    // 3. Center / Reset Pan & Zoom Button
+    this.centerBtn = createPillBtn(540, 48, 88, '⌖ Center', () => {
+      const startU = this.panOffset.u;
+      const startV = this.panOffset.v;
+      const startZ = this.zoomLevel;
+      this.tweens.addCounter({
+        from: 0,
+        to: 1,
+        duration: 240,
         ease: 'Cubic.easeOut',
-        onUpdate: () => this.refreshBoardView(),
+        onUpdate: (tween) => {
+          const t = tween.getValue();
+          this.panOffset.u = startU * (1 - t);
+          this.panOffset.v = startV * (1 - t);
+          this.zoomLevel = startZ + (1.0 - startZ) * t;
+          this.refreshBoardView();
+        },
         onComplete: () => {
           this.panOffset.u = 0;
           this.panOffset.v = 0;
+          this.zoomLevel = 1.0;
           this.refreshBoardView();
         }
       });
@@ -1176,7 +1207,7 @@ class GameScene extends Phaser.Scene {
     this.panHintText = this.add.text(
       this.cameras.main.width / 2,
       86,
-      'Drag board to pan torus seam • Tap cell or Place button to play',
+      'Drag to pan torus • Pinch to zoom (up to 4×4) • Tap cell to select/rotate',
       {
         font: '13px Arial',
         fill: '#BBBBBB',
@@ -1198,7 +1229,9 @@ class GameScene extends Phaser.Scene {
     }
     if (this.centerBtn) {
       const isPanned = Math.abs(this.panOffset.u) > 0.01 || Math.abs(this.panOffset.v) > 0.01;
-      this.centerBtn.drawPill(isPanned);
+      const isZoomed = Math.abs(this.zoomLevel - 1.0) > 0.01;
+      this.centerBtn.txt.setText(isZoomed ? `⌖ ${this.zoomLevel.toFixed(1)}×` : '⌖ Center');
+      this.centerBtn.drawPill(isPanned || isZoomed);
     }
   }
 
@@ -1247,20 +1280,20 @@ class GameScene extends Phaser.Scene {
       this.graphics.lineBetween(sLeft.x, sLeft.y, sRight.x, sRight.y);
     }
 
-    // Draw crisp white border around the 10x10 slab
+    // Draw crisp white border around the fixed 10x10 viewport slab
     if (this.borderGraphics) {
       this.borderGraphics.clear();
-      const p00 = this.boardToScreen(0, 0);
-      const p10 = this.boardToScreen(cols, 0);
-      const p11 = this.boardToScreen(cols, rows);
-      const p01 = this.boardToScreen(0, rows);
+      const p00 = this.boardToScreen(0, 0, false);
+      const p10 = this.boardToScreen(cols, 0, false);
+      const p11 = this.boardToScreen(cols, rows, false);
+      const p01 = this.boardToScreen(0, rows, false);
 
-      // If Ghost Ring is ON, also draw the outer 12x12 ghost frame
-      if (this.showGhostRing) {
-        const g00 = this.boardToScreen(-1, -1);
-        const g10 = this.boardToScreen(cols + 1, -1);
-        const g11 = this.boardToScreen(cols + 1, rows + 1);
-        const g01 = this.boardToScreen(-1, rows + 1);
+      // If Ghost Ring is ON and at 1.0x full-board view, also draw the outer 12x12 ghost frame
+      if (this.showGhostRing && this.zoomLevel <= 1.01) {
+        const g00 = this.boardToScreen(-1, -1, false);
+        const g10 = this.boardToScreen(cols + 1, -1, false);
+        const g11 = this.boardToScreen(cols + 1, rows + 1, false);
+        const g01 = this.boardToScreen(-1, rows + 1, false);
         this.borderGraphics.lineStyle(1.5, 0x888888, 0.45);
         this.borderGraphics.beginPath();
         this.borderGraphics.moveTo(g00.x, g00.y);
@@ -1564,8 +1597,8 @@ class GameScene extends Phaser.Scene {
             }
           }
 
-          // 2. Optional Mode B: Draw 1-Cell Translucent Ghost Ring [-1, 11)
-          if (this.showGhostRing && this.ghostGraphics) {
+          // 2. Optional Mode B: Draw 1-Cell Translucent Ghost Ring [-1, 11) when at 1.0x full-board view
+          if (this.showGhostRing && this.zoomLevel <= 1.01 && this.ghostGraphics) {
             for (let kx = -1; kx <= 1; kx++) {
               const u = baseU + kx * cols;
               if (u + 1 < -1 || u > cols + 1) continue;
@@ -1908,9 +1941,12 @@ triggerAIMove() {
   }
 
   /**
-   * Step 1 Input Disambiguation:
-   * - Drag >= 8px on the board smoothly pans the continuous toroidal offset (u, v)
-   *   like a conveyor belt in 2D without duplicating pieces inside the 10x10 mask.
+   * Step 1 Input Disambiguation + Two-Finger Pinch-to-Zoom:
+   * - Two-Finger Pinch on the board smoothly zooms between 1.0x (full 10x10 board)
+   *   and 2.5x (4x4 grid area), anchoring the logical toroidal point under the
+   *   midpoint of both fingers so you can pinch-zoom and pan simultaneously.
+   * - Single-Finger Drag >= 8px on the board smoothly pans the continuous toroidal
+   *   offset (u, v) like a conveyor belt without duplicating pieces inside the mask.
    * - Tap / Click (< 8px movement) selects the tapped logical cell (gx, gy) (or
    *   rotates if tapping the already-selected cell).
    * - Hovering with a mouse updates the cursor preview in real time.
@@ -1918,9 +1954,42 @@ triggerAIMove() {
   setupTouchControls() {
     const DRAG_THRESHOLD_PX = 8;
 
+    const getTwoTouchPointers = () => {
+      const p1 = this.input.pointer1;
+      const p2 = this.input.pointer2;
+      if (p1 && p2 && p1.isDown && p2.isDown) {
+        return [p1, p2];
+      }
+      return null;
+    };
+
+    const startPinchGesture = (p1, p2) => {
+      const dist = Phaser.Math.Distance.Between(p1.x, p1.y, p2.x, p2.y);
+      if (dist < 10) return;
+      this.isPinching = true;
+      this.isDragging = true;
+      this.hasMovedBeyondThreshold = true; // Prevent accidental tap-place/rotate on release
+      this.pinchStartDist = dist;
+      this.pinchStartZoom = this.zoomLevel;
+
+      const midX = (p1.x + p2.x) * 0.5;
+      const midY = (p1.y + p2.y) * 0.5;
+      const midBoard = this.screenToBoard(midX, midY, true);
+      // Continuous toroidal coordinate under finger midpoint before zoom change
+      this.pinchAnchorToroidal.x = midBoard.u - this.panOffset.u;
+      this.pinchAnchorToroidal.y = midBoard.v - this.panOffset.v;
+    };
+
     this.input.on('pointerdown', (pointer) => {
+      const twoPointers = getTwoTouchPointers();
+      if (twoPointers) {
+        startPinchGesture(twoPointers[0], twoPointers[1]);
+        return;
+      }
+
       if (this.isWithinGrid(pointer.x, pointer.y)) {
         this.isDragging = true;
+        this.isPinching = false;
         this.hasMovedBeyondThreshold = false;
         this.dragStart.x = pointer.x;
         this.dragStart.y = pointer.y;
@@ -1930,6 +1999,51 @@ triggerAIMove() {
     });
 
     this.input.on('pointermove', (pointer) => {
+      const twoPointers = getTwoTouchPointers();
+      if (twoPointers) {
+        if (!this.isPinching) {
+          startPinchGesture(twoPointers[0], twoPointers[1]);
+        } else {
+          const [p1, p2] = twoPointers;
+          const dist = Phaser.Math.Distance.Between(p1.x, p1.y, p2.x, p2.y);
+          if (this.pinchStartDist > 10 && dist > 10) {
+            const rawZoom = this.pinchStartZoom * (dist / this.pinchStartDist);
+            this.zoomLevel = Phaser.Math.Clamp(rawZoom, this.minZoom, this.maxZoom);
+
+            // Recompute board coordinate at current finger midpoint under new zoom
+            const midX = (p1.x + p2.x) * 0.5;
+            const midY = (p1.y + p2.y) * 0.5;
+            const midBoardAfter = this.screenToBoard(midX, midY, true);
+
+            // Adjust panOffset so the exact toroidal point stays locked under the fingers
+            const cols = this.gridManager.cols;
+            const rows = this.gridManager.rows;
+            const newPanU = midBoardAfter.u - this.pinchAnchorToroidal.x;
+            const newPanV = midBoardAfter.v - this.pinchAnchorToroidal.y;
+            this.panOffset.u = ((newPanU % cols) + cols) % cols;
+            this.panOffset.v = ((newPanV % rows) + rows) % rows;
+
+            this.refreshBoardView();
+          }
+        }
+        return;
+      }
+
+      if (this.isPinching) {
+        // Transition cleanly from 2-finger pinch to 1-finger drag if one finger remains down
+        const activePointer = (this.input.pointer1 && this.input.pointer1.isDown)
+          ? this.input.pointer1
+          : ((this.input.pointer2 && this.input.pointer2.isDown) ? this.input.pointer2 : null);
+        this.isPinching = false;
+        if (activePointer) {
+          this.dragStart.x = activePointer.x;
+          this.dragStart.y = activePointer.y;
+          this.panStart.u = this.panOffset.u;
+          this.panStart.v = this.panOffset.v;
+        }
+        return;
+      }
+
       if (this.isDragging) {
         const dist = Phaser.Math.Distance.Between(
           this.dragStart.x,
@@ -1940,8 +2054,8 @@ triggerAIMove() {
 
         if (dist >= DRAG_THRESHOLD_PX) {
           this.hasMovedBeyondThreshold = true;
-          const startBoard = this.screenToBoard(this.dragStart.x, this.dragStart.y);
-          const currBoard = this.screenToBoard(pointer.x, pointer.y);
+          const startBoard = this.screenToBoard(this.dragStart.x, this.dragStart.y, true);
+          const currBoard = this.screenToBoard(pointer.x, pointer.y, true);
           const du = currBoard.u - startBoard.u;
           const dv = currBoard.v - startBoard.v;
 
@@ -1960,12 +2074,29 @@ triggerAIMove() {
     });
 
     this.input.on('pointerup', (pointer) => {
+      const twoPointers = getTwoTouchPointers();
+      if (!twoPointers && this.isPinching) {
+        this.isPinching = false;
+        const remaining = (this.input.pointer1 && this.input.pointer1.isDown)
+          ? this.input.pointer1
+          : ((this.input.pointer2 && this.input.pointer2.isDown) ? this.input.pointer2 : null);
+        if (remaining) {
+          // Keep dragging smoothly with the remaining finger
+          this.dragStart.x = remaining.x;
+          this.dragStart.y = remaining.y;
+          this.panStart.u = this.panOffset.u;
+          this.panStart.v = this.panOffset.v;
+          return;
+        }
+      }
+
       if (this.isDragging) {
-        const wasPan = this.hasMovedBeyondThreshold;
+        const wasPanOrPinch = this.hasMovedBeyondThreshold;
         this.isDragging = false;
+        this.isPinching = false;
         this.hasMovedBeyondThreshold = false;
 
-        if (!wasPan && this.isWithinGrid(pointer.x, pointer.y)) {
+        if (!wasPanOrPinch && this.isWithinGrid(pointer.x, pointer.y)) {
           if (this.players[this.gridManager.currentPlayer]?.type === 'human') {
             const logical = this.screenToLogicalCell(pointer.x, pointer.y);
             if (logical.gx === this.cursorPos.x && logical.gy === this.cursorPos.y) {
@@ -1985,7 +2116,7 @@ triggerAIMove() {
   }
 
   screenToLogicalCell(sx, sy) {
-    const { u, v } = this.screenToBoard(sx, sy);
+    const { u, v } = this.screenToBoard(sx, sy, true);
     const cols = this.gridManager.cols;
     const rows = this.gridManager.rows;
     const gx = ((Math.floor(u - this.panOffset.u) % cols) + cols) % cols;
@@ -2005,8 +2136,9 @@ triggerAIMove() {
   }
 
   isWithinGrid(x, y) {
-    const { u, v } = this.screenToBoard(x, y);
-    const margin = this.showGhostRing ? 1 : 0;
+    // Check against the fixed unzoomed viewport slab window [0, 10] x [0, 10]
+    const { u, v } = this.screenToBoard(x, y, false);
+    const margin = (this.showGhostRing && this.zoomLevel <= 1.01) ? 1 : 0;
     return (
       u >= -margin &&
       u <= this.gridManager.cols + margin &&
@@ -2318,6 +2450,9 @@ const config = {
   width: 600,
   height: 800,
   backgroundColor: '#000000',
+  input: {
+    activePointers: 3
+  },
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH
