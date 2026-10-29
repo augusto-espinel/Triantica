@@ -2323,125 +2323,475 @@ triggerAIMove() {
 
 class MenuScene extends Phaser.Scene {
   constructor() {
-      super({ key: 'Menu' }); // Unique key for this scene
+      super({ key: 'Menu' });
   }
 
   preload() {
-      // No assets needed for this basic menu yet
+      // Procedural Neon Manifold visuals require zero external image assets
   }
 
   create() {
-      this.menuContainer = this.add.container(0, 0);
+      this.bgGraphics = this.add.graphics().setDepth(1);
+      this.drawCyberMatrixBackground();
+
+      this.icosaGraphics = this.add.graphics().setDepth(10);
+      this.menuContainer = this.add.container(0, 0).setDepth(20);
+
+      this.initIcosahedron();
       this.renderMainMenu();
+  }
+
+  drawCyberMatrixBackground() {
+      if (!this.bgGraphics) return;
+      const w = this.cameras.main.width;
+      const h = this.cameras.main.height;
+      this.bgGraphics.clear();
+
+      // Subtle background matrix grid
+      this.bgGraphics.lineStyle(1, 0x092232, 0.45);
+      const step = 40;
+      for (let x = 0; x <= w; x += step) {
+          this.bgGraphics.lineBetween(x, 0, x, h);
+      }
+      for (let y = 0; y <= h; y += step) {
+          this.bgGraphics.lineBetween(0, y, w, y);
+      }
+
+      // Micro-crosshair nodes at every 2nd grid intersection
+      this.bgGraphics.fillStyle(0x00F0FF, 0.16);
+      for (let x = step; x < w; x += step * 2) {
+          for (let y = step; y < h; y += step * 2) {
+              this.bgGraphics.fillRect(x - 1, y - 1, 2, 2);
+          }
+      }
+
+      // Outer HUD frame border
+      this.bgGraphics.lineStyle(1.5, 0x0D4054, 0.7);
+      this.bgGraphics.strokeRect(14, 14, w - 28, h - 28);
+  }
+
+  initIcosahedron() {
+      const phi = (1 + Math.sqrt(5)) / 2;
+      const rawVerts = [
+          [-1,  phi, 0], [ 1,  phi, 0], [-1, -phi, 0], [ 1, -phi, 0],
+          [ 0, -1,  phi], [ 0,  1,  phi], [ 0, -1, -phi], [ 0,  1, -phi],
+          [ phi, 0, -1], [ phi, 0,  1], [-phi, 0, -1], [-phi, 0,  1]
+      ];
+      // Normalize vertices to unit sphere
+      this.icosaVertices = rawVerts.map(([x, y, z]) => {
+          const len = Math.hypot(x, y, z);
+          return { x: x / len, y: y / len, z: z / len };
+      });
+
+      // 20 equilateral triangular faces (CCW winding)
+      this.icosaFaces = [
+          [0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11],
+          [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8],
+          [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9],
+          [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1]
+      ];
+
+      // Build face adjacency list (faces sharing an edge)
+      this.faceNeighbors = this.icosaFaces.map((fA, idxA) => {
+          const neighbors = [];
+          this.icosaFaces.forEach((fB, idxB) => {
+              if (idxA === idxB) return;
+              let shared = 0;
+              for (const v of fA) {
+                  if (fB.includes(v)) shared++;
+              }
+              if (shared === 2) neighbors.push(idxB);
+          });
+          return neighbors;
+      });
+
+      // Initialize face states: mix of P1 Red (1), P2 Blue (2), and Neutral Cyan (0)
+      this.faceOwners = this.icosaFaces.map((_, i) => (i % 3 === 0 ? 1 : (i % 3 === 1 ? 2 : 0)));
+      this.icosaAngles = { x: 0.35, y: 0.0, z: 0.18 };
+      this.nextColorSwapTime = 0;
+      this.glitchState = {
+          active: false,
+          endTime: 0,
+          nextTrigger: 1800,
+          sliceY: 0,
+          offsetX: 0
+      };
+
+      // Allow tapping the hologram to trigger an instant glitch + territory wave
+      this.input.on('pointerdown', (pointer) => {
+          const dist = Math.hypot(pointer.x - 300, pointer.y - 236);
+          if (dist <= 78) {
+              this.triggerIcosaGlitch(this.time.now, 200);
+              this.stepTerritoryAutomaton(true);
+          }
+      });
+  }
+
+  triggerIcosaGlitch(now, duration = 140) {
+      this.glitchState.active = true;
+      this.glitchState.endTime = now + duration;
+      this.glitchState.sliceY = (Math.random() - 0.5) * 1.2;
+      this.glitchState.offsetX = (Math.random() < 0.5 ? -1 : 1) * (7 + Math.random() * 7);
+      this.glitchState.nextTrigger = now + 2200 + Math.random() * 1800;
+  }
+
+  stepTerritoryAutomaton(forceBurst = false) {
+      const steps = forceBurst ? 4 : 1;
+      for (let s = 0; s < steps; s++) {
+          const srcIdx = Math.floor(Math.random() * this.icosaFaces.length);
+          let owner = this.faceOwners[srcIdx];
+          if (owner === 0 || Math.random() < 0.22) {
+              owner = Math.random() < 0.5 ? 1 : 2;
+              this.faceOwners[srcIdx] = owner;
+          }
+          const neighbors = this.faceNeighbors[srcIdx];
+          if (neighbors && neighbors.length > 0) {
+              const targetIdx = neighbors[Math.floor(Math.random() * neighbors.length)];
+              // Occasionally leave a neutral wireframe circuit gap so wireframe structure shines
+              this.faceOwners[targetIdx] = Math.random() < 0.14 ? 0 : owner;
+          }
+      }
+  }
+
+  update(time, delta) {
+      if (!this.icosaGraphics) return;
+
+      const dt = delta * 0.001;
+      this.icosaAngles.y += dt * 0.85;
+      this.icosaAngles.x += dt * 0.42;
+
+      if (time > this.nextColorSwapTime) {
+          this.stepTerritoryAutomaton(false);
+          this.nextColorSwapTime = time + 240;
+      }
+
+      if (!this.glitchState.active && time > this.glitchState.nextTrigger) {
+          this.triggerIcosaGlitch(time, 110 + Math.random() * 70);
+      } else if (this.glitchState.active && time > this.glitchState.endTime) {
+          this.glitchState.active = false;
+          if (this.titleText) {
+              this.titleText.x = this.cameras.main.width / 2;
+          }
+      }
+
+      this.renderIcosahedron(time);
+  }
+
+  renderIcosahedron(time) {
+      const gfx = this.icosaGraphics;
+      gfx.clear();
+
+      const cx = this.cameras.main.width / 2;
+      const cy = 236;
+      const radius = 64;
+      const isGlitching = this.glitchState.active;
+
+      if (this.titleText && isGlitching) {
+          this.titleText.x = cx + (Math.random() - 0.5) * 6;
+      }
+
+      // 1. Ambient outer hologram ring & telemetry ticks
+      gfx.lineStyle(1, 0x0D4054, 0.55);
+      gfx.strokeCircle(cx, cy, radius + 16);
+      gfx.lineStyle(1.5, 0x00F0FF, 0.35);
+      const tickLen = 8;
+      gfx.lineBetween(cx - radius - 22, cy, cx - radius - 22 + tickLen, cy);
+      gfx.lineBetween(cx + radius + 22 - tickLen, cy, cx + radius + 22, cy);
+      gfx.lineBetween(cx, cy - radius - 22, cx, cy - radius - 22 + tickLen);
+      gfx.lineBetween(cx, cy + radius + 22 - tickLen, cx, cy + radius + 22);
+
+      // 2. Rotate & project 12 vertices
+      const cosY = Math.cos(this.icosaAngles.y);
+      const sinY = Math.sin(this.icosaAngles.y);
+      const cosX = Math.cos(this.icosaAngles.x);
+      const sinX = Math.sin(this.icosaAngles.x);
+
+      const projected = this.icosaVertices.map((v) => {
+          // Rotate around Y
+          const x1 = v.x * cosY - v.z * sinY;
+          const z1 = v.z * cosY + v.x * sinY;
+          // Rotate around X
+          const y2 = v.y * cosX - z1 * sinX;
+          const z2 = z1 * cosX + v.y * sinX;
+
+          const perspective = 3.2 / (3.2 - z2 * 0.75);
+          let sx = cx + x1 * radius * perspective;
+          let sy = cy + y2 * radius * perspective;
+
+          if (isGlitching && Math.abs(y2 - this.glitchState.sliceY) < 0.45) {
+              sx += this.glitchState.offsetX;
+          }
+
+          return { x: sx, y: sy, z: z2, rawY: y2 };
+      });
+
+      // 3. Compute face depths and sort back-to-front (Painter's algorithm)
+      const faceList = this.icosaFaces.map((indices, fIdx) => {
+          const v0 = projected[indices[0]];
+          const v1 = projected[indices[1]];
+          const v2 = projected[indices[2]];
+          const avgZ = (v0.z + v1.z + v2.z) / 3;
+          // 2D cross product in screen space to determine front vs back face
+          const cross = (v1.x - v0.x) * (v2.y - v0.y) - (v1.y - v0.y) * (v2.x - v0.x);
+          return { fIdx, v0, v1, v2, avgZ, isFront: cross > 0, owner: this.faceOwners[fIdx] };
+      });
+
+      faceList.sort((a, b) => a.avgZ - b.avgZ);
+
+      // 4. Optional Chromatic Aberration (RGB Split) ghost wireframes during glitch burst
+      if (isGlitching) {
+          const shift = this.glitchState.offsetX * 0.85;
+          for (const f of faceList) {
+              if (!f.isFront) continue;
+              // Red ghost shifted left
+              gfx.lineStyle(1.4, 0xFF2A54, 0.55);
+              gfx.beginPath();
+              gfx.moveTo(f.v0.x - shift, f.v0.y);
+              gfx.lineTo(f.v1.x - shift, f.v1.y);
+              gfx.lineTo(f.v2.x - shift, f.v2.y);
+              gfx.closePath();
+              gfx.strokePath();
+
+              // Cyan ghost shifted right
+              gfx.lineStyle(1.4, 0x00F0FF, 0.55);
+              gfx.beginPath();
+              gfx.moveTo(f.v0.x + shift, f.v0.y);
+              gfx.lineTo(f.v1.x + shift, f.v1.y);
+              gfx.lineTo(f.v2.x + shift, f.v2.y);
+              gfx.closePath();
+              gfx.strokePath();
+          }
+
+          // Horizontal glitch scanline bars across the stage
+          gfx.lineStyle(1.5, 0x00F0FF, 0.65);
+          const scanY = cy + this.glitchState.sliceY * radius;
+          gfx.lineBetween(cx - radius - 34, scanY, cx + radius + 34, scanY);
+          gfx.lineStyle(1, 0xFF2A54, 0.65);
+          gfx.lineBetween(cx - radius - 26, scanY + 5, cx + radius + 26, scanY + 5);
+      }
+
+      // 5. Render back-faces (translucent dark wireframe) then front-faces (Neon Manifold 3-B)
+      for (const f of faceList) {
+          const { v0, v1, v2, isFront, owner } = f;
+          if (!isFront) {
+              const backStroke = owner === 1 ? 0xFF2A54 : (owner === 2 ? 0x00F0FF : 0x0D4054);
+              gfx.lineStyle(1, backStroke, 0.20);
+              gfx.beginPath();
+              gfx.moveTo(v0.x, v0.y);
+              gfx.lineTo(v1.x, v1.y);
+              gfx.lineTo(v2.x, v2.y);
+              gfx.closePath();
+              gfx.strokePath();
+          } else {
+              // Slight centroid inset so individual triangular power cells stand out clearly
+              const fcx = (v0.x + v1.x + v2.x) / 3;
+              const fcy = (v0.y + v1.y + v2.y) / 3;
+              const inset = 0.05;
+              const p0 = { x: v0.x + (fcx - v0.x) * inset, y: v0.y + (fcy - v0.y) * inset };
+              const p1 = { x: v1.x + (fcx - v1.x) * inset, y: v1.y + (fcy - v1.y) * inset };
+              const p2 = { x: v2.x + (fcx - v2.x) * inset, y: v2.y + (fcy - v2.y) * inset };
+
+              if (owner === 1) {
+                  gfx.fillStyle(0xE6193C, 0.78);
+                  gfx.lineStyle(1.8, 0xFF4D6D, 0.98);
+              } else if (owner === 2) {
+                  gfx.fillStyle(0x0066FF, 0.78);
+                  gfx.lineStyle(1.8, 0x00F0FF, 0.98);
+              } else {
+                  gfx.fillStyle(0x071828, 0.55);
+                  gfx.lineStyle(1.5, 0x00F0FF, 0.65);
+              }
+
+              gfx.beginPath();
+              gfx.moveTo(p0.x, p0.y);
+              gfx.lineTo(p1.x, p1.y);
+              gfx.lineTo(p2.x, p2.y);
+              gfx.closePath();
+              gfx.fillPath();
+              gfx.strokePath();
+          }
+      }
   }
 
   clearMenu() {
       if (this.menuContainer) {
           this.menuContainer.removeAll(true);
       } else {
-          this.menuContainer = this.add.container(0, 0);
+          this.menuContainer = this.add.container(0, 0).setDepth(20);
       }
   }
 
-  createStyledButton(x, y, text, baseColor, hoverColor, onClick, width = 340, fontSize = '26px') {
-      const style = {
-          font: `bold ${fontSize} Arial`,
-          fill: '#ffffff',
-          backgroundColor: baseColor,
-          padding: { x: 24, y: 12 },
-          fixedWidth: width,
-          align: 'center'
+  drawChamferedMenuBtn(gfx, x, y, width, height, cut, fillHex, strokeHex, hover = false) {
+      const x0 = x - width / 2;
+      const y0 = y - height / 2;
+      const x1 = x + width / 2;
+      const y1 = y + height / 2;
+
+      const trace = () => {
+          gfx.beginPath();
+          gfx.moveTo(x0 + cut, y0);
+          gfx.lineTo(x1 - cut, y0);
+          gfx.lineTo(x1, y0 + cut);
+          gfx.lineTo(x1, y1 - cut);
+          gfx.lineTo(x1 - cut, y1);
+          gfx.lineTo(x0 + cut, y1);
+          gfx.lineTo(x0, y1 - cut);
+          gfx.lineTo(x0, y0 + cut);
+          gfx.closePath();
       };
-      const btn = this.add.text(x, y, text, style)
+
+      gfx.clear();
+      // Outer neon glow pass
+      gfx.lineStyle(hover ? 7 : 5, strokeHex, hover ? 0.34 : 0.18);
+      trace();
+      gfx.strokePath();
+
+      // Obsidian cyber-glass fill
+      gfx.fillStyle(fillHex, hover ? 0.96 : 0.88);
+      trace();
+      gfx.fillPath();
+
+      // Crisp laser rim
+      gfx.lineStyle(hover ? 2.4 : 1.8, strokeHex, hover ? 1.0 : 0.88);
+      trace();
+      gfx.strokePath();
+  }
+
+  createStyledButton(x, y, text, baseFillHex, hoverFillHex, strokeHex, onClick, width = 350, height = 52, fontSize = '20px') {
+      const bg = this.add.graphics();
+      this.drawChamferedMenuBtn(bg, x, y, width, height, 11, baseFillHex, strokeHex, false);
+
+      const label = this.add.text(x, y, text.toUpperCase(), {
+          fontFamily: '"Orbitron", "Share Tech Mono", Arial',
+          fontSize: fontSize,
+          fontStyle: 'bold',
+          color: '#E6F9FF',
+          align: 'center'
+      }).setOrigin(0.5);
+
+      const hitZone = this.add.zone(x, y, width, height)
           .setOrigin(0.5)
           .setInteractive({ useHandCursor: true });
 
-      btn.on('pointerdown', onClick);
-      btn.on('pointerover', () => btn.setStyle({ ...style, backgroundColor: hoverColor }));
-      btn.on('pointerout', () => btn.setStyle(style));
+      hitZone.on('pointerover', () => {
+          this.drawChamferedMenuBtn(bg, x, y, width, height, 11, hoverFillHex, strokeHex, true);
+          label.setColor('#FFFFFF');
+      });
 
-      this.menuContainer.add(btn);
-      return btn;
+      hitZone.on('pointerout', () => {
+          this.drawChamferedMenuBtn(bg, x, y, width, height, 11, baseFillHex, strokeHex, false);
+          label.setColor('#E6F9FF');
+      });
+
+      hitZone.on('pointerdown', onClick);
+
+      this.menuContainer.add([bg, label, hitZone]);
+      return { bg, label, hitZone };
+  }
+
+  renderHeader(titleStr, subtitleStr) {
+      const centerX = this.cameras.main.width / 2;
+
+      this.titleText = this.add.text(centerX, 78, titleStr, {
+          fontFamily: '"Orbitron", Arial',
+          fontSize: titleStr === 'TRIANTICA' ? '50px' : '32px',
+          fontStyle: '900',
+          color: '#E6F9FF',
+          align: 'center'
+      }).setOrigin(0.5);
+      this.titleText.setShadow(0, 0, '#00F0FF', 14, true, true);
+
+      const subtitle = this.add.text(centerX, 124, subtitleStr.toUpperCase(), {
+          fontFamily: '"Share Tech Mono", monospace',
+          fontSize: '15px',
+          color: '#5CE1E6',
+          letterSpacing: 2,
+          align: 'center'
+      }).setOrigin(0.5);
+
+      this.menuContainer.add([this.titleText, subtitle]);
   }
 
   renderMainMenu() {
       this.clearMenu();
       const centerX = this.cameras.main.width / 2;
-      const centerY = this.cameras.main.height / 2;
 
-      const title = this.add.text(centerX, 130, 'TRIANTICA', {
-          font: 'bold 54px Arial',
-          fill: '#ffffff',
-          align: 'center'
-      }).setOrigin(0.5);
+      this.renderHeader('TRIANTICA', 'Toroidal Manifold Strategy // T²');
 
-      const subtitle = this.add.text(centerX, 185, 'Toroidal Territory Strategy', {
-          font: '20px Arial',
-          fill: '#aaaaaa',
-          align: 'center'
-      }).setOrigin(0.5);
-
-      this.menuContainer.add([title, subtitle]);
-
-      // Primary Game Modes
+      // Primary Game Modes (positioned below the (300, 236) D20 Hologram stage)
       this.createStyledButton(
           centerX,
-          280,
+          365,
           'Human vs AI',
-          '#2E7D32',
-          '#388E3C',
-          () => this.renderDifficultyMenu()
+          0x071A2E,
+          0x0D2E4D,
+          0x00F0FF,
+          () => this.renderDifficultyMenu(),
+          360,
+          54,
+          '21px'
       );
 
       this.createStyledButton(
           centerX,
-          360,
+          438,
           'Human vs Human',
-          '#1565C0',
-          '#1976D2',
-          () => this.scene.start('Game', { mode: 'HvH' })
+          0x1A0714,
+          0x2E0B22,
+          0xFF2A54,
+          () => this.scene.start('Game', { mode: 'HvH' }),
+          360,
+          54,
+          '21px'
       );
 
       // Debug / Benchmark Modes (gated by DEBUG_MODE)
       if (typeof DEBUG_MODE !== 'undefined' && DEBUG_MODE) {
-          const debugLabel = this.add.text(centerX, 445, '— AI Benchmark Modes (DEBUG) —', {
-              font: '16px Arial',
-              fill: '#888888',
+          const debugLabel = this.add.text(centerX, 505, '— AI BENCHMARK TELEMETRY (DEBUG) —', {
+              fontFamily: '"Share Tech Mono", monospace',
+              fontSize: '14px',
+              color: '#5CE1E6',
               align: 'center'
           }).setOrigin(0.5);
           this.menuContainer.add(debugLabel);
 
           this.createStyledButton(
               centerX,
-              500,
+              555,
               'AI vs Random',
-              '#444444',
-              '#666666',
+              0x081322,
+              0x10243E,
+              0x0D4054,
               () => this.scene.start('Game', { mode: 'AvR', difficulty: 'hard' }),
-              320,
-              '22px'
+              330,
+              44,
+              '17px'
           );
 
           this.createStyledButton(
               centerX,
-              570,
+              612,
               'AI vs Heuristic',
-              '#444444',
-              '#666666',
+              0x081322,
+              0x10243E,
+              0x0D4054,
               () => this.scene.start('Game', { mode: 'AvH', difficulty: 'hard' }),
-              320,
-              '22px'
+              330,
+              44,
+              '17px'
           );
 
           this.createStyledButton(
               centerX,
-              640,
+              669,
               'AI vs AI (Network)',
-              '#444444',
-              '#666666',
+              0x081322,
+              0x10243E,
+              0x0D4054,
               () => this.scene.start('Game', { mode: 'AvA', difficulty: 'hard' }),
-              320,
-              '22px'
+              330,
+              44,
+              '17px'
           );
       }
   }
@@ -2450,59 +2800,58 @@ class MenuScene extends Phaser.Scene {
       this.clearMenu();
       const centerX = this.cameras.main.width / 2;
 
-      const title = this.add.text(centerX, 140, 'Select AI Difficulty', {
-          font: 'bold 40px Arial',
-          fill: '#ffffff',
-          align: 'center'
-      }).setOrigin(0.5);
-
-      const subtitle = this.add.text(centerX, 195, 'Choose your opponent strength', {
-          font: '18px Arial',
-          fill: '#aaaaaa',
-          align: 'center'
-      }).setOrigin(0.5);
-
-      this.menuContainer.add([title, subtitle]);
+      this.renderHeader('SELECT DIFFICULTY', 'Choose Neural Opponent Strength');
 
       this.createStyledButton(
           centerX,
-          285,
-          'Easy (Casual)',
-          '#388E3C',
-          '#4CAF50',
+          360,
+          'Easy // Casual',
+          0x061E1C,
+          0x0B3330,
+          0x00FFCC,
           () => this.renderSideSelectionMenu('easy'),
-          360
+          380,
+          52,
+          '19px'
       );
 
       this.createStyledButton(
           centerX,
-          375,
-          'Medium (Raw ConvNet)',
-          '#F57C00',
-          '#FB8C00',
+          432,
+          'Medium // Raw ConvNet',
+          0x071A2E,
+          0x0D2E4D,
+          0x00F0FF,
           () => this.renderSideSelectionMenu('medium'),
-          360
+          380,
+          52,
+          '19px'
       );
 
       this.createStyledButton(
           centerX,
-          465,
-          'Hard (Master + Safety)',
-          '#C62828',
-          '#E53935',
+          504,
+          'Hard // Master + Safety',
+          0x1F0610,
+          0x360A1C,
+          0xFF2A54,
           () => this.renderSideSelectionMenu('hard'),
-          360
+          380,
+          52,
+          '19px'
       );
 
       this.createStyledButton(
           centerX,
-          585,
+          595,
           '◀ Back',
-          '#444444',
-          '#666666',
+          0x071120,
+          0x0E223D,
+          0x5CE1E6,
           () => this.renderMainMenu(),
           220,
-          '22px'
+          44,
+          '16px'
       );
   }
 
@@ -2510,59 +2859,53 @@ class MenuScene extends Phaser.Scene {
       this.clearMenu();
       const centerX = this.cameras.main.width / 2;
 
-      const title = this.add.text(centerX, 140, 'Choose Your Side', {
-          font: 'bold 40px Arial',
-          fill: '#ffffff',
-          align: 'center'
-      }).setOrigin(0.5);
-
-      const subtitle = this.add.text(centerX, 195, `AI Difficulty: ${difficulty.toUpperCase()}`, {
-          font: '20px Arial',
-          fill: '#cccccc',
-          align: 'center'
-      }).setOrigin(0.5);
-
-      this.menuContainer.add([title, subtitle]);
+      this.renderHeader('CHOOSE YOUR SIDE', `AI Profile: ${difficulty.toUpperCase()}`);
 
       this.createStyledButton(
           centerX,
-          300,
-          'Play as P1 (Red - First Move)',
-          '#D32F2F',
-          '#E53935',
+          370,
+          'P1 [Ares Red] // 1st Move',
+          0x220611,
+          0x380A1D,
+          0xFF2A54,
           () => this.scene.start('Game', {
               mode: 'HvAI',
               difficulty: difficulty,
               humanPlayerNumber: 1
           }),
           420,
-          '24px'
+          56,
+          '19px'
       );
 
       this.createStyledButton(
           centerX,
-          400,
-          'Play as P2 (Blue - Second Move)',
-          '#1976D2',
-          '#2196F3',
+          450,
+          'P2 [Tron Blue] // 2nd Move',
+          0x061830,
+          0x0B2952,
+          0x00F0FF,
           () => this.scene.start('Game', {
               mode: 'HvAI',
               difficulty: difficulty,
               humanPlayerNumber: 2
           }),
           420,
-          '24px'
+          56,
+          '19px'
       );
 
       this.createStyledButton(
           centerX,
-          530,
+          560,
           '◀ Back to Difficulty',
-          '#444444',
-          '#666666',
+          0x071120,
+          0x0E223D,
+          0x5CE1E6,
           () => this.renderDifficultyMenu(),
-          260,
-          '22px'
+          270,
+          44,
+          '16px'
       );
   }
 }
@@ -2622,7 +2965,7 @@ const config = {
   parent: 'game-container',
   width: 600,
   height: 800,
-  backgroundColor: '#000000',
+  backgroundColor: '#03060C',
   input: {
     activePointers: 3
   },
