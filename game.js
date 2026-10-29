@@ -2427,8 +2427,8 @@ triggerAIMove() {
       },
       {
         type: 'done',
-        title: 'VIEW & EXIT CONTROLS',
-        body: 'Top-right buttons toggle TILT (3D/2D), WRAP (edge preview), or CENTER the board. Use ◀ MENU or ⚑ to exit anytime.',
+        title: 'VIEW & GAME CONTROLS',
+        body: 'Top-right buttons toggle TILT (3D/2D), WRAP (edge preview), or CENTER the board. ⚑ forfeits the current round; only ◀ MENU exits to the main menu.',
         prompt: 'TAP HERE TO FINISH & RETURN TO MENU ▸',
         view: { u: 0, v: 0, zoom: 1.0 },
         highlights: [
