@@ -563,6 +563,7 @@ class GameScene extends Phaser.Scene {
       this.minZoom = 1.0; // Max zoom out = default full 10x10 grid view
       this.maxZoom = 2.5; // Max zoom in = 10 / 2.5 = 4x4 grid area
       this.isPinching = false;
+      this.gestureHadMultiTouch = false; // Locks out tap-to-move-cursor until all fingers are lifted
       this.pinchStartDist = 0;
       this.pinchStartZoom = 1.0;
       this.pinchAnchorToroidal = { x: 0, y: 0 };
@@ -592,6 +593,7 @@ class GameScene extends Phaser.Scene {
     this.panOffset = { u: 0, v: 0 };
     this.zoomLevel = 1.0;
     this.isPinching = false;
+    this.gestureHadMultiTouch = false;
     this.isDragging = false;
     this.hasMovedBeyondThreshold = false;
     this.gridManager.reset();
@@ -1359,10 +1361,6 @@ class GameScene extends Phaser.Scene {
           this.updateCursor();
         }
       });
-
-      this.input.on('pointerup', () => {
-        this.isDragging = false;
-      });
   }
 
   moveCursor(dx, dy) {
@@ -1963,12 +1961,20 @@ triggerAIMove() {
       return null;
     };
 
+    const hasAnyTouchPointerDown = () => {
+      const p1 = this.input.pointer1;
+      const p2 = this.input.pointer2;
+      const p3 = this.input.pointer3;
+      return Boolean((p1 && p1.isDown) || (p2 && p2.isDown) || (p3 && p3.isDown));
+    };
+
     const startPinchGesture = (p1, p2) => {
       const dist = Phaser.Math.Distance.Between(p1.x, p1.y, p2.x, p2.y);
+      this.gestureHadMultiTouch = true; // Mark entire touch sequence as multi-touch (never trigger tap on release)
+      this.hasMovedBeyondThreshold = true;
+      this.isDragging = true;
       if (dist < 10) return;
       this.isPinching = true;
-      this.isDragging = true;
-      this.hasMovedBeyondThreshold = true; // Prevent accidental tap-place/rotate on release
       this.pinchStartDist = dist;
       this.pinchStartZoom = this.zoomLevel;
 
@@ -1990,6 +1996,7 @@ triggerAIMove() {
       if (this.isWithinGrid(pointer.x, pointer.y)) {
         this.isDragging = true;
         this.isPinching = false;
+        this.gestureHadMultiTouch = false;
         this.hasMovedBeyondThreshold = false;
         this.dragStart.x = pointer.x;
         this.dragStart.y = pointer.y;
@@ -2035,6 +2042,7 @@ triggerAIMove() {
           ? this.input.pointer1
           : ((this.input.pointer2 && this.input.pointer2.isDown) ? this.input.pointer2 : null);
         this.isPinching = false;
+        this.hasMovedBeyondThreshold = true;
         if (activePointer) {
           this.dragStart.x = activePointer.x;
           this.dragStart.y = activePointer.y;
@@ -2074,29 +2082,40 @@ triggerAIMove() {
     });
 
     this.input.on('pointerup', (pointer) => {
-      const twoPointers = getTwoTouchPointers();
-      if (!twoPointers && this.isPinching) {
+      // If any touch finger was part of a multi-touch/pinch gesture, suppress cursor tap
+      // until EVERY finger has been lifted off the screen
+      if (this.gestureHadMultiTouch) {
         this.isPinching = false;
         const remaining = (this.input.pointer1 && this.input.pointer1.isDown)
           ? this.input.pointer1
           : ((this.input.pointer2 && this.input.pointer2.isDown) ? this.input.pointer2 : null);
         if (remaining) {
-          // Keep dragging smoothly with the remaining finger
+          // Allow the remaining finger to continue panning smoothly, but keep tap suppressed
+          this.isDragging = true;
+          this.hasMovedBeyondThreshold = true;
           this.dragStart.x = remaining.x;
           this.dragStart.y = remaining.y;
           this.panStart.u = this.panOffset.u;
           this.panStart.v = this.panOffset.v;
           return;
         }
+        // All fingers are now up after a pinch/zoom gesture: reset state without moving cursor
+        if (!hasAnyTouchPointerDown()) {
+          this.gestureHadMultiTouch = false;
+        }
+        this.isDragging = false;
+        this.hasMovedBeyondThreshold = false;
+        this.updateCursor();
+        return;
       }
 
       if (this.isDragging) {
-        const wasPanOrPinch = this.hasMovedBeyondThreshold;
+        const wasPan = this.hasMovedBeyondThreshold;
         this.isDragging = false;
         this.isPinching = false;
         this.hasMovedBeyondThreshold = false;
 
-        if (!wasPanOrPinch && this.isWithinGrid(pointer.x, pointer.y)) {
+        if (!wasPan && this.isWithinGrid(pointer.x, pointer.y)) {
           if (this.players[this.gridManager.currentPlayer]?.type === 'human') {
             const logical = this.screenToLogicalCell(pointer.x, pointer.y);
             if (logical.gx === this.cursorPos.x && logical.gy === this.cursorPos.y) {
