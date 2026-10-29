@@ -698,13 +698,13 @@ class GameScene extends Phaser.Scene {
     // Make sure human input is enabled/disabled correctly at the start
     this.updateInputStateForCurrentPlayer();
 
-    // Add on-screen debug text for mobile debugging (visible when DEBUG_MODE is enabled)
-    this.debugText = this.add.text(12, 95, 'Debug: Initializing...', {
+    // Add on-screen debug text for mobile debugging (visible only when DEBUG_MODE is enabled)
+    this.debugText = this.add.text(12, 102, 'Debug: Initializing...', {
       font: '12px Arial',
       fill: '#FFFF00',
       backgroundColor: '#000000',
       padding: { x: 5, y: 2 }
-    }).setDepth(200).setScrollFactor(0).setVisible(DEBUG_MODE);
+    }).setDepth(200).setScrollFactor(0).setVisible(Boolean(typeof DEBUG_MODE !== 'undefined' && DEBUG_MODE));
     const modeDetail = this.gameMode === 'HvAI' ? `${this.gameMode} (${this.aiDifficulty.toUpperCase()})` : this.gameMode;
     this.debugText.setText(`Mode: ${modeDetail} | P1: ${this.players[1]?.type || '?'} | P2: ${this.players[2]?.type || '?'}`);
 
@@ -852,10 +852,10 @@ class GameScene extends Phaser.Scene {
   }
 
   createMenuReturnButton() {
-    const btnWidth = 96;
-    const btnHeight = 34;
-    const btnX = 62;
-    const btnY = 48;
+    const btnWidth = 114;
+    const btnHeight = 40;
+    const btnX = 72;
+    const btnY = 40;
 
     this.menuReturnBg = this.add.graphics().setScrollFactor(0).setDepth(150);
     const drawMenuBtn = (hover = false) => {
@@ -865,7 +865,7 @@ class GameScene extends Phaser.Scene {
         btnY,
         btnWidth,
         btnHeight,
-        7,
+        8,
         hover ? 0x0D2238 : 0x071120,
         0.92,
         0x00F0FF,
@@ -877,7 +877,8 @@ class GameScene extends Phaser.Scene {
 
     this.menuReturnText = this.add.text(btnX, btnY, '◀ MENU', {
       fontFamily: '"Share Tech Mono", monospace',
-      fontSize: '15px',
+      fontSize: '18px',
+      fontStyle: 'bold',
       color: '#E6F9FF',
       align: 'center'
     }).setOrigin(0.5).setScrollFactor(0).setDepth(151);
@@ -1177,11 +1178,13 @@ class GameScene extends Phaser.Scene {
    * - [Center]: Smoothly resets panOffset (u, v) back to (0, 0)
    */
   createViewControlsHUD() {
+    const pillHeight = 40;
     const createPillBtn = (x, y, width, label, onClick) => {
       const bg = this.add.graphics().setScrollFactor(0).setDepth(150);
       const txt = this.add.text(x, y, label, {
         fontFamily: '"Share Tech Mono", monospace',
-        fontSize: '13px',
+        fontSize: '16px',
+        fontStyle: 'bold',
         color: '#E6F9FF',
         align: 'center'
       }).setOrigin(0.5).setScrollFactor(0).setDepth(151);
@@ -1189,12 +1192,12 @@ class GameScene extends Phaser.Scene {
       const drawPill = (active, hover = false) => {
         const fill = active ? (hover ? 0x0E2A47 : 0x091D34) : (hover ? 0x0B1829 : 0x060E1A);
         const stroke = active ? 0x00F0FF : 0x1E4E68;
-        this.drawChamferedPanel(bg, x, y, width, 32, 6, fill, 0.92, stroke, active ? 0.95 : 0.7, 1.6);
+        this.drawChamferedPanel(bg, x, y, width, pillHeight, 7, fill, 0.92, stroke, active ? 0.95 : 0.7, 1.8);
         txt.setColor(active ? '#00F0FF' : '#8AB4C9');
       };
 
       bg.setInteractive(
-        new Phaser.Geom.Rectangle(x - width / 2, y - 16, width, 32),
+        new Phaser.Geom.Rectangle(x - width / 2, y - pillHeight / 2, width, pillHeight),
         Phaser.Geom.Rectangle.Contains
       );
       bg.on('pointerdown', onClick);
@@ -1202,7 +1205,7 @@ class GameScene extends Phaser.Scene {
     };
 
     // 1. Tilt / 2D Toggle
-    this.tiltBtn = createPillBtn(348, 48, 86, '', () => {
+    this.tiltBtn = createPillBtn(286, 40, 114, '', () => {
       this.isTiltedView = !this.isTiltedView;
       this.refreshViewControlsHUD();
       this.updateBoardMask();
@@ -1210,14 +1213,14 @@ class GameScene extends Phaser.Scene {
     });
 
     // 2. Ghost Ring Toggle (Mode A vs Mode B)
-    this.ghostBtn = createPillBtn(444, 48, 92, '', () => {
+    this.ghostBtn = createPillBtn(412, 40, 120, '', () => {
       this.showGhostRing = !this.showGhostRing;
       this.refreshViewControlsHUD();
       this.refreshBoardView();
     });
 
     // 3. Center / Reset Pan & Zoom Button
-    this.centerBtn = createPillBtn(540, 48, 88, '⌖ CENTER', () => {
+    this.centerBtn = createPillBtn(532, 40, 104, '⌖ CENTER', () => {
       const startU = this.panOffset.u;
       const startV = this.panOffset.v;
       const startZ = this.zoomLevel;
@@ -1242,14 +1245,15 @@ class GameScene extends Phaser.Scene {
       });
     });
 
-    // Subtle helper hint above board
+    // Helper hint above board (larger for mobile legibility)
     this.panHintText = this.add.text(
       this.cameras.main.width / 2,
-      86,
-      'DRAG: PAN TORUS  •  PINCH: ZOOM (4×4)  •  TAP: SELECT / ROTATE',
+      80,
+      'DRAG: PAN TORUS  •  PINCH: ZOOM (4×4)  •  TAP: SELECT/ROTATE',
       {
         fontFamily: '"Share Tech Mono", monospace',
-        fontSize: '12px',
+        fontSize: '15px',
+        fontStyle: 'bold',
         color: '#5CE1E6',
         align: 'center'
       }
