@@ -1277,11 +1277,11 @@ class GameScene extends Phaser.Scene {
 
   refreshViewControlsHUD() {
     if (this.tiltBtn) {
-      this.tiltBtn.txt.setText(this.isTiltedView ? '◈ 2.5D TILT' : '▢ 2D FLAT');
+      this.tiltBtn.txt.setText(this.isTiltedView ? '◈ TILT: ON' : '▢ TILT: OFF');
       this.tiltBtn.drawPill(this.isTiltedView);
     }
     if (this.ghostBtn) {
-      this.ghostBtn.txt.setText(this.showGhostRing ? '👻 GHOST: ON' : '👻 GHOST: OFF');
+      this.ghostBtn.txt.setText(this.showGhostRing ? '⟳ WRAP: ON' : '⟳ WRAP: OFF');
       this.ghostBtn.drawPill(this.showGhostRing);
     }
     if (this.centerBtn) {
@@ -2376,53 +2376,27 @@ triggerAIMove() {
         type: 'info',
         title: 'WELCOME TO TRIANTICA',
         body: 'Connect your triangles into the largest contiguous territory on a seamless 10×10 wrap-around grid.',
-        prompt: 'TAP HERE TO CONTINUE ▸',
+        prompt: 'TAP HERE TO START EXERCISES ▸',
+        view: { u: -0.5, v: 0.5, zoom: 1.5 },
         highlights: []
       },
       {
-        type: 'info',
-        title: 'SCOREBOARD & TURN HUD',
-        body: 'The bottom panel tracks each player\'s largest connected cluster (▶ marks the active turn).',
-        prompt: 'TAP HERE TO CONTINUE ▸',
-        highlights: [
-          { x: 300, y: 676, w: 444, h: 70, color: 0x00F0FF }
-        ]
-      },
-      {
-        type: 'info',
-        title: 'VIEW & EXIT CONTROLS',
-        body: 'Top-right pills toggle 2.5D Tilt, Ghost Ring, or re-center the view.\nTop-left ◀ MENU or bottom-right ⚑ exits at any time.',
-        prompt: 'TAP HERE TO CONTINUE ▸',
-        highlights: [
-          { x: 410, y: 40, w: 368, h: 52, color: 0x00F0FF },
-          { x: 72, y: 40, w: 126, h: 52, color: 0x00FFCC },
-          { x: 524, y: 738, w: 88, h: 68, color: 0xFF2A54 }
-        ]
-      },
-      {
-        type: 'info',
-        title: 'ROTATE & PLACE BUTTONS',
-        body: 'Use ↻ (or tap the selected cell) to rotate your triangle through 4 orientations, and PLACE TRIANGLE to lock it in.',
-        prompt: 'TAP HERE TO START PRACTICE ▸',
-        highlights: [
-          { x: 76, y: 738, w: 88, h: 68, color: 0x00F0FF },
-          { x: 300, y: 738, w: 260, h: 68, color: 0xFF2A54 }
-        ]
-      },
-      {
         type: 'rotate',
-        title: 'STEP 1: ROTATE 4 TIMES',
-        body: 'Tap the triangle on the board or the ↻ button (or press R) 4 times to cycle through all 4 orientations.',
-        prompt: 'ROTATIONS: 0 / 4',
+        title: 'EXERCISE 1: ROTATE 4 TIMES',
+        body: 'To proceed, you MUST rotate your red triangle 4 times!\nTap the red triangle on the board or the ↻ button 4 times.',
+        prompt: 'ROTATE 4 TIMES TO PROCEED: 0 / 4',
+        view: { u: -0.5, v: 0.5, zoom: 1.5 },
         highlights: [
           { x: 76, y: 738, w: 88, h: 68, color: 0x00FFCC }
         ]
       },
       {
         type: 'place1',
-        title: 'STEP 2: LEGAL PLACEMENT',
-        body: 'Every move must touch an existing triangle\'s corner.\nAlign with the green target and tap PLACE TRIANGLE.',
-        prompt: 'ALIGN WITH TARGET & TAP PLACE',
+        title: 'EXERCISE 2: MOVE & PLACE',
+        body: 'Your red cursor starts up near the card—move it into the green target socket (touching the blue corner) & tap PLACE TRIANGLE.',
+        prompt: 'TAP GREEN TARGET → TAP PLACE TRIANGLE',
+        view: { u: -0.5, v: 0.5, zoom: 1.5 },
+        startCursor: { x: 4, y: 2, rot: 0 },
         targetCell: { x: 4, y: 5, rot: 2 },
         highlights: [
           { x: 300, y: 738, w: 260, h: 68, color: 0x00FFCC }
@@ -2430,9 +2404,11 @@ triggerAIMove() {
       },
       {
         type: 'place2',
-        title: 'STEP 3: CLOSE A GAP (EXTRA TURN!)',
-        body: 'Look at the yellow-outlined gap in the center cell—2 of its 3 sides are blocked! Place the green target piece above it to seal the 3rd side.',
-        prompt: 'CLOSE THE GAP TO CLAIM IT!',
+        title: 'EXERCISE 3: CLOSE A GAP (EXTRA TURN!)',
+        body: 'The yellow-outlined gap has 2 of 3 sides blocked! Move your red cursor into the green target above it & tap PLACE TRIANGLE.',
+        prompt: 'MOVE TO GREEN TARGET → TAP PLACE TRIANGLE',
+        view: { u: -0.5, v: 0.8, zoom: 1.5 },
+        startCursor: { x: 3, y: 2, rot: 3 },
         targetCell: { x: 5, y: 4, rot: 1 },
         enclosedCell: { x: 5, y: 5 },
         highlights: [
@@ -2440,12 +2416,25 @@ triggerAIMove() {
         ]
       },
       {
-        type: 'done',
+        type: 'info',
         title: 'GAP CLOSED → EXTRA TURN!',
-        body: 'You automatically claimed the enclosed triangle AND earned an Extra Turn! Chaining enclosures is the key to victory.',
-        prompt: 'TAP HERE TO RETURN TO MENU ▸',
+        body: 'You automatically claimed the enclosed triangle AND earned an Extra Turn! Look at the bottom Scoreboard (▶ marks the turn).',
+        prompt: 'TAP HERE TO CONTINUE ▸',
+        view: { u: -0.5, v: 0.6, zoom: 1.5 },
         highlights: [
           { x: 300, y: 676, w: 444, h: 70, color: 0x00FFCC }
+        ]
+      },
+      {
+        type: 'done',
+        title: 'VIEW & EXIT CONTROLS',
+        body: 'Top-right buttons toggle TILT (3D/2D), WRAP (edge preview), or CENTER the board. Use ◀ MENU or ⚑ to exit anytime.',
+        prompt: 'TAP HERE TO FINISH & RETURN TO MENU ▸',
+        view: { u: 0, v: 0, zoom: 1.0 },
+        highlights: [
+          { x: 410, y: 40, w: 368, h: 52, color: 0x00F0FF },
+          { x: 72, y: 40, w: 126, h: 52, color: 0x00FFCC },
+          { x: 524, y: 738, w: 88, h: 68, color: 0xFF2A54 }
         ]
       }
     ];
@@ -2565,22 +2554,30 @@ triggerAIMove() {
     if (!step) return;
 
     const { cx, cy, w, h } = this.tutorialCardBounds;
-    const borderColor = (step.type === 'info') ? 0x00F0FF : 0x00FFCC;
+    const borderColor = (step.type === 'info' || step.type === 'done') ? 0x00F0FF : 0x00FFCC;
     this.drawChamferedPanel(this.tutorialCardGfx, cx, cy, w, h, 12, 0x050D1A, 0.94, borderColor, 0.95, 2.2);
 
     this.tutorialTitleText.setText(`[${index + 1}/${this.tutorialSteps.length}] ${step.title}`);
     this.tutorialBodyText.setText(step.body);
     this.tutorialPromptText.setText(step.prompt);
 
+    // Re-center and pre-zoom the board at the start of each exercise/step for optimal visibility
+    if (step.view) {
+      const cols = this.gridManager.cols;
+      const rows = this.gridManager.rows;
+      this.panOffset.u = ((step.view.u % cols) + cols) % cols;
+      this.panOffset.v = ((step.view.v % rows) + rows) % rows;
+      this.zoomLevel = step.view.zoom || 1.0;
+    }
+
     if (step.type === 'rotate') {
       this.tutorialRotateCount = 0;
       this.cursorPos = { x: 4, y: 5 };
       this.gridManager.selectedRotation = 0;
-      this.updateCursor();
     } else if (step.type === 'place1') {
-      this.cursorPos = { x: step.targetCell.x, y: step.targetCell.y };
-      this.gridManager.selectedRotation = step.targetCell.rot;
-      this.updateCursor();
+      // Start the red cursor behind/near the instruction card, away from the green target socket
+      this.cursorPos = { x: step.startCursor.x, y: step.startCursor.y };
+      this.gridManager.selectedRotation = step.startCursor.rot;
     } else if (step.type === 'place2') {
       // Ensure the setup triangle at (6, 5, rot 1) is present so (5, 5, rot 3) is 2/3 enclosed
       const cell65 = this.gridManager.grid[5][6];
@@ -2588,14 +2585,13 @@ triggerAIMove() {
         this.gridManager.placeTriangle(6, 5, 1, 2);
       }
       this.gridManager.currentPlayer = 1;
-      this.cursorPos = { x: step.targetCell.x, y: step.targetCell.y };
-      this.gridManager.selectedRotation = step.targetCell.rot;
-      this.redrawTriangles();
+      // Start the red cursor behind/near the instruction card, away from the green target socket
+      this.cursorPos = { x: step.startCursor.x, y: step.startCursor.y };
+      this.gridManager.selectedRotation = step.startCursor.rot;
       this.updateScore();
-      this.updateCursor();
     }
 
-    this.drawTutorialHighlights();
+    this.refreshBoardView();
   }
 
   drawTutorialHighlights() {
@@ -2693,7 +2689,7 @@ triggerAIMove() {
     if (!step) return;
     if (step.type === 'rotate') {
       this.tutorialRotateCount++;
-      this.tutorialPromptText.setText(`ROTATIONS: ${Math.min(this.tutorialRotateCount, 4)} / 4`);
+      this.tutorialPromptText.setText(`ROTATE 4 TIMES TO PROCEED: ${Math.min(this.tutorialRotateCount, 4)} / 4`);
       if (this.tutorialRotateCount >= 4) {
         this.time.delayedCall(280, () => this.setTutorialStep(this.tutorialStep + 1));
       }
@@ -2705,18 +2701,15 @@ triggerAIMove() {
     if (!step || (step.type !== 'place1' && step.type !== 'place2')) return;
 
     const target = step.targetCell;
-    if (
-      this.cursorPos.x !== target.x ||
-      this.cursorPos.y !== target.y ||
-      this.gridManager.selectedRotation !== target.rot
-    ) {
-      // Snap cursor & orientation to the highlighted target so the user never gets stuck
-      this.cursorPos.x = target.x;
-      this.cursorPos.y = target.y;
+    if (this.cursorPos.x !== target.x || this.cursorPos.y !== target.y) {
+      this.tutorialPromptText.setText('FIRST TAP THE GREEN TARGET ON THE BOARD!');
+      return;
+    }
+
+    if (this.gridManager.selectedRotation !== target.rot) {
+      // Auto-align rotation if the user already moved the cursor into the green target cell
       this.gridManager.selectedRotation = target.rot;
       this.updateCursor();
-      this.tutorialPromptText.setText('ALIGNED TO TARGET — TAP PLACE AGAIN!');
-      return;
     }
 
     this.gridManager.currentPlayer = 1;
