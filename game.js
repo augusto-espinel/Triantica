@@ -2393,10 +2393,10 @@ triggerAIMove() {
       {
         type: 'place1',
         title: 'EXERCISE 2: MOVE & PLACE',
-        body: 'Your red cursor starts up near the card—move it into the green target socket (touching the blue corner) & tap PLACE TRIANGLE.',
+        body: 'Your red cursor is in an illegal position (not touching any corner). Move it into the green target (touching the blue corner) & tap PLACE TRIANGLE.',
         prompt: 'TAP GREEN TARGET → TAP PLACE TRIANGLE',
         view: { u: -0.5, v: 0.5, zoom: 1.5 },
-        startCursor: { x: 4, y: 2, rot: 0 },
+        startCursor: { x: 3, y: 5, rot: 0 },
         targetCell: { x: 4, y: 5, rot: 2 },
         highlights: [
           { x: 300, y: 738, w: 260, h: 68, color: 0x00FFCC }
@@ -2408,7 +2408,7 @@ triggerAIMove() {
         body: 'The yellow-outlined gap has 2 of 3 sides blocked! Move your red cursor into the green target above it & tap PLACE TRIANGLE.',
         prompt: 'MOVE TO GREEN TARGET → TAP PLACE TRIANGLE',
         view: { u: -0.5, v: 0.8, zoom: 1.5 },
-        startCursor: { x: 3, y: 2, rot: 3 },
+        startCursor: { x: 3, y: 5, rot: 0 },
         targetCell: { x: 5, y: 4, rot: 1 },
         enclosedCell: { x: 5, y: 5 },
         highlights: [
