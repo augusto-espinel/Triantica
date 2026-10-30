@@ -1239,29 +1239,38 @@ After 22 brain.js experiments and 10+ TF.js experiments, a clear pattern emerged
 
 **We're trying to do with pure learning what AlphaZero does with search+learning.** This is fundamentally impossible for strategic games requiring multi-step lookahead.
 
-### Possible Solutions
+### How We Ultimately Broke the Heuristic Wall (`0% → 63% → 90% → 100%`)
+
+To turn this architectural diagnosis into reality, we systematically built out the missing components across Phases 2 through 6 (detailed in depth in [Chapter 11](#11-optimization-roadmap)):
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Next Steps                                 │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│   1. Add Convolutional Layers                                │
-│      • Replace dense input with 2D convolution              │
-│      • Learn spatial patterns (enclosure shapes, etc.)     │
-│      • Lower effort, may not be enough                      │
-│                                                             │
-│   2. Add Value Head (Actor-Critic)                          │
-│      • Train network to evaluate positions                   │
-│      • Use value as training signal (lower variance)        │
-│      • Medium effort, addresses gradient noise              │
-│                                                             │
-│   3. Add Search (MCTS or Beam Search)                       │
-│      • Simulate future game states                           │
-│      • Combine search with learned evaluation               │
-│      • High effort, guaranteed to work                      │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│           THE ARCHITECTURAL PROGRESSION THAT BROKE THE WALL                  │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  1. Spatial + Actor-Critic Foundation (TF-B5 / TF-B6 → 50% Rand, 0% Heur)    │
+│     • Replaced flat 401-vector with 10×10×18 canonical slot encoding         │
+│     • Added 3-layer Conv2D backbone + dual Policy & Value heads              │
+│     • Result: Proved spatial patterns alone cannot replace lookahead         │
+│                                                                              │
+│  2. Consolidated MCTS + 400× Loss Fix (TF-B8 / TF-B9 / TF-B10 → 87% Rand)    │
+│     • Integrated batched MCTS-50 and fixed 6 subtle engine/gradient bugs     │
+│     • Result: Crushed Random (87%), but vanilla MCTS still scored 0% vs      │
+│       Heuristic due to the Horizon Effect on forced enclosure cascades       │
+│                                                                              │
+│  3. Quiescence MCTS Teacher (TF-B12 / TF-B13 / TF-B14 → 90% Peak vs Heur)    │
+│     • Extended MCTS leaves with greedy enclosure-cascade rollouts so the     │
+│       Value Head evaluates quiet positions and penalizes hole-creating moves │
+│     • Added 45K sliding-window replay buffer + Cosine LR decay               │
+│     • Result: Broke the Heuristic Wall (63% → 89% → 90% peak, 100% vs Rand)  │
+│                                                                              │
+│  4. Full Torus Topology + Tactical Safety Filter (TF-B15 → 99% Raw / 100%)   │
+│     • Replaced zero-padding with circular toroidal padding (ToroidalPad2D)   │
+│       and full modulo T² corner symmetry, lifting raw 1-ply policy to 99%    │
+│     • Paired with an O(1) top-K inference safety filter to achieve           │
+│       1,000W / 0L / 0D (100.0%) across all 10 cycles against Heuristic       │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -1295,7 +1304,10 @@ After 22 brain.js experiments and 10+ TF.js experiments, a clear pattern emerged
 
 **Key:**
 - Mix: opponent distribution (network/random/heuristic)
--
+- LR: learning rate (constant or cosine decay schedule)
+- Grad Iso: isolated gradient updates on active actions
+- Cluster: TD(λ) intermediate cluster reward shaping
+
 ### Parameter Glossary
 
 | Parameter | Symbol | Range | Effect |
@@ -2933,9 +2945,9 @@ Use this table to track implementation progress. Update after each experiment.
 | 1: Replay | TF-B4 | ❌ No gain | 45% | 0% | Replay alone doesn't help; architecture limit |
 | 2: Conv+Slot+Val | TF-B5 | ✅ Done | 50% | 0% | Canonical 18ch + Conv + Value head |
 | 3: Actor-Critic | TF-B6 | ✅ Done | 50% | 0% | Optimized hyperparams (LR=0.02, value weight=1.0) |
-| 4: Deep | TF-B7 | ⏳ Pending | — | — | — |
-| 5: MCTS-50 | TF-B8 | ❌ Failed | 30% | 0% | Sign flip bug: network learned to lose (fixed in `28ca800`) |
-| 5: MCTS-50 | TF-B9 | ✅ Done | 79% (84% peak) | 0% | Single-perspective MCTS fix; +41% jump vs Random |
+| 4: BatchNorm+Conv | TF-B7 | ✅ Merged | — | — | BatchNorm integrated directly into Phase 2 ConvNet (`ConvNetwork.cjs`) |
+| 5: MCTS-50 | TF-B8 | ❌ Failed | 30% | 0% | Inverted value perspective bug: network learned to lose (see Bug 5) |
+| 5: MCTS-50 | TF-B9 | ✅ Done | 79% (84% peak) | 0% | Single-perspective MCTS + 400× policy loss fix; +41% jump vs Random |
 | 5: MCTS-50 Mixed | TF-B10 | ✅ Done | 87% | 0% | 50% Network / 50% Heuristic; record 87% vs Random |
 | 5.5: Quiescence MCTS | TF-B12 | ✅ Done | **100%** | **63%** | **Heuristic Wall Broken!** 100% vs Random (all 10 cycles), 63% vs Heuristic (66% P1, 60% P2; random 2-ply eval C8–C10) |
 | 5.6: Dual-Side Quiescence | TF-B13 | ✅ Done | **100%** | **73% (89% peak)** | **New Record vs Heuristic!** 89% peak (C8: 90% P1, 88% P2), 73% final (C10: 80% P1, 66% P2), 71.6% 10-cycle avg; 115.9K dual-side MCTS samples |
@@ -3073,6 +3085,29 @@ triantica/
 │   └── QUIESCENCE_MCTS.md     # Quiescence MCTS design & results
 └── browser/
     └── index.html             # Game interface
+```
+
+---
+
+## Appendix C: Dashboard & CLI Parameters
+
+| CLI Flag | Default | Description |
+|----------|---------|-------------|
+| `--cycles` | `10` | Number of self-play + training cycles |
+| `--games` | `100` | Self-play games generated per cycle |
+| `--eval-games` | `100` | Evaluation games per opponent (`RandomPlayer` & `HeuristicPlayer`) |
+| `--architecture` | `conv` | Network architecture (`conv` 18-channel or `dense` 401-input) |
+| `--toroidal-pad` | `true` | Circular toroidal padding (`ToroidalPad2D`) across `Conv2D` layers |
+| `--toroidal-placement` | `true` | Full $T^2$ modulo vertex corner legality in `GridManager` |
+| `--mcts-sims` | `50` | MCTS simulations per move during training |
+| `--quiescence-mode` | `greedy` | Quiescence rollout mode at MCTS leaves (`none`, `greedy`, `hybrid`) |
+| `--quiescence-depth` | `5` | Maximum forced enclosure-cascade depth at MCTS leaves |
+| `--risk-penalty` | `0.25` | Value/prior penalty weight for moves leaving opponent enclosures |
+| `--enclosure-bonus` | `0.15` | Value/prior bonus weight for moves claiming enclosures |
+| `--safety-filter` | `true` | Enable inference-time top-$K$ tactical safety filter during evaluation |
+| `--replay-buffer-size` | `45000` | Sliding-window experience replay capacity |
+| `--learning-rate` | `0.0003` | Initial Adam learning rate |
+| `--lr-decay` | `cosine` | Learning rate schedule (`none` or `cosine` to `--min-lr`) |
 ```
 
 ---
