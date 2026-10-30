@@ -1,6 +1,6 @@
 #!/bin/bash
-# Generate PWA icons with a T composed of game triangles
-# Uses ImageMagick to draw triangles matching the game aesthetic
+# Generate PWA icons with 7 contiguous triangles forming a T
+# Matches in-game triangle appearance with edge-to-edge connections
 
 mkdir -p icons
 
@@ -8,46 +8,84 @@ mkdir -p icons
 BLUE="#00F0FF"
 RED="#FF2A54"
 BG="#03060C"
-BORDER="#00F0FF"
+STROKE_WIDTH=1
 
 for size in 72 96 128 144 152 192 384 512; do
-  # Scale factors
-  s=$((size))
+  s=$size
   
-  # Create background
+  # T-shape with 7 contiguous triangles:
+  # Top bar: 5 triangles (alternating rotations for proper connection)
+  # Stem: 2 triangles below center
+  
+  # Triangle geometry (equilateral-like, matching game visuals)
+  # Base width and height scale with icon size
+  tw=$((s*22/100))   # Triangle width (~22% of icon)
+  th=$((s*19/100))   # Triangle height (~19% of icon)
+  
+  # Center point for the T
+  cx=$((s*50/100))
+  cy=$((s*48/100))
+  
+  # Top bar triangles (5 across)
+  # y position for top bar
+  ty=$((s*30/100))
+  
+  # Stem triangles (2 down)
+  sy=$((s*48/100))
+  
   convert -size ${s}x${s} xc:"$BG" \
-    -fill "$BLUE" \
-    -stroke "$BLUE" -strokewidth 1 \
-    -draw "polygon $((s*15/100)),$((s*30/100)) $((s*50/100)),$((s*30/100)) $((s*32/100)),$((s*50/100))" \
-    -draw "polygon $((s*50/100)),$((s*30/100)) $((s*85/100)),$((s*30/100)) $((s*68/100)),$((s*50/100))" \
-    -fill "$RED" \
-    -stroke "$RED" -strokewidth 1 \
-    -draw "polygon $((s*32/100)),$((s*50/100)) $((s*68/100)),$((s*50/100)) $((s*50/100)),$((s*70/100))" \
-    -fill "$BLUE" \
-    -stroke "$BLUE" -strokewidth 1 \
-    -draw "polygon $((s*38/100)),$((s*70/100)) $((s*62/100)),$((s*70/100)) $((s*50/100)),$((s*90/100))" \
+    `# Top bar - 5 triangles (Blue, Blue, Red, Blue, Blue)` \
+    -fill "$BLUE" -stroke "$BLUE" -strokewidth $STROKE_WIDTH \
+    -draw "polygon $((cx-2*tw)),$ty $((cx-tw)),$ty $((cx-3*tw/2)),$((ty+th))" \
+    -fill "$BLUE" -stroke "$BLUE" -strokewidth $STROKE_WIDTH \
+    -draw "polygon $((cx-tw)),$ty $((cx)),$ty $((cx-tw/2)),$((ty+th))" \
+    -fill "$RED" -stroke "$RED" -strokewidth $STROKE_WIDTH \
+    -draw "polygon $((cx)),$ty $((cx+tw)),$ty $((cx+tw/2)),$((ty+th))" \
+    -fill "$BLUE" -stroke "$BLUE" -strokewidth $STROKE_WIDTH \
+    -draw "polygon $((cx+tw)),$ty $((cx+2*tw)),$ty $((cx+3*tw/2)),$((ty+th))" \
+    -fill "$BLUE" -stroke "$BLUE" -strokewidth $STROKE_WIDTH \
+    -draw "polygon $((cx+2*tw)),$ty $((cx+3*tw)),$ty $((cx+5*tw/2)),$((ty+th))" \
+    `# Stem - 2 triangles below center` \
+    -fill "$RED" -stroke "$RED" -strokewidth $STROKE_WIDTH \
+    -draw "polygon $((cx+tw/4)),$((sy+th/2)) $((cx+5*tw/4)),$((sy+th/2)) $((cx+3*tw/4)),$((sy+2*th))" \
+    -fill "$BLUE" -stroke "$BLUE" -strokewidth $STROKE_WIDTH \
+    -draw "polygon $((cx+tw/4)),$((sy+2*th)) $((cx+5*tw/4)),$((sy+2*th)) $((cx+3*tw/4)),$((sy+3*th))" \
     icons/icon-${size}.png 2>/dev/null
   
   if [ $? -eq 0 ]; then
     echo "Created icons/icon-${size}.png"
   else
-    echo "Skipped icons/icon-${size}.png"
+    echo "Failed: icons/icon-${size}.png"
   fi
 done
 
-# Apple touch icon with cleaner design
-convert -size 180x180 xc:"$BG" \
-  -fill "$BLUE" -stroke "$BLUE" -strokewidth 2 \
-  -draw "polygon 27,54 90,54 58,90" \
-  -draw "polygon 90,54 153,54 122,90" \
-  -fill "$RED" -stroke "$RED" -strokewidth 2 \
-  -draw "polygon 58,90 122,90 90,126" \
-  -fill "$BLUE" -stroke "$BLUE" -strokewidth 2 \
-  -draw "polygon 68,126 112,126 90,162" \
+# Apple touch icon (180x180)
+s=180
+tw=$((s*20/100))
+th=$((s*17/100))
+cx=$((s*50/100))
+ty=$((s*28/100))
+sy=$((s*46/100))
+
+convert -size ${s}x${s} xc:"$BG" \
+  -fill "$BLUE" -stroke "$BLUE" -strokewidth 1 \
+  -draw "polygon $((cx-2*tw)),$ty $((cx-tw)),$ty $((cx-3*tw/2)),$((ty+th))" \
+  -fill "$BLUE" -stroke "$BLUE" -strokewidth 1 \
+  -draw "polygon $((cx-tw)),$ty $((cx)),$ty $((cx-tw/2)),$((ty+th))" \
+  -fill "$RED" -stroke "$RED" -strokewidth 1 \
+  -draw "polygon $((cx)),$ty $((cx+tw)),$ty $((cx+tw/2)),$((ty+th))" \
+  -fill "$BLUE" -stroke "$BLUE" -strokewidth 1 \
+  -draw "polygon $((cx+tw)),$ty $((cx+2*tw)),$ty $((cx+3*tw/2)),$((ty+th))" \
+  -fill "$BLUE" -stroke "$BLUE" -strokewidth 1 \
+  -draw "polygon $((cx+2*tw)),$ty $((cx+3*tw)),$ty $((cx+5*tw/2)),$((ty+th))" \
+  -fill "$RED" -stroke "$RED" -strokewidth 1 \
+  -draw "polygon $((cx+tw/4)),$((sy+th/2)) $((cx+5*tw/4)),$((sy+th/2)) $((cx+3*tw/4)),$((sy+2*th))" \
+  -fill "$BLUE" -stroke "$BLUE" -strokewidth 1 \
+  -draw "polygon $((cx+tw/4)),$((sy+2*th)) $((cx+5*tw/4)),$((sy+2*th)) $((cx+3*tw/4)),$((sy+3*th))" \
   icons/apple-touch-icon.png 2>/dev/null
 
 if [ $? -eq 0 ]; then
   echo "Created icons/apple-touch-icon.png"
 fi
 
-echo "Icon generation complete!"
+echo "Done! Generated 7-triangle T icons."
