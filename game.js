@@ -871,10 +871,15 @@ class GameScene extends Phaser.Scene {
     // Ensure at least 2 touch pointers are active for two-finger pinch-to-zoom on mobile
     this.input.addPointer(2);
 
-    // Simple vertical centering: move board up from default position
-    // Board is 500px tall, scoreboard at y=676. We want space above and below.
-    // Default was y:120, we move it closer to vertical center.
+    // Vertical layout (shifted toward the top of the 600x800 canvas so the full HUD + board + buttons sit higher on mobile screens):
+    // Top HUD buttons: y=34 (height 40, y: 14..54)
+    // Pan/zoom hint text: y=66
+    // Board: gridOffset.y=50..550 (in 2.5D tilt, centered at y=300, spans y≈90..522)
+    // Scoreboard + Export: y=578 (height 58, y: 549..607)
+    // Bottom action buttons (Rotate / Place / Forfeit): y=652 (height 56, y: 624..680)
     this.gridOffset.y = 50;
+    this.scoreboardY = this.gridOffset.y + 10 * this.cellSize + 28; // 578
+    this.bottomButtonsY = this.scoreboardY + 74; // 652
 
     this.calculateGridBounds();
     this.setupBoardLayers();
@@ -1002,7 +1007,7 @@ class GameScene extends Phaser.Scene {
     const btnWidth = 76;
     const btnHeight = 56;
     const buttonX = this.cameras.main.width - 76;
-    const buttonY = this.cameras.main.height - 62;
+    const buttonY = this.bottomButtonsY || 652;
 
     this.forfeitButton = this.add.graphics().setScrollFactor(0).setDepth(150);
     const drawForfeit = (hover = false) => {
@@ -1050,8 +1055,8 @@ class GameScene extends Phaser.Scene {
     const btnHeight = 48;
     // Position to the right of the scoreboard (scoreboard is 430px wide, centered)
     const buttonX = this.cameras.main.width / 2 + 215 + btnWidth / 2 + 8;
-    // Position relative to board end
-    const buttonY = this.gridOffset.y + 10 * this.cellSize + 15;
+    // Position aligned with scoreboard
+    const buttonY = this.scoreboardY || (this.gridOffset.y + 10 * this.cellSize + 28);
 
     this.exportButton = this.add.graphics().setScrollFactor(0).setDepth(150);
     const drawExport = (hover = false) => {
@@ -1151,7 +1156,7 @@ class GameScene extends Phaser.Scene {
     const btnWidth = 114;
     const btnHeight = 40;
     const btnX = 72;
-    const btnY = 40;
+    const btnY = 36;
 
     this.menuReturnBg = this.add.graphics().setScrollFactor(0).setDepth(150);
     const drawMenuBtn = (hover = false) => {
@@ -1197,7 +1202,7 @@ class GameScene extends Phaser.Scene {
     const btnWidth = 76;
     const btnHeight = 56;
     const buttonX = 76;
-    const buttonY = this.cameras.main.height - 62;
+    const buttonY = this.bottomButtonsY || 652;
 
     this.rotateButton = this.add.graphics().setScrollFactor(0).setDepth(150);
     const drawRotate = (hover = false) => {
@@ -1246,7 +1251,7 @@ class GameScene extends Phaser.Scene {
     const buttonWidth = 248;
     const buttonHeight = 56;
     const buttonX = this.cameras.main.width / 2;
-    const buttonY = this.cameras.main.height - 62;
+    const buttonY = this.bottomButtonsY || 652;
 
     this.placeButton = this.add.graphics().setScrollFactor(0).setDepth(150);
     this.drawPlaceButtonState = (hover = false) => {
@@ -1503,7 +1508,7 @@ class GameScene extends Phaser.Scene {
     };
 
     // 1. Tilt / 2D Toggle
-    this.tiltBtn = createPillBtn(286, 40, 114, '', () => {
+    this.tiltBtn = createPillBtn(286, 36, 114, '', () => {
       this.isTiltedView = !this.isTiltedView;
       this.refreshViewControlsHUD();
       this.updateBoardMask();
@@ -1511,14 +1516,14 @@ class GameScene extends Phaser.Scene {
     });
 
     // 2. Ghost Ring Toggle (Mode A vs Mode B)
-    this.ghostBtn = createPillBtn(412, 40, 120, '', () => {
+    this.ghostBtn = createPillBtn(412, 36, 120, '', () => {
       this.showGhostRing = !this.showGhostRing;
       this.refreshViewControlsHUD();
       this.refreshBoardView();
     });
 
     // 3. Center / Reset Pan & Zoom Button
-    this.centerBtn = createPillBtn(532, 40, 104, '⌖ CENTER', () => {
+    this.centerBtn = createPillBtn(532, 36, 104, '⌖ CENTER', () => {
       const startU = this.panOffset.u;
       const startV = this.panOffset.v;
       const startZ = this.zoomLevel;
@@ -1546,7 +1551,7 @@ class GameScene extends Phaser.Scene {
     // Helper hint above board (larger for mobile legibility)
     this.panHintText = this.add.text(
       this.cameras.main.width / 2,
-      80,
+      68,
       'DRAG: PAN TORUS  •  PINCH: ZOOM (4×4)  •  TAP: SELECT/ROTATE',
       {
         fontFamily: '"Share Tech Mono", monospace',
@@ -2392,7 +2397,7 @@ triggerAIMove() {
   createScoreboard() {
     this.scorePanelBg = this.add.graphics().setScrollFactor(0).setDepth(149);
     // Position scoreboard relative to board end
-    const scoreboardY = this.gridOffset.y + 10 * this.cellSize + 15;
+    const scoreboardY = this.scoreboardY || (this.gridOffset.y + 10 * this.cellSize + 28);
     this.scoreText = this.add.text(
       this.cameras.main.width / 2,
       scoreboardY,
@@ -2422,7 +2427,7 @@ triggerAIMove() {
 
     if (this.scorePanelBg) {
       const borderStroke = cur === 1 ? 0xFF2A54 : 0x00F0FF;
-      const scoreboardY = this.gridOffset.y + 10 * this.cellSize + 15;
+      const scoreboardY = this.scoreboardY || (this.gridOffset.y + 10 * this.cellSize + 28);
       this.drawChamferedPanel(
         this.scorePanelBg,
         this.cameras.main.width / 2,
@@ -2704,6 +2709,9 @@ triggerAIMove() {
     this.gridManager.selectedRotation = 0;
     this.cursorPos = { x: 4, y: 5 };
 
+    const scoreY = this.scoreboardY || 578;
+    const btnY = this.bottomButtonsY || 652;
+
     this.tutorialSteps = [
       {
         type: 'info',
@@ -2712,7 +2720,7 @@ triggerAIMove() {
         prompt: 'TAP HERE TO START EXERCISES ▸',
         view: { u: 0.0, v: 0.4, zoom: 1.35 },
         highlights: [
-          { x: 300, y: 676, w: 444, h: 70, color: 0x00F0FF }
+          { x: 300, y: scoreY, w: 444, h: 70, color: 0x00F0FF }
         ]
       },
       {
@@ -2722,7 +2730,7 @@ triggerAIMove() {
         prompt: 'ROTATE 4 TIMES TO PROCEED: 0 / 4',
         view: { u: -0.5, v: 0.5, zoom: 1.5 },
         highlights: [
-          { x: 76, y: 738, w: 88, h: 68, color: 0x00FFCC }
+          { x: 76, y: btnY, w: 88, h: 68, color: 0x00FFCC }
         ]
       },
       {
@@ -2734,7 +2742,7 @@ triggerAIMove() {
         startCursor: { x: 3, y: 5, rot: 0 },
         targetCell: { x: 4, y: 5, rot: 2 },
         highlights: [
-          { x: 300, y: 738, w: 260, h: 68, color: 0x00FFCC }
+          { x: 300, y: btnY, w: 260, h: 68, color: 0x00FFCC }
         ]
       },
       {
@@ -2747,7 +2755,7 @@ triggerAIMove() {
         targetCell: { x: 5, y: 4, rot: 1 },
         enclosedCell: { x: 5, y: 5 },
         highlights: [
-          { x: 300, y: 738, w: 260, h: 68, color: 0x00FFCC }
+          { x: 300, y: btnY, w: 260, h: 68, color: 0x00FFCC }
         ]
       },
       {
@@ -2757,7 +2765,7 @@ triggerAIMove() {
         prompt: 'TAP HERE TO CONTINUE ▸',
         view: { u: -0.5, v: 0.6, zoom: 1.5 },
         highlights: [
-          { x: 300, y: 676, w: 444, h: 70, color: 0x00FFCC }
+          { x: 300, y: scoreY, w: 444, h: 70, color: 0x00FFCC }
         ]
       },
       {
@@ -2767,9 +2775,9 @@ triggerAIMove() {
         prompt: 'TAP HERE TO FINISH & RETURN TO MENU ▸',
         view: { u: 0, v: 0, zoom: 1.0 },
         highlights: [
-          { x: 410, y: 40, w: 368, h: 52, color: 0x00F0FF },
-          { x: 72, y: 40, w: 126, h: 52, color: 0x00FFCC },
-          { x: 524, y: 738, w: 88, h: 68, color: 0xFF2A54 }
+          { x: 410, y: 36, w: 368, h: 52, color: 0x00F0FF },
+          { x: 72, y: 36, w: 126, h: 52, color: 0x00FFCC },
+          { x: 524, y: btnY, w: 88, h: 68, color: 0xFF2A54 }
         ]
       }
     ];
@@ -3286,7 +3294,7 @@ class MenuScene extends Phaser.Scene {
       // Allow tapping the hologram to trigger an instant glitch + territory wave
       this.input.on('pointerdown', (pointer) => {
           const isDebug = typeof DEBUG_MODE !== 'undefined' && DEBUG_MODE;
-          const stageCy = isDebug ? 225 : 262;
+          const stageCy = isDebug ? 215 : 236;
           const hitRadius = isDebug ? 78 : 102;
           const dist = Math.hypot(pointer.x - 300, pointer.y - stageCy);
           if (dist <= hitRadius) {
@@ -3352,7 +3360,7 @@ class MenuScene extends Phaser.Scene {
 
       const isDebug = typeof DEBUG_MODE !== 'undefined' && DEBUG_MODE;
       const cx = this.cameras.main.width / 2;
-      const cy = isDebug ? 225 : 262;
+      const cy = isDebug ? 215 : 236;
       const radius = isDebug ? 62 : 84;
       const isGlitching = this.glitchState.active;
 
@@ -3562,7 +3570,7 @@ class MenuScene extends Phaser.Scene {
   renderHeader(titleStr, subtitleStr) {
       const centerX = this.cameras.main.width / 2;
 
-      this.titleText = this.add.text(centerX, 78, titleStr, {
+      this.titleText = this.add.text(centerX, 64, titleStr, {
           fontFamily: '"Orbitron", Arial',
           fontSize: titleStr === 'TRIANTICA' ? '50px' : '32px',
           fontStyle: '900',
@@ -3571,7 +3579,7 @@ class MenuScene extends Phaser.Scene {
       }).setOrigin(0.5);
       this.titleText.setShadow(0, 0, '#00F0FF', 14, true, true);
 
-      const subtitle = this.add.text(centerX, 124, subtitleStr.toUpperCase(), {
+      const subtitle = this.add.text(centerX, 108, subtitleStr.toUpperCase(), {
           fontFamily: '"Share Tech Mono", monospace',
           fontSize: '15px',
           color: '#5CE1E6',
@@ -3590,10 +3598,10 @@ class MenuScene extends Phaser.Scene {
       this.renderHeader('TRIANTICA', 'Toroidal Manifold Strategy // T²');
 
       if (!isDebug) {
-          // Standard release layout: larger D20 hologram at y=262, 3 primary buttons placed lower
+          // Standard release layout: larger D20 hologram at y=236, 3 primary buttons vertically balanced
           this.createStyledButton(
               centerX,
-              436,
+              398,
               'Human vs AI',
               0x071A2E,
               0x0D2E4D,
@@ -3606,7 +3614,7 @@ class MenuScene extends Phaser.Scene {
 
           this.createStyledButton(
               centerX,
-              510,
+              472,
               'Human vs Human',
               0x1A0714,
               0x2E0B22,
@@ -3619,7 +3627,7 @@ class MenuScene extends Phaser.Scene {
 
           this.createStyledButton(
               centerX,
-              584,
+              546,
               'How to Play',
               0x061E1C,
               0x0B3330,
@@ -3727,7 +3735,7 @@ class MenuScene extends Phaser.Scene {
 
       this.createStyledButton(
           centerX,
-          412,
+          380,
           'Easy // Casual',
           0x061E1C,
           0x0B3330,
@@ -3740,7 +3748,7 @@ class MenuScene extends Phaser.Scene {
 
       this.createStyledButton(
           centerX,
-          482,
+          448,
           'Medium // Raw ConvNet',
           0x071A2E,
           0x0D2E4D,
@@ -3753,7 +3761,7 @@ class MenuScene extends Phaser.Scene {
 
       this.createStyledButton(
           centerX,
-          552,
+          516,
           'Hard // Master + Safety',
           0x1F0610,
           0x360A1C,
@@ -3766,7 +3774,7 @@ class MenuScene extends Phaser.Scene {
 
       this.createStyledButton(
           centerX,
-          636,
+          594,
           '◀ Back',
           0x071120,
           0x0E223D,
@@ -3786,7 +3794,7 @@ class MenuScene extends Phaser.Scene {
 
       this.createStyledButton(
           centerX,
-          422,
+          392,
           'P1 [Ares Red] // 1st Move',
           0x220611,
           0x380A1D,
@@ -3803,7 +3811,7 @@ class MenuScene extends Phaser.Scene {
 
       this.createStyledButton(
           centerX,
-          500,
+          468,
           'P2 [Tron Blue] // 2nd Move',
           0x061830,
           0x0B2952,
@@ -3820,7 +3828,7 @@ class MenuScene extends Phaser.Scene {
 
       this.createStyledButton(
           centerX,
-          598,
+          556,
           '◀ Back to Difficulty',
           0x071120,
           0x0E223D,

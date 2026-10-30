@@ -30,7 +30,7 @@
             width: 100%;
             height: 100%;
             background-color: #03060C;
-            background-image: radial-gradient(circle at 50% 45%, #081528 0%, #03060C 75%);
+            background-image: radial-gradient(circle at 50% 42%, #081528 0%, #03060C 75%);
             overflow: hidden;
             touch-action: none;
             user-select: none;
@@ -45,9 +45,16 @@
             display: flex;
             justify-content: center;
             align-items: center;
+            box-sizing: border-box;
         }
         canvas {
             display: block;
+        }
+        /* On tall portrait mobile screens, shift the canvas slightly above geometric midpoint for optical centering */
+        @media (max-aspect-ratio: 3/4) {
+            canvas {
+                transform: translateY(-4vh);
+            }
         }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser-arcade-physics.min.js"></script>
