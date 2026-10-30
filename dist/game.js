@@ -3435,9 +3435,11 @@ class MenuScene extends Phaser.Scene {
           const isDebug = typeof DEBUG_MODE !== 'undefined' && DEBUG_MODE;
           const stageCy = isDebug ? 250 : 280;
           const hitRadius = isDebug ? 78 : 102;
+          // Allow tapping the hologram OR the TRIANTICA title to trigger an instant glitch + territory wave
           const dist = Math.hypot(pointer.x - 300, pointer.y - stageCy);
-          if (dist <= hitRadius) {
-              this.triggerIcosaGlitch(this.time.now, 200);
+          const onTitle = pointer.y >= 65 && pointer.y <= 130 && Math.abs(pointer.x - 300) <= 185;
+          if (dist <= hitRadius || onTitle) {
+              this.triggerIcosaGlitch(this.time.now, 240);
               this.stepTerritoryAutomaton(true);
           }
       });
@@ -3482,12 +3484,10 @@ class MenuScene extends Phaser.Scene {
       }
 
       if (!this.glitchState.active && time > this.glitchState.nextTrigger) {
-          this.triggerIcosaGlitch(time, 110 + Math.random() * 70);
+          this.triggerIcosaGlitch(time, 140 + Math.random() * 90);
       } else if (this.glitchState.active && time > this.glitchState.endTime) {
           this.glitchState.active = false;
-          if (this.titleText) {
-              this.titleText.x = this.cameras.main.width / 2;
-          }
+          this.resetTitleGlitch();
       }
 
       this.renderIcosahedron(time);
@@ -3503,8 +3503,8 @@ class MenuScene extends Phaser.Scene {
       const radius = isDebug ? 62 : 84;
       const isGlitching = this.glitchState.active;
 
-      if (this.titleText && isGlitching) {
-          this.titleText.x = cx + (Math.random() - 0.5) * 6;
+      if (isGlitching) {
+          this.applyTitleGlitch(cx);
       }
 
       // 1. Ambient outer hologram ring & telemetry ticks
@@ -3631,10 +3631,98 @@ class MenuScene extends Phaser.Scene {
   }
 
   clearMenu() {
+      this.titleText = null;
+      this.titleParts = null;
+      this.titleIAGhostCyan = null;
+      this.titleIAGhostRed = null;
+      this.titleIABracketGfx = null;
       if (this.menuContainer) {
           this.menuContainer.removeAll(true);
       } else {
           this.menuContainer = this.add.container(0, 0).setDepth(20);
+      }
+  }
+
+  applyTitleGlitch(cx) {
+      const jitterX = (Math.random() - 0.5) * 5;
+      if (this.titleParts) {
+          const { prefix, ia, suffix, baseX, baseY } = this.titleParts;
+          // Slightly dim the outer letters ("TR" and "NTICA") so "IA" pops out
+          prefix.setPosition(baseX.prefix + jitterX * 0.5, baseY);
+          suffix.setPosition(baseX.suffix + jitterX * 0.5, baseY);
+          prefix.setAlpha(0.42);
+          suffix.setAlpha(0.42);
+
+          // Highlight "IA" with electric neon surge + vertical micro-kick
+          const iaOffsetX = jitterX * 1.15;
+          const iaOffsetY = (Math.random() - 0.5) * 3.5;
+          const useMagentaFlash = Math.random() < 0.35;
+          ia.setPosition(baseX.ia + iaOffsetX, baseY + iaOffsetY);
+          ia.setColor(useMagentaFlash ? '#FF2A54' : '#00FFCC');
+          ia.setShadow(0, 0, useMagentaFlash ? '#FF2A54' : '#00F0FF', 22, true, true);
+          ia.setScale(1.08);
+
+          // Chromatic aberration RGB split ghosts on "IA"
+          const split = (this.glitchState.offsetX || 8) * 0.42;
+          if (this.titleIAGhostRed) {
+              this.titleIAGhostRed
+                  .setPosition(baseX.ia - split, baseY - iaOffsetY * 0.6)
+                  .setVisible(true);
+          }
+          if (this.titleIAGhostCyan) {
+              this.titleIAGhostCyan
+                  .setPosition(baseX.ia + split, baseY + iaOffsetY * 0.6)
+                  .setVisible(true);
+          }
+
+          // HUD neural lock-on brackets around "IA"
+          if (this.titleIABracketGfx) {
+              const g = this.titleIABracketGfx;
+              g.clear();
+              const bx = baseX.ia + iaOffsetX;
+              const by = baseY + iaOffsetY;
+              const bw = ia.width + 10;
+              const bh = ia.height - 8;
+              const x0 = bx - bw / 2;
+              const x1 = bx + bw / 2;
+              const y0 = by - bh / 2;
+              const y1 = by + bh / 2;
+              const cLen = 7;
+
+              g.lineStyle(1.8, 0x00FFCC, 0.9);
+              // Top-left & bottom-right neural targeting corners
+              g.lineBetween(x0, y0 + cLen, x0, y0);
+              g.lineBetween(x0, y0, x0 + cLen, y0);
+              g.lineBetween(x1 - cLen, y1, x1, y1);
+              g.lineBetween(x1, y1, x1, y1 - cLen);
+
+              g.lineStyle(1.5, 0xFF2A54, 0.85);
+              // Top-right & bottom-left corners
+              g.lineBetween(x1 - cLen, y0, x1, y0);
+              g.lineBetween(x1, y0, x1, y0 + cLen);
+              g.lineBetween(x0, y1 - cLen, x0, y1);
+              g.lineBetween(x0, y1, x0 + cLen, y1);
+          }
+      } else if (this.titleText) {
+          this.titleText.x = cx + jitterX;
+      }
+  }
+
+  resetTitleGlitch() {
+      const cx = this.cameras.main.width / 2;
+      if (this.titleParts) {
+          const { prefix, ia, suffix, baseX, baseY } = this.titleParts;
+          prefix.setPosition(baseX.prefix, baseY).setAlpha(1);
+          suffix.setPosition(baseX.suffix, baseY).setAlpha(1);
+          ia.setPosition(baseX.ia, baseY)
+              .setColor('#E6F9FF')
+              .setShadow(0, 0, '#00F0FF', 14, true, true)
+              .setScale(1.0);
+          if (this.titleIAGhostRed) this.titleIAGhostRed.setVisible(false);
+          if (this.titleIAGhostCyan) this.titleIAGhostCyan.setVisible(false);
+          if (this.titleIABracketGfx) this.titleIABracketGfx.clear();
+      } else if (this.titleText) {
+          this.titleText.x = cx;
       }
   }
 
@@ -3708,25 +3796,94 @@ class MenuScene extends Phaser.Scene {
 
   renderHeader(titleStr, subtitleStr) {
       const centerX = this.cameras.main.width / 2;
+      const titleY = 98;
 
-      this.titleText = this.add.text(centerX, 98, titleStr, {
-          fontFamily: '"Orbitron", Arial',
-          fontSize: titleStr === 'TRIANTICA' ? '50px' : '32px',
-          fontStyle: '900',
-          color: '#E6F9FF',
-          align: 'center'
-      }).setOrigin(0.5);
-      this.titleText.setShadow(0, 0, '#00F0FF', 14, true, true);
+      if (titleStr === 'TRIANTICA') {
+          const baseStyle = {
+              fontFamily: '"Orbitron", Arial',
+              fontSize: '50px',
+              fontStyle: '900',
+              color: '#E6F9FF',
+              align: 'center'
+          };
 
-      const subtitle = this.add.text(centerX, 142, subtitleStr.toUpperCase(), {
-          fontFamily: '"Share Tech Mono", monospace',
-          fontSize: '15px',
-          color: '#5CE1E6',
-          letterSpacing: 2,
-          align: 'center'
-      }).setOrigin(0.5);
+          const prefix = this.add.text(0, titleY, 'TR', baseStyle).setOrigin(0.5);
+          const ia = this.add.text(0, titleY, 'IA', baseStyle).setOrigin(0.5);
+          const suffix = this.add.text(0, titleY, 'NTICA', baseStyle).setOrigin(0.5);
 
-      this.menuContainer.add([this.titleText, subtitle]);
+          prefix.setShadow(0, 0, '#00F0FF', 14, true, true);
+          ia.setShadow(0, 0, '#00F0FF', 14, true, true);
+          suffix.setShadow(0, 0, '#00F0FF', 14, true, true);
+
+          const totalW = prefix.width + ia.width + suffix.width;
+          const startX = centerX - totalW / 2;
+          const prefixX = startX + prefix.width / 2;
+          const iaX = startX + prefix.width + ia.width / 2;
+          const suffixX = startX + prefix.width + ia.width + suffix.width / 2;
+
+          prefix.setX(prefixX);
+          ia.setX(iaX);
+          suffix.setX(suffixX);
+
+          // RGB chromatic aberration ghost layers exclusively for "IA" during glitch bursts
+          this.titleIAGhostRed = this.add.text(iaX, titleY, 'IA', {
+              ...baseStyle,
+              color: '#FF2A54'
+          }).setOrigin(0.5).setAlpha(0.65).setVisible(false);
+
+          this.titleIAGhostCyan = this.add.text(iaX, titleY, 'IA', {
+              ...baseStyle,
+              color: '#00F0FF'
+          }).setOrigin(0.5).setAlpha(0.65).setVisible(false);
+
+          this.titleIABracketGfx = this.add.graphics();
+
+          this.titleParts = {
+              prefix,
+              ia,
+              suffix,
+              baseY: titleY,
+              baseX: { prefix: prefixX, ia: iaX, suffix: suffixX }
+          };
+          this.titleText = ia;
+
+          const subtitle = this.add.text(centerX, 142, subtitleStr.toUpperCase(), {
+              fontFamily: '"Share Tech Mono", monospace',
+              fontSize: '15px',
+              color: '#5CE1E6',
+              letterSpacing: 2,
+              align: 'center'
+          }).setOrigin(0.5);
+
+          this.menuContainer.add([
+              prefix,
+              suffix,
+              this.titleIAGhostRed,
+              this.titleIAGhostCyan,
+              ia,
+              this.titleIABracketGfx,
+              subtitle
+          ]);
+      } else {
+          this.titleText = this.add.text(centerX, titleY, titleStr, {
+              fontFamily: '"Orbitron", Arial',
+              fontSize: '32px',
+              fontStyle: '900',
+              color: '#E6F9FF',
+              align: 'center'
+          }).setOrigin(0.5);
+          this.titleText.setShadow(0, 0, '#00F0FF', 14, true, true);
+
+          const subtitle = this.add.text(centerX, 142, subtitleStr.toUpperCase(), {
+              fontFamily: '"Share Tech Mono", monospace',
+              fontSize: '15px',
+              color: '#5CE1E6',
+              letterSpacing: 2,
+              align: 'center'
+          }).setOrigin(0.5);
+
+          this.menuContainer.add([this.titleText, subtitle]);
+      }
   }
 
   renderMainMenu() {

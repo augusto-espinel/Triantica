@@ -1,5 +1,5 @@
 // Triantica Service Worker - PWA offline support
-const CACHE_NAME = 'triantica-v6';
+const CACHE_NAME = 'triantica-v7';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
