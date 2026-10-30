@@ -222,6 +222,52 @@ const result = await model.fit(trainX, trainY, {
 }
 ```
 
+### Human vs. AI Telemetry Export (`HumanGameLogger` — `schemaVersion: "2.0-canonical"`)
+
+Browser and PWA `HvAI` sessions persist completed matches in `localStorage` (`triantica_human_games`) using a 100-game FIFO ring buffer with deduplication and quota-safe eviction. Clicking the **📤 Export** button next to the scoreboard downloads the JSON payload and flushes the buffer:
+
+```json
+{
+  "schemaVersion": "2.0-canonical",
+  "exportedAt": "2026-10-30T19:20:00.000Z",
+  "gameCount": 12,
+  "stateEncoding": {
+    "state": "10x10x18 canonical one-hot (1800 floats, pre-move, player-relative)",
+    "legacyState": "10x10x4 + 1 legacy vector (401 floats, pre-move, rotation=r/4.0)",
+    "actionIndex": "(y * 10 + x) * 4 + rotation (0..399)",
+    "valueTarget": "+1 if move.player won, -1 if lost, 0 if draw"
+  },
+  "games": [
+    {
+      "id": "human-1793388000000-a1b2c3",
+      "timestamp": "2026-10-30T19:15:00.000Z",
+      "mode": "HvAI",
+      "difficulty": "hard",
+      "humanPlayer": 1,
+      "finalScores": { "1": 94, "2": 82 },
+      "winner": 1,
+      "forfeitedBy": null,
+      "totalMoves": 148,
+      "gridDimensions": { "rows": 10, "cols": 10 },
+      "moves": [
+        {
+          "ply": 0,
+          "player": 1,
+          "isHuman": true,
+          "state": [1, 0, 0, "... (1,800 pre-move floats)"],
+          "legacyState": [0, -1, 0, -1, "... (401 pre-move floats)"],
+          "move": { "x": 5, "y": 5, "rotation": 0 },
+          "actionIndex": 220,
+          "claimed": 0,
+          "valueTarget": 1.0,
+          "timestamp": 1793388002150
+        }
+      ]
+    }
+  ]
+}
+```
+
 ---
 
 ## API Design (Local Server)

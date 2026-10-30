@@ -6,7 +6,7 @@
 import { GridManager, GRID_ROWS, GRID_COLS } from '../src/core/GridManager.js';
 import { GameSession } from '../src/core/GameSession.js';
 import { RandomPlayer } from '../src/players/RandomPlayer.js';
-import { GameLogger } from '../src/data/GameLogger.js';
+import { GameLogger, HumanGameLogger } from '../src/data/GameLogger.js';
 
 let passed = 0;
 let failed = 0;
@@ -219,6 +219,52 @@ async function runTests() {
     
     assertEqual(parsed.experimentId, 'test');
     assertEqual(parsed.games.length, 1);
+  });
+
+  await test('HumanGameLogger captures pre-move canonical (1800) & legacy (401) state, FIFO rotates, and handles forfeits', () => {
+    const store = new Map();
+    const mockStorage = {
+      getItem: (k) => store.get(k) || null,
+      setItem: (k, v) => store.set(k, v),
+      removeItem: (k) => store.delete(k)
+    };
+    const hLogger = new HumanGameLogger({ maxGames: 2, storage: mockStorage });
+    const gm = new GridManager();
+
+    // Game 1: Play 1 move on empty board, then end via forfeit
+    hLogger.startGame('HvAI', 'hard', 1, gm);
+    const snap = hLogger.capturePreMoveState(gm, 1);
+    gm.placeTriangle(5, 5, 0, 1);
+    hLogger.logMove(snap, { x: 5, y: 5, rotation: 0 }, 1, 0);
+    hLogger.endGame(gm, { winnerOverride: 2, forfeitedBy: 1 });
+
+    assertEqual(hLogger.getStatus().count, 1, '1 game logged');
+    const g1 = hLogger.games[0];
+    assertEqual(g1.winner, 2, 'Forfeit overrides cluster score winner');
+    assertEqual(g1.forfeitedBy, 1, 'Forfeited player recorded');
+    assertEqual(g1.moves[0].state.length, 1800, 'Canonical state is 10x10x18 (1800 floats)');
+    assertEqual(g1.moves[0].legacyState.length, 401, 'Legacy state is 401 floats');
+    assertEqual(g1.moves[0].actionIndex, (5 * 10 + 5) * 4 + 0, 'Action index matches (y*10+x)*4+rot');
+    assertEqual(g1.moves[0].valueTarget, -1.0, 'Value target is -1 for losing player');
+
+    // Verify pre-move state was captured BEFORE placement (cell 5,5 slot 0 empty channel = 1)
+    const cellOffset = (5 * 10 + 5) * 18;
+    assertEqual(g1.moves[0].state[cellOffset], 1, 'Pre-move cell (5,5) slot 0 was empty before move');
+
+    // Game 2 & Game 3: Verify FIFO capacity = 2
+    for (let i = 0; i < 2; i++) {
+      gm.reset();
+      hLogger.startGame('HvAI', 'medium', 1, gm);
+      const s = hLogger.capturePreMoveState(gm, 1);
+      gm.placeTriangle(2, 2, 1, 1);
+      hLogger.logMove(s, { x: 2, y: 2, rotation: 1 }, 1, 0);
+      hLogger.endGame(gm);
+    }
+    assertEqual(hLogger.getStatus().count, 2, 'FIFO buffer capped at maxGames=2');
+
+    const exported = hLogger.exportAndFlush();
+    assertEqual(exported.gameCount, 2, 'Exported 2 games');
+    assertEqual(hLogger.getStatus().count, 0, 'Buffer flushed after export');
   });
 
   // Baseline experiment: 20 games Random vs Random

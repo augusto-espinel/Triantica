@@ -647,6 +647,22 @@ Skip connections to improve gradient flow in deeper networks.
 
 ---
 
+## Human vs. AI Telemetry & Supervised / Offline RL Pipeline (`HumanGameLogger`)
+
+To incorporate human strategic play into the training pipeline, the browser/PWA client includes **`HumanGameLogger`** (`game.js` and `src/data/GameLogger.js`):
+
+### Key Design Properties
+1. **Strict Pre-Move Snapshot (`capturePreMoveState`):** State vectors are captured *before* `placeTriangle()` and `claimEnclosedTriangles()` mutate the board, preventing action-into-state data leakage.
+2. **Dual Player-Relative Encodings:**
+   - **`state` (`1,800` floats):** Canonical `10×10×18` one-hot tensor matching `getStateCanonical()` in `src/server/train_tfjs.cjs` (2 diagonal slots × 9 states: `[empty, my_rot0..3, opp_rot0..3]`).
+   - **`legacyState` (`401` floats):** Legacy `10×10×4 + 1` vector matching `getStateFixed()` (`rotation / 4.0` normalization + active player flag `1`).
+3. **Policy & Value Targets:**
+   - **`actionIndex` (`0..399`):** `(move.y * 10 + move.x) * 4 + move.rotation`, mapping 1-to-1 to the 400-logit policy head.
+   - **`valueTarget` ($\{-1.0, 0.0, +1.0\}$):** Computed at game end (including explicit `winnerOverride` when a player forfeits) from the perspective of `move.player`.
+4. **FIFO LocalStorage Buffer & Flush:** Up to `maxGames = 100` completed games are retained under `localStorage['triantica_human_games']` with ID deduplication and automatic oldest-game eviction on quota limits. Clicking the in-game **📤** button downloads `triantica_human_games_YYYY-MM-DD.json` and flushes the buffer.
+
+---
+
 ## References
 
 - [TensorFlow.js Documentation](https://www.tensorflow.org/js)

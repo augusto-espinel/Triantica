@@ -15,14 +15,14 @@ See [README_QUICKSTART.md](README_QUICKSTART.md) for full instructions and [CONT
 
 ## Architecture Validation
 
-All 17 automated tests pass ✅
+All 20 automated tests pass ✅
 
 | Component | Tests | Status |
 |-----------|-------|--------|
-| GridManager | 8 | ✅ Pass |
+| GridManager | 10 | ✅ Pass |
 | RandomPlayer | 2 | ✅ Pass |
 | GameSession | 4 | ✅ Pass |
-| GameLogger | 2 | ✅ Pass |
+| GameLogger & HumanGameLogger | 3 | ✅ Pass |
 | Baseline (20 games) | 1 | ✅ Pass |
 
 Baseline data (100 Random vs Random games): P1=44 wins, P2=50 wins, 6 draws, avg 167.6 moves/game.
@@ -55,15 +55,25 @@ Saved at `experiments/data/baseline-random-100.json`.
 
 | File | Primary Responsibility |
 | --- | --- |
-| **`game.js`** | Phaser Scenes + visual rendering + rules logic |
+| **`game.js`** | Phaser Scenes + visual rendering + rules logic + `HumanGameLogger` |
 | **`src/server/train_tfjs.cjs`** | TF.js training pipeline (Metal GPU) |
-| **`AIPlayer.js`** | Neural network, move prediction, browser inference (brain.js for client) |
+| **`AIPlayer.js`** | Neural network, move prediction, browser inference (`ConvNetwork` + `brain.js` fallback) |
 | **`src/core/GridManager.js`** | Extracted pure game logic (no Phaser deps) |
 | **`src/core/GameSession.js`** | Game orchestration for experiments |
 | **`src/players/RandomPlayer.js`** | Baseline random opponent |
-| **`src/data/GameLogger.js`** | Unified experiment logging |
+| **`src/data/GameLogger.js`** | Unified experiment & `HumanGameLogger` telemetry logging |
 | **`src/server/runExperiment.js`** | CLI experiment runner |
-| **`tests/validate.js`** | 17 automated validation tests |
+| **`tests/validate.js`** | 20 automated validation tests |
+
+---
+
+### Human vs. AI Telemetry & Training Data Export (`HumanGameLogger`)
+
+When playing **Human vs. AI (`HvAI`)** in the browser or installed PWA, Triantica automatically records full match trajectories into a persistent, rotating **FIFO buffer** in `localStorage` (`triantica_human_games`, capacity: 100 games) for downstream supervised / offline RL fine-tuning:
+
+* **Pre-Move State Capture:** Before each human or AI placement, `capturePreMoveState()` snapshots the player-relative board in both **10×10×18 Canonical One-Hot format** (`1,800` floats for `TFConvNetwork`) and **401-element Legacy format** (for feedforward models).
+* **Action & Outcome Tagging:** Every ply records `actionIndex = (y * 10 + x) * 4 + rotation` (`0..399`), enclosures claimed, and—upon game completion or forfeit—the terminal `valueTarget` ($z \in \{-1, 0, +1\}$ from that ply's active player perspective).
+* **One-Click Export & Flush:** Clicking the **📤 Export** button next to the scoreboard downloads `triantica_human_games_YYYY-MM-DD.json` and flushes the `localStorage` buffer so exported matches are never duplicated.
 
 ---
 

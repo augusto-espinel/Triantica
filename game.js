@@ -10,7 +10,8 @@ if (typeof window !== 'undefined') {
  * 
  * Stores games in localStorage with deduplication.
  * Auto-rotates when buffer is full (FIFO).
- * Exports as JSON for training pipeline.
+ * Exports as JSON for training pipeline (captures PRE-MOVE 10x10x18 canonical
+ * state and 401-element legacy state for each move).
  */
 class HumanGameLogger {
   constructor(config = {}) {
@@ -47,7 +48,7 @@ class HumanGameLogger {
    */
   startGame(gameMode, difficulty, humanPlayerNumber, gridManager) {
     this.currentGame = {
-      id: `human-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      id: `human-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       timestamp: new Date().toISOString(),
       mode: gameMode,
       difficulty: difficulty || 'medium',
@@ -55,35 +56,85 @@ class HumanGameLogger {
       moves: [],
       finalScores: null,
       winner: null,
+      forfeitedBy: null,
       gridDimensions: { rows: gridManager.rows, cols: gridManager.cols }
     };
     console.log(`[HumanGameLogger] Started game ${this.currentGame.id}`);
   }
 
   /**
-   * Log a move (human or AI)
+   * Capture PRE-MOVE state snapshot before placing a triangle on the board.
+   * Must be called BEFORE gridManager.placeTriangle() and claimEnclosedTriangles().
    */
-  logMove(gridManager, move, player, claimed) {
+  capturePreMoveState(gridManager, player) {
+    return {
+      canonicalState: this._getCanonicalState(gridManager, player),
+      legacyState: this._getLegacyState(gridManager, player)
+    };
+  }
+
+  /**
+   * Log a move (human or AI) using the pre-move state snapshot
+   */
+  logMove(preMoveSnapshot, move, player, claimed, gridManager = null) {
     if (!this.currentGame) return;
 
-    // Capture canonical state (player-relative for training)
-    const state = this._getCanonicalState(gridManager, player);
+    // Fallback if a GridManager was passed directly instead of a pre-move snapshot
+    const snapshot = (preMoveSnapshot && preMoveSnapshot.canonicalState)
+      ? preMoveSnapshot
+      : this.capturePreMoveState(gridManager || preMoveSnapshot, player);
+
+    const cols = this.currentGame.gridDimensions?.cols || 10;
+    const actionIndex = (move.y * cols + move.x) * 4 + move.rotation;
 
     this.currentGame.moves.push({
+      ply: this.currentGame.moves.length,
       player: player,
       isHuman: player === this.currentGame.humanPlayer,
-      state: state,
+      state: snapshot.canonicalState,
+      legacyState: snapshot.legacyState,
       move: { x: move.x, y: move.y, rotation: move.rotation },
+      actionIndex: actionIndex,
       claimed: claimed || 0,
       timestamp: Date.now()
     });
   }
 
   /**
-   * Get canonical state representation (player-relative)
-   * Same format as training pipeline for direct compatibility
+   * Get canonical 10x10x18 (1,800-float) one-hot state representation (player-relative).
+   * Matches ConvNetwork / train_tfjs.cjs getStateCanonical() for direct supervised/RL training.
    */
   _getCanonicalState(gridManager, player) {
+    if (gridManager && typeof gridManager.getCanonicalState === 'function') {
+      return gridManager.getCanonicalState(player);
+    }
+    const rows = gridManager?.rows || 10;
+    const cols = gridManager?.cols || 10;
+    const state = new Float32Array(rows * cols * 18);
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const cell = gridManager.grid[r][c];
+        const cellOffset = (r * cols + c) * 18;
+        for (let slot = 0; slot < 2; slot++) {
+          const slotOffset = cellOffset + slot * 9;
+          const tri = cell.triangles.find(t => (slot === 0 ? t.rotation < 2 : t.rotation >= 2));
+          if (!tri) {
+            state[slotOffset] = 1;
+          } else {
+            const ownerOffset = tri.player === player ? 0 : 4;
+            state[slotOffset + 1 + ownerOffset + tri.rotation] = 1;
+          }
+        }
+      }
+    }
+    return Array.from(state);
+  }
+
+  /**
+   * Get legacy 401-element state representation (player-relative).
+   * Matches getStateFixed() in train_tfjs.cjs (rotation normalized by r / 4.0, plus player flag).
+   */
+  _getLegacyState(gridManager, player) {
     const state = [];
     for (let y = 0; y < gridManager.rows; y++) {
       for (let x = 0; x < gridManager.cols; x++) {
@@ -96,27 +147,53 @@ class HumanGameLogger {
           return p === player ? 1 : -1;
         };
 
+        const normalizeRotation = (r) => {
+          return r === undefined || r === -1 ? -1 : r / 4.0;
+        };
+
         state.push(normalizePlayer(t1?.player));
-        state.push(t1?.rotation !== undefined ? t1.rotation / 3.0 : -1);
+        state.push(normalizeRotation(t1?.rotation));
         state.push(normalizePlayer(t2?.player));
-        state.push(t2?.rotation !== undefined ? t2.rotation / 3.0 : -1);
+        state.push(normalizeRotation(t2?.rotation));
       }
     }
+    state.push(1); // Player-relative perspective flag (always 1 for active player)
     return state;
   }
 
   /**
    * End the current game and add to buffer
+   * @param {GridManager} gridManager
+   * @param {object} options - Optional { winnerOverride, forfeitedBy }
    */
-  endGame(gridManager) {
+  endGame(gridManager, options = {}) {
     if (!this.currentGame) return;
+
+    // Ignore empty games where no moves were played
+    if (this.currentGame.moves.length === 0) {
+      this.currentGame = null;
+      return;
+    }
 
     const p1Score = gridManager.getLargestContiguous(1);
     const p2Score = gridManager.getLargestContiguous(2);
 
     this.currentGame.finalScores = { 1: p1Score, 2: p2Score };
-    this.currentGame.winner = p1Score > p2Score ? 1 : (p2Score > p1Score ? 2 : 0);
+    if (options.winnerOverride !== undefined && options.winnerOverride !== null) {
+      this.currentGame.winner = options.winnerOverride;
+    } else {
+      this.currentGame.winner = p1Score > p2Score ? 1 : (p2Score > p1Score ? 2 : 0);
+    }
+    if (options.forfeitedBy) {
+      this.currentGame.forfeitedBy = options.forfeitedBy;
+    }
     this.currentGame.totalMoves = this.currentGame.moves.length;
+
+    // Attach terminal value target z in {-1, 0, +1} to each move for direct AlphaZero/ConvNet training
+    const winner = this.currentGame.winner;
+    for (const m of this.currentGame.moves) {
+      m.valueTarget = winner === 0 ? 0.0 : (winner === m.player ? 1.0 : -1.0);
+    }
 
     // Deduplicate by ID
     const exists = this.games.findIndex(g => g.id === this.currentGame.id);
@@ -139,17 +216,30 @@ class HumanGameLogger {
   }
 
   /**
+   * Discard an in-progress game without saving (e.g., when returning to menu with 0 moves)
+   */
+  abortGame() {
+    this.currentGame = null;
+  }
+
+  /**
    * Export all games and flush buffer
    */
   exportAndFlush() {
     if (this.games.length === 0) {
-      alert('No games to export');
       return null;
     }
 
     const exportData = {
+      schemaVersion: '2.0-canonical',
       exportedAt: new Date().toISOString(),
       gameCount: this.games.length,
+      stateEncoding: {
+        state: '10x10x18 canonical one-hot (1800 floats, pre-move, player-relative)',
+        legacyState: '10x10x4 + 1 legacy vector (401 floats, pre-move, rotation=r/4.0)',
+        actionIndex: '(y * 10 + x) * 4 + rotation (0..399)',
+        valueTarget: '+1 if move.player won, -1 if lost, 0 if draw'
+      },
       games: this.games
     };
 
@@ -160,9 +250,11 @@ class HumanGameLogger {
     const a = document.createElement('a');
     a.href = url;
     a.download = `triantica_human_games_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
 
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
 
     // Flush buffer
     const count = this.games.length;
@@ -183,7 +275,8 @@ class HumanGameLogger {
       oldestGame: this.games[0]?.timestamp || null,
       newestGame: this.games[this.games.length - 1]?.timestamp || null,
       humanWins: this.games.filter(g => g.winner === g.humanPlayer).length,
-      aiWins: this.games.filter(g => g.winner !== g.humanPlayer && g.winner !== 0).length
+      aiWins: this.games.filter(g => g.winner !== g.humanPlayer && g.winner !== 0).length,
+      draws: this.games.filter(g => g.winner === 0).length
     };
   }
 }
@@ -932,17 +1025,25 @@ class GameScene extends Phaser.Scene {
 
   enableHumanInput() {
     console.log("Enabling human input");
-    // Make buttons interactive again
-    this.placeButton.setInteractive(); // [cite: 186]
-    this.rotateButton.setInteractive(); // [cite: 177]
-    // You might visually change the buttons back from a disabled state here
+    const placeWidth = 248;
+    const placeHeight = 56;
+    const placeX = this.cameras.main.width / 2;
+    const placeY = this.bottomButtonsY || 718;
+    this.placeButton.setInteractive(
+      new Phaser.Geom.Rectangle(placeX - placeWidth / 2, placeY - placeHeight / 2, placeWidth, placeHeight),
+      Phaser.Geom.Rectangle.Contains
+    );
 
-    // Enable keyboard listeners (Phaser doesn't have a simple scene-wide toggle,
-    // so the checks within handlers are primary)
-    this.input.keyboard.enabled = true; // Generally keep keyboard enabled, rely on checks
+    const rotWidth = 76;
+    const rotHeight = 56;
+    const rotX = 76;
+    const rotY = this.bottomButtonsY || 718;
+    this.rotateButton.setInteractive(
+      new Phaser.Geom.Rectangle(rotX - rotWidth / 2, rotY - rotHeight / 2, rotWidth, rotHeight),
+      Phaser.Geom.Rectangle.Contains
+    );
 
-      // Enable direct grid interaction if you add it (e.g., clicking grid cells)
-      // this.input.on('pointerdown', this.handleGridClick, this); // Re-add listener if removed
+    this.input.keyboard.enabled = true;
   }
   
   disableHumanInput() {
@@ -1126,18 +1227,19 @@ class GameScene extends Phaser.Scene {
   }
 
   handleForfeit() {
-    const winner = this.gridManager.currentPlayer === 1 ? 2 : 1; // [cite: 171]
+    const forfeitedBy = this.gridManager.currentPlayer;
+    const winner = forfeitedBy === 1 ? 2 : 1; // [cite: 171]
     this.gridManager.winRounds[winner]++;
     const p1Score = this.gridManager.getLargestContiguous(1);
     const p2Score = this.gridManager.getLargestContiguous(2);
     
     // --- End game tracking ---
     if (this.gameMode === 'HvAI') {
-      humanGameLogger.endGame(this.gridManager);
+      humanGameLogger.endGame(this.gridManager, { winnerOverride: winner, forfeitedBy });
       this.updateExportButton?.();
     }
     
-    this.showGameOver(`Player ${this.gridManager.currentPlayer} forfeits!\nPlayer ${winner} wins!\nFinal Score: P1: ${p1Score}, P2: ${p2Score}`); // [cite: 172]
+    this.showGameOver(`Player ${forfeitedBy} forfeits!\nPlayer ${winner} wins!\nFinal Score: P1: ${p1Score}, P2: ${p2Score}`); // [cite: 172]
     this.updateScore();
     this.disableHumanInput();
     this.time.delayedCall(3000, () => {
@@ -1190,6 +1292,9 @@ class GameScene extends Phaser.Scene {
     );
 
     this.menuReturnBg.on('pointerdown', () => {
+      if (this.gameMode === 'HvAI') {
+        humanGameLogger.abortGame();
+      }
       this.time.removeAllEvents();
       this.scene.start('Menu');
     });
@@ -1852,6 +1957,12 @@ class GameScene extends Phaser.Scene {
       console.log("Not human player's turn.");
       return;
     }
+
+    // Capture PRE-MOVE state before placing the triangle on the board
+    const preMoveSnapshot = (this.gameMode === 'HvAI')
+      ? humanGameLogger.capturePreMoveState(this.gridManager, this.gridManager.currentPlayer)
+      : null;
+
     const success = this.gridManager.placeTriangle(
       this.cursorPos.x,
       this.cursorPos.y
@@ -1869,9 +1980,9 @@ class GameScene extends Phaser.Scene {
         console.log(`Player ${this.gridManager.currentPlayer} enclosed ${enclosedTriangles} triangle(s) and gets extra turn(s).`);
       }
 
-      // --- Log human move ---
-      if (this.gameMode === 'HvAI') {
-        humanGameLogger.logMove(this.gridManager, {
+      // --- Log human move (using pre-move state snapshot) ---
+      if (this.gameMode === 'HvAI' && preMoveSnapshot) {
+        humanGameLogger.logMove(preMoveSnapshot, {
           x: this.cursorPos.x,
           y: this.cursorPos.y,
           rotation: this.gridManager.selectedRotation
@@ -2195,6 +2306,12 @@ triggerAIMove() {
 
           // Place the triangle after another small delay for visual pacing
           this.time.delayedCall(150, () => {
+              // Capture PRE-MOVE state before placing the AI's triangle
+              const preMoveSnapshot = (this.gameMode === 'HvAI')
+                ? humanGameLogger.capturePreMoveState(this.gridManager, this.gridManager.currentPlayer)
+                : null;
+
+              this.gridManager.selectedRotation = move.rotation;
               let success = this.gridManager.placeTriangle(move.x, move.y); // [cite: 114, 215]
               
               // FIX: Retry with random valid move if prediction failed
@@ -2217,9 +2334,9 @@ triggerAIMove() {
                     console.log(`AI Player ${this.gridManager.currentPlayer} enclosed ${enclosed} triangle(s) and gets extra turn(s).`);
                   }
                   
-                  // --- Log AI move for human games ---
-                  if (this.gameMode === 'HvAI') {
-                    humanGameLogger.logMove(this.gridManager, move, this.gridManager.currentPlayer, enclosed);
+                  // --- Log AI move for human games (using pre-move state snapshot) ---
+                  if (this.gameMode === 'HvAI' && preMoveSnapshot) {
+                    humanGameLogger.logMove(preMoveSnapshot, move, this.gridManager.currentPlayer, enclosed);
                   }
                   
                   this.redrawTriangles(); // [cite: 231]
@@ -2323,6 +2440,10 @@ triggerAIMove() {
         
         this.time.delayedCall(100, () => {
           this.debugText.setText(`P${currentPlayerNum} calling placeTriangle...`);
+          // Capture PRE-MOVE state before placing opponent's triangle
+          const preMoveSnapshot = (this.gameMode === 'HvAI')
+            ? humanGameLogger.capturePreMoveState(this.gridManager, this.gridManager.currentPlayer)
+            : null;
           // FIX: Re-set selectedRotation right before placing (prevents race condition)
           this.gridManager.selectedRotation = move.rotation;
           let success = this.gridManager.placeTriangle(move.x, move.y);
@@ -2349,9 +2470,9 @@ triggerAIMove() {
               console.log(`${playerType} Player ${this.gridManager.currentPlayer} enclosed ${enclosed} triangle(s) and gets extra turn(s).`);
             }
             
-            // --- Log opponent move for human games ---
-            if (this.gameMode === 'HvAI') {
-              humanGameLogger.logMove(this.gridManager, move, this.gridManager.currentPlayer, enclosed);
+            // --- Log opponent move for human games (using pre-move state snapshot) ---
+            if (this.gameMode === 'HvAI' && preMoveSnapshot) {
+              humanGameLogger.logMove(preMoveSnapshot, move, this.gridManager.currentPlayer, enclosed);
             }
             
             this.redrawTriangles();

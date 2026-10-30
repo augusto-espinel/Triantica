@@ -54,10 +54,10 @@ See `README_QUICKSTART.md` for full instructions.
 | `src/core/GameSession.js` | Game orchestration | ✅ Validated |
 | `src/players/RandomPlayer.js` | Baseline opponent | ✅ Validated |
 | `src/players/AIPlayer.js` | Neural network AI | ✅ Integrated |
-| `src/data/GameLogger.js` | Unified logging | ✅ Validated |
+| `src/data/GameLogger.js` | Unified & `HumanGameLogger` telemetry logging | ✅ Validated |
 | `src/server/runExperiment.js` | CLI runner | ✅ Created |
 | `src/server/server.js` | Express API | ✅ Created |
-| `tests/validate.js` | 17 automated tests | ✅ All pass |
+| `tests/validate.js` | 20 automated tests (incl. `HumanGameLogger`) | ✅ All pass |
 | `tests/test_ai_integration.js` | AI integration tests | ✅ Working |
 | `AIPlayer.js` (original) | Legacy neural net | 📦 Preserved (not deleted) |
 | `game.js` (original) | Phaser scenes | ✅ Still works |
@@ -81,7 +81,7 @@ See `README_QUICKSTART.md` for full instructions.
 - Cluster adjacency bug fixed
 - Coordinate convention documented
 
-### Phase 4: AIPlayer Integration ✅
+### Phase 4: AIPlayer Integration & Human-vs-AI Telemetry ✅
 - Refactored `AIPlayer.js` to extend `PlayerInterface`
 - Uses `GridManager` directly (no Phaser dependency)
 - `brain.js` resolved via dynamic import (ESM-safe) for browser inference
@@ -89,6 +89,7 @@ See `README_QUICKSTART.md` for full instructions.
 - Three experiment modes working: AI vs Random, Random vs AI, AI vs AI
 - `calculateImmediateRewardVector` uses `GridManager.clone()` instead of JSON.parse/stringify
 - `runSelfPlayGame` method preserved for training
+- **`HumanGameLogger` (`game.js` & `src/data/GameLogger.js`):** Captures pre-move `10×10×18` canonical one-hot state (`1,800` floats) and `401`-float legacy state for every human and AI ply in `HvAI` mode, persists up to 100 games in a `localStorage` FIFO ring buffer (`triantica_human_games`), and provides a one-click **📤 Export & Flush** button next to the scoreboard.
 
 ## Known Issues / Lessons
 

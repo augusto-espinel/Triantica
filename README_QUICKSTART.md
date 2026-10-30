@@ -199,10 +199,22 @@ npm run dev
 
 | Mode | Description |
 |------|-------------|
-| HvAI | Human vs trained AI (default) |
+| HvAI | Human vs trained AI (default, includes persistent FIFO move logging & JSON export) |
 | AvR | AI vs Random baseline |
 | AvH | AI vs Heuristic (greedy enclosure) |
 | AvA | AI vs AI (self-play) |
+
+### Exporting Human vs. AI Games for Training
+
+During **Human vs. AI (`HvAI`)** matches, every human and AI ply is automatically logged to `localStorage` (`triantica_human_games`) in a rotating 100-game FIFO buffer:
+
+1. **In-Game Indicator:** The **📤** button to the right of the scoreboard displays the number of completed games currently stored in the buffer.
+2. **Download & Flush:** Click **📤** to download `triantica_human_games_YYYY-MM-DD.json` and automatically clear the local buffer.
+3. **Training-Ready Schema (`schemaVersion: "2.0-canonical"`):**
+   - `move.state`: Pre-move **10×10×18 canonical one-hot state** (`1,800` floats, player-relative) directly compatible with `TFConvNetwork` in `src/server/train_tfjs.cjs`.
+   - `move.legacyState`: Pre-move **401-float vector** (`r / 4.0` rotation normalization + player flag) for legacy feedforward networks.
+   - `move.actionIndex`: Flat policy index `(y * 10 + x) * 4 + rotation` (`0..399`).
+   - `move.valueTarget`: Terminal outcome $+1$ (win), $0$ (draw), or $-1$ (loss) from the moving player's perspective (respecting forfeits).
 
 ## Documentation
 
