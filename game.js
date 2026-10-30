@@ -736,7 +736,7 @@ class GameScene extends Phaser.Scene {
   constructor() {
       super({ key: 'Game' });
       this.cellSize = 50;
-      this.gridOffset = { x: 50, y: 120 };
+      this.gridOffset = { x: 50, y: 50 }; // Will be dynamically calculated in create()
       this.gridManager = new GridManager(10, 10);
       this.cursorPos = { x: 0, y: 0 };
       this.isDragging = false;
@@ -870,6 +870,16 @@ class GameScene extends Phaser.Scene {
 
     // Ensure at least 2 touch pointers are active for two-finger pinch-to-zoom on mobile
     this.input.addPointer(2);
+
+    // Calculate vertical centering for the board
+    // Board height = 10 cells * 50px = 500px
+    // Scoreboard takes ~60px at y=676 (from bottom)
+    // Reserve space for buttons at bottom (~70px)
+    const screenHeight = this.cameras.main.height;
+    const boardHeight = 10 * this.cellSize;
+    const reservedBottom = screenHeight - 640; // Space for scoreboard + buttons
+    const availableHeight = screenHeight - reservedBottom - 40; // 40px top margin
+    this.gridOffset.y = Math.max(30, (availableHeight - boardHeight) / 2 + 20);
 
     this.calculateGridBounds();
     this.setupBoardLayers();
