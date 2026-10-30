@@ -28,12 +28,13 @@ This document is both a training journal and a comprehensive introduction to rei
 3. [The Architecture Journey: brain.js → TensorFlow.js](#3-architecture-journey)
 4. [Hardware: Mac Studio M2 Ultra & Matrix Sizing Deep Dive](#4-hardware)
 5. [Parameters Explored](#5-parameters)
-6. [Training Strategies](#7-training-strategies)
-7. [Critical Bugs, Forensic Audits, and Why They Matter](#8-critical-bugs)
-8. [The Heuristic Wall: Understanding Architectural Limits](#9-heuristic-wall)
-9. [Experiment Reference](#10-experiment-reference)
-10. [Key Takeaways for RL Practitioners](#11-takeaways)
-11. [Deep Dive: Convolutions, Dual Heads, MCTS & Pipeline Consolidation](#12-optimization-roadmap)
+6. [Training Strategies](#6-training-strategies)
+7. [Critical Bugs, Forensic Audits, and Why They Matter](#7-critical-bugs)
+8. [The Heuristic Wall: Understanding Architectural Limits & How We Broke It](#8-heuristic-wall)
+9. [Experiment Reference](#9-experiment-reference)
+10. [Key Takeaways for RL Practitioners](#10-takeaways)
+11. [Deep Dive: Convolutions, Dual Heads, MCTS & Pipeline Consolidation](#11-optimization-roadmap)
+12. [Toroidal 3D Visualization, Dual-View Projection & Human Telemetry](#12-toroidal-visualization)
 
 ---
 
@@ -400,7 +401,7 @@ The TF.js implementation initially got **49% vs Random** (vs 91% with brain.js).
 
 **How we found them:** Compared TF.js training logs with brain.js logs side-by-side. The win signal magnitude was visibly different.
 
-**Commit reference:** `01e88f0` "CRITICAL FIX: Use chosen move reward instead of average"
+**Core Engineering Principle:** A loss or reward function must only aggregate over active/valid decision dimensions—averaging over 350+ masked or unchosen actions dilutes the learning signal to near zero.
 
 ---
 
@@ -702,7 +703,7 @@ Effect: Dampens oscillations, accelerates convergence
 
 ---
 
-## 7. Training Strategies {#7-training-strategies}
+## 6. Training Strategies {#6-training-strategies}
 
 ### Strategy 1: Pure Self-Play
 
@@ -819,7 +820,7 @@ The network learned basic legality but no strategic depth.
 
 ---
 
-## 8. Critical Bugs and How We Found Them {#8-critical-bugs}
+## 7. Critical Bugs, Forensic Audits, and Why They Matter {#7-critical-bugs}
 
 ### Bug 1: Self-Play Perspective Mismatch (exp19)
 
@@ -848,7 +849,7 @@ move = getAIMove(network, grid, exploration, aiPlayerNumber);
 
 **How we found it:** Self-play win rate histogram showed P1 winning every single game. In a fair game, each side should win ~50%.
 
-**Commit:** `fb9e2e4`
+**Generalizable Principle (Canonical Ego-Centric State):** In symmetric multi-agent RL, the neural network must always view the state from the active agent's perspective (`+1` = self, `-1` = opponent), never in global player coordinates (`Player 1` vs `Player 2`).
 
 ### Bug 2: Reward Signal Dilution (TF.js Migration)
 
@@ -878,7 +879,7 @@ const chosenMoveReward = vector[chosenMoveIndex];
 
 **How we found it:** Compared training logs side-by-side. The win signal magnitude was visibly different: 0.99 vs 0.28.
 
-**Commit:** `01e88f0` "CRITICAL FIX: Use chosen move reward instead of average"
+**Generalizable Principle (Action-Specific Credit Assignment):** Only the action actually executed (or the target MCTS distribution) should drive the policy gradient; averaging over unselected outputs destroys signal-to-noise ratio.
 
 ### Bug 3: Heuristic Player Number (TF Baselines)
 
@@ -908,7 +909,7 @@ const heuristicOpponent = new HeuristicPlayer(opponentNumber, {...});
 
 **How we found it:** Audited game scores. Heuristic scoring 173/173 every game was statistically suspicious.
 
-**Commit:** `30384cc`
+**Generalizable Principle (Role-Swap Invariance):** Whenever an evaluation harness alternates first-mover and second-mover seats for fairness, opponent identity must be dynamically bound to `(3 - aiPlayerNumber)`.
 
 ### Bug 4: Win Rate Measurement (exp12)
 
@@ -938,7 +939,7 @@ if (winner === aiPlayer) results.wins.ai++;
 
 **How we found it:** Noticed training and evaluation giving different results for the same opponent.
 
-**Commit:** `b4ffc84`
+**Generalizable Principle (Decouple Seat Index from Agent Identity):** Metrics must always be keyed by agent identity (`ai` vs `opponent`), while separately tracking role-split performance (`as P1` vs `as P2`) to detect first-mover bias.
 
 ### Bug 5: MCTS Value Perspective Mismatch (TF-B8)
 
@@ -982,8 +983,6 @@ this._backpropagate(path, valueFromRootPerspective, rootPlayer);
 The smooth loss curve + consistent degradation = inverted learning signal.
 
 **Key Insight:** "Consistently getting worse is more encouraging than consistently remaining random" — it means the learning mechanism works, just the signal was flipped.
-
-**Commit:** `28ca800`
 
 ---
 
@@ -1134,7 +1133,7 @@ In a 20-game live verification test immediately after applying Bug 11's fix:
 - Value Head remained unsaturated and calibrated (`+0.2538` on mid-game boards).
 - Win rate vs Random jumped from `35–42%` to **`56.0%`** (`52% as P1`, `60% as P2`) in Cycle 1 alone!
 
-## 9. The Heuristic Wall: Understanding Architectural Limits {#9-heuristic-wall}
+## 8. The Heuristic Wall: Understanding Architectural Limits & How We Broke It {#8-heuristic-wall}
 
 ### The Experiment That Changed Everything
 
@@ -1267,7 +1266,7 @@ After 22 brain.js experiments and 10+ TF.js experiments, a clear pattern emerged
 
 ---
 
-## 10. Experiment Reference {#10-experiment-reference}
+## 9. Experiment Reference {#9-experiment-reference}
 
 ### Complete Results Table
 
@@ -1292,6 +1291,7 @@ After 22 brain.js experiments and 10+ TF.js experiments, a clear pattern emerged
 | TF-B12 | Quiescence MCTS + Mixed | TF.js | 50/0/50 | 0.001 | 10 | 256 | ✓ | ✗ | **100%** | **63%** | 271m |
 | TF-B13 | Dual-Side Quiescence + 75/25 | TF.js | 75/0/25 | 0.0005 | 10 | 256 | ✓ | ✗ | **100%** | **73% (89% pk)** | 341m |
 | TF-B14 | Sliding-Window Pure SP + CosLR | TF.js | 100% net | 4e-4→1e-4 | 10 | 256 | ✓ | ✗ | **100%** | **78% (90% pk, 80.1% avg)** | 397m |
+| **TF-B15** | **Full $T^2$ Torus + Circular Conv + Safety** | **TF.js** | **100% net** | **3e-4→8e-5** | **10** | **256** | **✓** | **✗** | **100%** | **99% Raw (95.9% avg) / 100% +Safety** | **585m** |
 
 **Key:**
 - Mix: opponent distribution (network/random/heuristic)
@@ -1315,7 +1315,7 @@ After 22 brain.js experiments and 10+ TF.js experiments, a clear pattern emerged
 
 ---
 
-## 11. Key Takeaways for RL Practitioners {#11-takeaways}
+## 10. Key Takeaways for RL Practitioners {#10-takeaways}
 
 ### What We Learned
 
@@ -1329,31 +1329,29 @@ After 22 brain.js experiments and 10+ TF.js experiments, a clear pattern emerged
 │     No amount of learning rate tuning will make a            │
 │     feedforward network play strategically.                  │
 │                                                             │
-│     UPDATE (Phase 2): Even conv + value head doesn't break  │
-│     the strategic barrier. Search is essential.             │
+│  2. Domain-Aware Search Breaks the Strategic Barrier        │
+│     ────────────────────────────────────────────────        │
+│     Conv + Value Head alone hits 0% vs Heuristic.           │
+│     Vanilla MCTS also fails on deterministic cascades.      │
+│     Quiescence MCTS + Dual-Side Teacher unlocks 90%–100%.   │
 │                                                             │
-│  2. Dense rewards help early learning                       │
-│     ────────────────────────────────                        │
-│     Gradient isolation is theoretically cleaner             │
-│     but practically worse. Dense supervision matters.       │
-│                                                             │
-│  3. Bugs are more common than you think                     │
+│  3. Systemic Bugs Hide Across Interfaces                    │
 │     ────────────────────────────────────                    │
-│     We found 4 critical bugs in production code.            │
-│     Trust your metrics, verify your assumptions.            │
+│     We uncovered 11 critical bugs across geometry, MCTS,    │
+│     canonical encoding, replay targets, and 1/400 loss      │
+│     scaling. Always audit end-to-end tensor magnitudes.     │
 │                                                             │
-│  4. Hardware matters for iteration speed                    │
-│     ──────────────────────────────────                       │
-│     M2 Ultra unified memory enabled 100x faster             │
-│     gradient computation, enabling more experiments.        │
+│  4. Topology Must Match the Convolution Padding             │
+│     ───────────────────────────────────────────             │
+│     Replacing zero-padding with circular toroidal padding   │
+│     (`ToroidalPad2D`) eliminated border blind spots and     │
+│     lifted raw 1-ply policy from 80.1% to 95.9% (99% peak). │
 │                                                             │
-│  5. Some problems need search                                │
-│     ────────────────────────────                            │
-│     Multi-step lookahead cannot be learned by               │
-│     feedforward networks. Search is necessary.              │
-│                                                             │
-│     CONFIRMED (Phase 2): Conv + value head still hits      │
-│     the wall. Architecture alone isn't enough.              │
+│  5. Hybrid Neuro-Symbolic Safety Eliminates Horizon Blunders│
+│     ────────────────────────────────────────────────────────│
+│     Pairing the 1-ply ConvNet with a lightweight top-K      │
+│     tactical safety filter achieved 1,000W / 0L / 0D (100%) │
+│     across all 10 cycles against HeuristicPlayer.           │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -1396,7 +1394,7 @@ After 22 brain.js experiments and 10+ TF.js experiments, a clear pattern emerged
 
 ---
 
-## 12. Optimization Roadmap: Breaking the Heuristic Wall {#12-optimization-roadmap}
+## 11. Deep Dive: Convolutions, Dual Heads, MCTS & Pipeline Consolidation {#11-optimization-roadmap}
 
 This chapter outlines a prioritized plan to improve AI performance. Each phase builds on the previous, with clear success metrics and implementation notes specific to TensorFlow.js on Mac Studio M2 Ultra.
 
@@ -2836,6 +2834,40 @@ Warm-started from `TF-B13_network.json`, **`TF-B14`** tested the resolution of *
 
 ---
 
+#### 9. Experiment `TF-B15` Results: Phase 3 Full Torus ($T^2$) + Circular Convolutions + Tactical Safety Filter (`99.0%` Peak Raw / `95.9%` Avg Raw / **`100.0%` Across All 10 Cycles with Safety Filter**)
+
+Following the official release of the 2D baseline (`v1.0.0-2d`), **Phase 3 (`TF-B15`)** unified the board's topology and resolved **Bottlenecks 2 and 3** simultaneously:
+1. **Full Toroidal Edge Symmetry ($T^2$):** Wrapped vertex coordinates modulo `(cols, rows)` in `hasCorner(x, y)` (`toroidalPlacement = true`), giving the $10 \times 10$ grid exactly $100$ unique topological vertices (each shared by $12$ triangle slots) so both corner placement and enclosure detection are 100% translation-invariant.
+2. **Toroidal Circular Convolutions (`ToroidalPad2D` / `ToroidalPad3D`):** Replaced standard zero-padding (`padding: 'same'`) across all three `3×3` `Conv2D` layers with custom circular padding that wraps 1 row/column around all four borders (`10×10 → 12×12`) prior to `valid` convolution, achieving exact 2D periodic translation equivariance (`max abs diff = 5.96e-8`).
+3. **Inference-Time Tactical Safety Filter (`topK = 12`):** Integrated `ConvNetwork.evaluateOpponentReplyRisk` (`5×5` toroidal neighborhood scan for 1-ply hole blunders + immediate AI enclosure bonuses) directly into `predictMove()`.
+
+Warm-started from `TF-B14_best_network.json`, **`TF-B15`** ran 10 cycles of 100% pure network self-play (`Dual-Side QuiescenceMCTS-50`, Cosine LR `0.0003 → 0.00008`, `45,000`-sample sliding replay window, runtime `585.2 min`, `129,628` total samples generated):
+
+| Cycle | Cosine LR | Buffer (`45K` Window, `New Samples`) | Loss (`Start → End`) | Self-Play (`P1 / P2 / D`) | Eval vs Random (`100 games`, `Mean AI–Rand`) | Eval vs Heuristic **Raw Policy** (`Role P1 / P2`) | Raw Mean Score (`AI – Heur`, `Margin`) | Eval vs Heuristic **+Safety Filter** (`Mean AI–Heur`) | Diversity (`Open / Board`) |
+|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| **0 (`TF-B14` Best)** | `0.000109` | `45,000 / 45K` | `3.916 → 3.081` | — | **100.0%** (`174.6 – 2.9`) | `87.0%` on $T^2$ | `131.2 – 48.4` (`+82.8`) | **`99.0%`** (`173.8 – 15.1`) | `4.43 / 1.87` |
+| **1** | `0.000300` | `12,976 / 45K` (`12,976`) | `4.007 → 2.992` | `55 / 44 / 1` | **100.0%** (`175.8 – 2.8`) | **`87.0%`** (`84% / 90%`) | `133.9 – 46.5` (`+87.4`) | **🛡️ `100.0%`** (`174.8 – 14.3`) | `4.41 / 1.89` |
+| **2** | `0.000293` | `25,975 / 45K` (`12,999`) | `3.856 → 2.912` | `50 / 49 / 1` | **100.0%** (`177.7 – 2.5`) | **`93.0%`** (`92% / 94%`) | `144.8 – 39.1` (`+105.7`) | **🛡️ `100.0%`** (`176.2 – 13.8`) | `4.12 / 1.88` |
+| **3** | `0.000274` | `38,983 / 45K` (`13,008`) | `3.759 → 2.923` | `50 / 50 / 0` | **100.0%** (`175.5 – 2.7`) | **`95.0%`** (`92% / 98%`) | `146.8 – 35.3` (`+111.5`) | **🛡️ `100.0%`** (`175.4 – 13.6`) | `4.61 / 1.90` |
+| **4** | `0.000245` | **`45,000 / 45K`** (`12,868`) | `3.716 → 2.916` | `55 / 44 / 1` | **100.0%** (`177.6 – 2.5`) | **`96.0%`** (`96% / 96%`) | `149.7 – 32.2` (`+117.5`) | **🛡️ `100.0%`** (`175.1 – 14.2`) | `4.40 / 1.89` |
+| **5** | `0.000209` | **`45,000 / 45K`** (`13,028`) | `3.906 → 2.962` | `48 / 52 / 0` | **100.0%** (`177.4 – 2.5`) | **`98.0%`** (`98% / 98%`) | `156.7 – 29.2` (`+127.5`) | **🛡️ `100.0%`** (`173.4 – 14.4`) | `4.69 / 1.90` |
+| **6** | `0.000171` | **`45,000 / 45K`** (`13,028`) | `3.720 → 2.981` | `47 / 53 / 0` | **100.0%** (`178.1 – 2.4`) | **`98.0%`** (`100% / 96%`) | `158.7 – 25.9` (`+132.8`) | **🛡️ `100.0%`** (`173.0 – 14.8`) | `4.47 / 1.90` |
+| **7** | `0.000135` | `13,002 / 45K` (`13,002`) | `3.822 → 3.016` | `57 / 43 / 0` | **100.0%** (`177.7 – 2.5`) | **🏆 `99.0%`** (`98% / 100%`) | `157.3 – 26.0` (`+131.3`) | **🛡️ `100.0%`** (`174.8 – 14.8`) | `4.22 / 1.90` |
+| **8** | `0.000106` | `25,974 / 45K` (`12,972`) | `3.699 → 3.010` | `53 / 47 / 0` | **100.0%** (`177.5 – 2.6`) | **`97.0%`** (`98% / 96%`) | `155.5 – 28.6` (`+126.9`) | **🛡️ `100.0%`** (`173.1 – 16.0`) | `4.41 / 1.89` |
+| **9** | `0.000087` | `38,862 / 45K` (`12,888`) | `3.679 → 3.073` | `45 / 53 / 2` | **100.0%** (`178.4 – 2.4`) | **`97.0%`** (`98% / 96%`) | **`159.8 – 24.3` (`+135.5`)** | **🛡️ `100.0%`** (`173.5 – 14.9`) | `4.66 / 1.89` |
+| **10** | `0.000080` | **`45,000 / 45K`** (`12,859`) | `3.754 → 3.106` | `59 / 41 / 0` | **100.0%** (`178.0 – 2.4`) | **🏆 `99.0%`** (`100% / 98%`) | `154.6 – 28.2` (`+126.4`) | **🛡️ `100.0%`** (`173.0 – 15.7`) | `4.18 / 1.88` |
+
+**Key Takeaways from `TF-B15` (Official Phase 3 Toroidal Champion):**
+1. **Toroidal Circular Padding (`ToroidalPad2D`) Eliminated Border Blind Spots (`95.9%` Avg Raw Policy vs `80.1%` in `TF-B14`):**
+   - Even **without** the inference safety filter (`safetyFilter = false`), replacing zero-padding with circular toroidal padding lifted the raw 1-ply ConvNet's 10-cycle average against `HeuristicPlayer` by **+15.8 percentage points** (`80.1% → 95.9%`, `959W / 40L / 1D`), peaking at **`99.0%` (`99W / 1L / 0D`)** in Cycles 7 and 10 and averaging **`97.7%` across Cycles 4–10**.
+   - Mean raw cluster score margin more than doubled from `+56.4` in `TF-B14` to **`+135.5` (`159.8` vs `24.3`)** in Cycle 9, proving that a large fraction of `TF-B14`'s residual blunders occurred near the `x, y ∈ {0, 9}` borders where zero-padding previously severed wrap-around enclosures.
+2. **Flawless Mastery with the Inference-Time Safety Filter (`1,000W / 0L / 0D` = `100.0%` Across All 10 Cycles):**
+   - With `safetyFilter = true` (`topK = 12`), `TF-B15` went **`100.0%` (`100W / 0L / 0D`, `100% as P1`, `100% as P2`) in every single cycle from Cycle 1 to Cycle 10** (`1,000` consecutive wins vs `HeuristicPlayer`, mean score **`174.2` vs `14.7`**) and **`1,000W / 0L / 0D` (`100.0%`, `177.4` vs `2.5`)** vs `RandomPlayer`.
+3. **Production Deployment & Multi-Tier Human Play (`trainedAI_network.json`):**
+   - `TF-B15_best_network.json` (`Cycle 7` checkpoint: `99.0%` Raw / `100.0%` +Safety vs Heuristic) has been promoted to `trainedAI_network.json`, powering three selectable difficulty tiers in browser/mobile play: **Easy** (high-temperature sampling), **Medium** (Raw 1-ply ConvNet `99%`), and **Hard** (Master ConvNet + Tactical Safety Filter `100%`), alongside **`HumanGameLogger`** telemetry to record canonical `(state, move, claimed, outcome)` trajectories from real human matches.
+
+---
+
 ### Phase 6: Self-Play Tournament + Iterative Retraining
 
 **Priority:** Lower (polish after core improvements)
@@ -2918,20 +2950,58 @@ Use this table to track implementation progress. Update after each experiment.
 
 ---
 
-### Summary: Expected Impact
+### Summary: Expected vs. Achieved Impact Across All Phases
 
-| Phase | Change | Expected Δvs Random | Expected Δvs Heuristic | Complexity |
-|-------|--------|---------------------|------------------------|------------|
-| 1 | Replay buffer | +0% (45→45%) | +0% (0→0%) | Low |
-| 2 | Conv layers | +5% (45→50%) | +0% (0→0%) | Medium |
-| 3 | Value head | +0% (50→50%) | +0% (0→0%) | Medium |
-| 4 | BatchNorm + Deep | +5% (50→55%) | +5% (0→5%) | Medium |
-| 5 | MCTS | +20% (55→75%) | +10% (5→15%) | High |
-| 6 | Tournament | +5% (75→80%) | +5% (15→20%) | Medium |
+| Phase | Architectural Upgrade | Expected vs Random | Expected vs Heuristic | **Actual Achieved (`TF-B4` → `TF-B15`)** |
+|-------|-----------------------|--------------------|-----------------------|------------------------------------------|
+| 1 | Experience Replay Buffer (`TF-B4`) | 45% | 0% | **45% vs Random, 0% vs Heuristic** (Feedforward bottleneck) |
+| 2–3 | 18-Channel Canonical Slot Encoding + Conv2D + Value Head (`TF-B5`/`B6`) | 50% | 0% | **50% vs Random, 0% vs Heuristic** (Spatial features learned, but no lookahead) |
+| 5 | Single-Perspective MCTS-50 + Bug 6–11 Fixes (`TF-B9`/`B10`) | 75% | 5–15% | **87% vs Random, 0% vs Heuristic** (Vanilla MCTS blind to deterministic cascades) |
+| 5.5 | Quiescence MCTS + 50/50 Mixed Opponents (`TF-B12`) | 85% | 15–20% | **100% vs Random, 63% vs Heuristic** (🏆 Heuristic Wall Broken!) |
+| 5.6 | Dual-Side Quiescence MCTS + 75/25 Mix (`TF-B13`) | 100% | 70%+ | **100% vs Random, 89% Peak (71.6% Avg) vs Heuristic** |
+| 5.7 | 100% Pure Self-Play + 45K Sliding Replay + Cosine LR (`TF-B14`) | 100% | 80%+ | **100% vs Random, 90% Peak (80.1% Avg) vs Heuristic** (`v1.0.0-2d` Champion) |
+| 6.0 | Full $T^2$ Torus + Circular Conv (`ToroidalPad2D`) + Safety Filter (`TF-B15`) | 100% | 95%+ | **100% vs Random, 99.0% Peak (95.9% Avg) Raw / 100.0% (`1,000W/0L`) +Safety** |
 
-**Total Expected:** 80% vs Random, 20% vs Heuristic
+---
 
-**Key Insight:** Architecture changes (conv + value head) matter more than training tricks (replay buffer), but cannot break the Heuristic Wall. MCTS adds strategic lookahead — essential for multi-step planning.
+## 12. Toroidal 3D Visualization, Dual-View Projection & Human Telemetry {#12-toroidal-visualization}
+
+To make the $T^2$ topology intuitive for human players while preserving the mathematical integrity of the core engine and AI tensor pipeline, Triantica enforces a strict **Engine-View Separation Architecture**:
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                 STRICT ENGINE / VIEW-PROJECTION SEPARATION                   │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   CORE ENGINE & AI LAYER (`GridManager.js`, `ConvNetwork.js`, `MCTS.cjs`)    │
+│   ───────────────────────────────────────────────────────────────────────    │
+│   • Canonical discrete `[10 × 10]` cell coordinates (`x, y ∈ {0..9}`)        │
+│   • Phase 2 (`v1.0.0-2d`): Planar corner placement + Toroidal flood-fill     │
+│   • Phase 3 (`TF-B15`): Full $T^2$ modulo vertex & edge adjacency (100       │
+│     unique vertices, each shared by 12 triangles) + `ToroidalPad2D`          │
+│   • Zero dependency on camera angles, 3D meshes, or Phaser rendering         │
+│                                                                              │
+│                                      │                                       │
+│                         Pure State Projection $(u, v)$                       │
+│                                      ▼                                       │
+│   VIEW-PROJECTION LAYER (`ToroidalViewport.js`, `Torus3DView.js`)            │
+│   ───────────────────────────────────────────────────────────────            │
+│   • 2D Toroidal Panning (`Shift+Drag` / Right-Drag / Arrow Keys):            │
+│     Shifts visual origin `(offsetX, offsetY)` modulo 10 so any wrap-around   │
+│     cluster can be centered seamlessly on the flat screen.                   │
+│   • Synchronized 3D Torus Surface (`Torus3DView.js`):                        │
+│     Maps normalized grid coordinates $(u, v) = (x/10, y/10) \in [0, 1)^2$    │
+│     onto the parametric 3D ring torus ($R = 2.5, r = 1.0$):                  │
+│       $X(\theta, \phi) = (R + r \cos\phi)\cos\theta$                         │
+│       $Y(\theta, \phi) = (R + r \cos\phi)\sin\theta$                         │
+│       $Z(\theta, \phi) = r \sin\phi$                                         │
+│     where $\theta = 2\pi u$ (major ring) and $\phi = 2\pi v$ (minor tube).   │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Continuous Learning from Human Play (`HumanGameLogger`)
+With `TF-B15` deployed to production (`trainedAI_network.json`) across **Easy**, **Medium** (`99.0%` Raw 1-ply ConvNet), and **Hard** (`100.0%` ConvNet + Tactical Safety Filter), the browser and server runtimes include `HumanGameLogger` (`/api/human-games`). Every completed human match records canonical 18-channel states, chosen actions, enclosure claims, and final outcomes—enabling future human-in-the-loop replay mixing without altering the core self-play pipeline.
 
 ---
 
