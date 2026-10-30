@@ -1041,10 +1041,11 @@ class GameScene extends Phaser.Scene {
     // Only show in Human vs AI mode
     if (this.gameMode !== 'HvAI') return;
 
-    const btnWidth = 64;
-    const btnHeight = 40;
-    const buttonX = this.cameras.main.width - 80;
-    const buttonY = 62;
+    const btnWidth = 56;
+    const btnHeight = 48;
+    // Position to the right of the scoreboard (scoreboard is 430px wide, centered)
+    const buttonX = this.cameras.main.width / 2 + 215 + btnWidth / 2 + 8;
+    const buttonY = 676;
 
     this.exportButton = this.add.graphics().setScrollFactor(0).setDepth(150);
     const drawExport = (hover = false) => {
@@ -1064,10 +1065,17 @@ class GameScene extends Phaser.Scene {
     };
     drawExport(false);
 
-    this.exportButtonText = this.add.text(buttonX, buttonY, '📤', {
+    // Icon above, count below
+    this.exportButtonIcon = this.add.text(buttonX, buttonY - 8, '📤', {
       fontFamily: 'Arial',
-      fontSize: '20px',
-      color: '#E6F9FF',
+      fontSize: '18px',
+      color: '#E6F9FF'
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(151);
+
+    this.exportButtonText = this.add.text(buttonX, buttonY + 12, '0', {
+      fontFamily: '"Share Tech Mono", monospace',
+      fontSize: '14px',
+      color: '#00F0FF',
       align: 'center'
     }).setOrigin(0.5).setScrollFactor(0).setDepth(151);
 
