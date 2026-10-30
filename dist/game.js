@@ -3210,9 +3210,27 @@ class MenuScene extends Phaser.Scene {
 
       this.icosaGraphics = this.add.graphics().setDepth(10);
       this.menuContainer = this.add.container(0, 0).setDepth(20);
+      this.currentMenuRenderFn = null;
 
       this.initIcosahedron();
       this.renderMainMenu();
+
+      // Ensure WebFonts (Orbitron / Share Tech Mono) re-render existing Canvas text if they finish loading after initial draw
+      if (typeof document !== 'undefined' && document.fonts) {
+          const refreshFonts = () => {
+              if (!this.scene || !this.scene.isActive()) return;
+              if (this.currentMenuRenderFn) {
+                  this.currentMenuRenderFn();
+              }
+          };
+          document.fonts.ready.then(refreshFonts).catch(() => {});
+          if (typeof document.fonts.addEventListener === 'function') {
+              document.fonts.addEventListener('loadingdone', refreshFonts);
+              this.events.once('shutdown', () => {
+                  document.fonts.removeEventListener('loadingdone', refreshFonts);
+              });
+          }
+      }
   }
 
   drawCyberMatrixBackground() {
@@ -3591,6 +3609,7 @@ class MenuScene extends Phaser.Scene {
   }
 
   renderMainMenu() {
+      this.currentMenuRenderFn = () => this.renderMainMenu();
       this.clearMenu();
       const centerX = this.cameras.main.width / 2;
       const isDebug = typeof DEBUG_MODE !== 'undefined' && DEBUG_MODE;
@@ -3728,6 +3747,7 @@ class MenuScene extends Phaser.Scene {
   }
 
   renderDifficultyMenu() {
+      this.currentMenuRenderFn = () => this.renderDifficultyMenu();
       this.clearMenu();
       const centerX = this.cameras.main.width / 2;
 
@@ -3787,6 +3807,7 @@ class MenuScene extends Phaser.Scene {
   }
 
   renderSideSelectionMenu(difficulty) {
+      this.currentMenuRenderFn = () => this.renderSideSelectionMenu(difficulty);
       this.clearMenu();
       const centerX = this.cameras.main.width / 2;
 
@@ -3884,9 +3905,24 @@ class BootScene extends Phaser.Scene {
           console.warn("BootScene: GridManager or AIPlayer class not found. Skipping background load.");
       }
 
-      // --- Immediately start the MenuScene ---
-      console.log("BootScene: Starting MenuScene.");
-      this.scene.start('Menu');
+      // --- Wait for Google WebFonts (with fast timeout) so initial Canvas text renders in Orbitron / Share Tech Mono ---
+      const startMenu = () => {
+          console.log("BootScene: Starting MenuScene.");
+          this.scene.start('Menu');
+      };
+
+      if (typeof document !== 'undefined' && document.fonts && document.fonts.load) {
+          Promise.race([
+              Promise.all([
+                  document.fonts.load('900 50px "Orbitron"'),
+                  document.fonts.load('bold 20px "Orbitron"'),
+                  document.fonts.load('15px "Share Tech Mono"')
+              ]).then(() => document.fonts.ready),
+              new Promise((resolve) => setTimeout(resolve, 600))
+          ]).then(startMenu).catch(startMenu);
+      } else {
+          startMenu();
+      }
   }
 }
 
@@ -3902,7 +3938,7 @@ const config = {
   },
   scale: {
     mode: Phaser.Scale.FIT,
-    autoCenter: Phaser.Scale.CENTER_BOTH
+    autoCenter: Phaser.Scale.CENTER_HORIZONTALLY
   },
   scene: [BootScene, MenuScene, GameScene]
 };
