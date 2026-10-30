@@ -1,13 +1,13 @@
 // Triantica Service Worker - PWA offline support
-const CACHE_NAME = 'triantica-v1';
+const CACHE_NAME = 'triantica-v2';
 const ASSETS_TO_CACHE = [
-  '/',
-  '/index.html',
-  '/game.js',
-  '/AIPlayer.js',
-  '/src/players/RandomPlayer.js',
-  '/src/players/HeuristicPlayer.js',
-  '/manifest.json'
+  './',
+  './index.html',
+  './game.js',
+  './AIPlayer.js',
+  './src/players/RandomPlayer.js',
+  './src/players/HeuristicPlayer.js',
+  './manifest.json'
 ];
 
 // Install event - cache core assets
@@ -73,7 +73,7 @@ self.addEventListener('fetch', (event) => {
           .catch(() => {
             // Offline fallback - return cached index for navigation
             if (event.request.mode === 'navigate') {
-              return caches.match('/index.html');
+              return caches.match('./index.html');
             }
             return null;
           });
