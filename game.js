@@ -871,15 +871,10 @@ class GameScene extends Phaser.Scene {
     // Ensure at least 2 touch pointers are active for two-finger pinch-to-zoom on mobile
     this.input.addPointer(2);
 
-    // Calculate vertical centering for the board
-    // Board height = 10 cells * 50px = 500px
-    // Scoreboard takes ~60px at y=676 (from bottom)
-    // Reserve space for buttons at bottom (~70px)
-    const screenHeight = this.cameras.main.height;
-    const boardHeight = 10 * this.cellSize;
-    const reservedBottom = screenHeight - 640; // Space for scoreboard + buttons
-    const availableHeight = screenHeight - reservedBottom - 40; // 40px top margin
-    this.gridOffset.y = Math.max(30, (availableHeight - boardHeight) / 2 + 20);
+    // Simple vertical centering: move board up from default position
+    // Board is 500px tall, scoreboard at y=676. We want space above and below.
+    // Default was y:120, we move it closer to vertical center.
+    this.gridOffset.y = 50;
 
     this.calculateGridBounds();
     this.setupBoardLayers();
@@ -1055,7 +1050,8 @@ class GameScene extends Phaser.Scene {
     const btnHeight = 48;
     // Position to the right of the scoreboard (scoreboard is 430px wide, centered)
     const buttonX = this.cameras.main.width / 2 + 215 + btnWidth / 2 + 8;
-    const buttonY = 676;
+    // Position relative to board end
+    const buttonY = this.gridOffset.y + 10 * this.cellSize + 15;
 
     this.exportButton = this.add.graphics().setScrollFactor(0).setDepth(150);
     const drawExport = (hover = false) => {
@@ -2395,9 +2391,11 @@ triggerAIMove() {
 
   createScoreboard() {
     this.scorePanelBg = this.add.graphics().setScrollFactor(0).setDepth(149);
+    // Position scoreboard relative to board end
+    const scoreboardY = this.gridOffset.y + 10 * this.cellSize + 15;
     this.scoreText = this.add.text(
       this.cameras.main.width / 2,
-      676,
+      scoreboardY,
       '',
       {
         fontFamily: '"Share Tech Mono", monospace',
@@ -2424,10 +2422,11 @@ triggerAIMove() {
 
     if (this.scorePanelBg) {
       const borderStroke = cur === 1 ? 0xFF2A54 : 0x00F0FF;
+      const scoreboardY = this.gridOffset.y + 10 * this.cellSize + 15;
       this.drawChamferedPanel(
         this.scorePanelBg,
         this.cameras.main.width / 2,
-        676,
+        scoreboardY,
         430,
         58,
         10,
