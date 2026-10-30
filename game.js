@@ -5,6 +5,195 @@ if (typeof window !== 'undefined') {
   window.DEBUG_MODE = DEBUG_MODE;
 }
 
+/**
+ * HumanGameLogger - FIFO buffer for human vs AI game data
+ * 
+ * Stores games in localStorage with deduplication.
+ * Auto-rotates when buffer is full (FIFO).
+ * Exports as JSON for training pipeline.
+ */
+class HumanGameLogger {
+  constructor(config = {}) {
+    this.maxGames = config.maxGames || 100;
+    this.storageKey = config.storageKey || 'triantica_human_games';
+    this.currentGame = null;
+    this.games = this._loadGames();
+  }
+
+  _loadGames() {
+    try {
+      const stored = localStorage.getItem(this.storageKey);
+      return stored ? JSON.parse(stored) : [];
+    } catch (e) {
+      console.warn('[HumanGameLogger] Failed to load games:', e.message);
+      return [];
+    }
+  }
+
+  _save() {
+    try {
+      localStorage.setItem(this.storageKey, JSON.stringify(this.games));
+    } catch (e) {
+      console.warn('[HumanGameLogger] Storage quota exceeded, removing oldest game');
+      if (this.games.length > 0) {
+        this.games.shift();
+        this._save();
+      }
+    }
+  }
+
+  /**
+   * Start tracking a new game
+   */
+  startGame(gameMode, difficulty, humanPlayerNumber, gridManager) {
+    this.currentGame = {
+      id: `human-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      timestamp: new Date().toISOString(),
+      mode: gameMode,
+      difficulty: difficulty || 'medium',
+      humanPlayer: humanPlayerNumber,
+      moves: [],
+      finalScores: null,
+      winner: null,
+      gridDimensions: { rows: gridManager.rows, cols: gridManager.cols }
+    };
+    console.log(`[HumanGameLogger] Started game ${this.currentGame.id}`);
+  }
+
+  /**
+   * Log a move (human or AI)
+   */
+  logMove(gridManager, move, player, claimed) {
+    if (!this.currentGame) return;
+
+    // Capture canonical state (player-relative for training)
+    const state = this._getCanonicalState(gridManager, player);
+
+    this.currentGame.moves.push({
+      player: player,
+      isHuman: player === this.currentGame.humanPlayer,
+      state: state,
+      move: { x: move.x, y: move.y, rotation: move.rotation },
+      claimed: claimed || 0,
+      timestamp: Date.now()
+    });
+  }
+
+  /**
+   * Get canonical state representation (player-relative)
+   * Same format as training pipeline for direct compatibility
+   */
+  _getCanonicalState(gridManager, player) {
+    const state = [];
+    for (let y = 0; y < gridManager.rows; y++) {
+      for (let x = 0; x < gridManager.cols; x++) {
+        const cell = gridManager.grid[y][x];
+        const t1 = cell.triangles[0];
+        const t2 = cell.triangles[1];
+
+        const normalizePlayer = (p) => {
+          if (!p) return 0;
+          return p === player ? 1 : -1;
+        };
+
+        state.push(normalizePlayer(t1?.player));
+        state.push(t1?.rotation !== undefined ? t1.rotation / 3.0 : -1);
+        state.push(normalizePlayer(t2?.player));
+        state.push(t2?.rotation !== undefined ? t2.rotation / 3.0 : -1);
+      }
+    }
+    return state;
+  }
+
+  /**
+   * End the current game and add to buffer
+   */
+  endGame(gridManager) {
+    if (!this.currentGame) return;
+
+    const p1Score = gridManager.getLargestContiguous(1);
+    const p2Score = gridManager.getLargestContiguous(2);
+
+    this.currentGame.finalScores = { 1: p1Score, 2: p2Score };
+    this.currentGame.winner = p1Score > p2Score ? 1 : (p2Score > p1Score ? 2 : 0);
+    this.currentGame.totalMoves = this.currentGame.moves.length;
+
+    // Deduplicate by ID
+    const exists = this.games.findIndex(g => g.id === this.currentGame.id);
+    if (exists !== -1) {
+      console.log(`[HumanGameLogger] Game ${this.currentGame.id} already in buffer, updating`);
+      this.games[exists] = this.currentGame;
+    } else {
+      // FIFO: remove oldest if at capacity
+      if (this.games.length >= this.maxGames) {
+        const removed = this.games.shift();
+        console.log(`[HumanGameLogger] Buffer full, removed game ${removed.id}`);
+      }
+      this.games.push(this.currentGame);
+    }
+
+    this._save();
+    console.log(`[HumanGameLogger] Game ended. Winner: P${this.currentGame.winner}. Buffer: ${this.games.length}/${this.maxGames}`);
+
+    this.currentGame = null;
+  }
+
+  /**
+   * Export all games and flush buffer
+   */
+  exportAndFlush() {
+    if (this.games.length === 0) {
+      alert('No games to export');
+      return null;
+    }
+
+    const exportData = {
+      exportedAt: new Date().toISOString(),
+      gameCount: this.games.length,
+      games: this.games
+    };
+
+    const json = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `triantica_human_games_${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+
+    URL.revokeObjectURL(url);
+
+    // Flush buffer
+    const count = this.games.length;
+    this.games = [];
+    localStorage.removeItem(this.storageKey);
+    console.log(`[HumanGameLogger] Exported and flushed ${count} games`);
+
+    return exportData;
+  }
+
+  /**
+   * Get buffer status for UI
+   */
+  getStatus() {
+    return {
+      count: this.games.length,
+      capacity: this.maxGames,
+      oldestGame: this.games[0]?.timestamp || null,
+      newestGame: this.games[this.games.length - 1]?.timestamp || null,
+      humanWins: this.games.filter(g => g.winner === g.humanPlayer).length,
+      aiWins: this.games.filter(g => g.winner !== g.humanPlayer && g.winner !== 0).length
+    };
+  }
+}
+
+// Global instance for the game
+const humanGameLogger = new HumanGameLogger({ maxGames: 100 });
+if (typeof window !== 'undefined') {
+  window.humanGameLogger = humanGameLogger;
+}
+
 class GridManager {
   constructor(rows, cols, options = {}) {
     this.rows = rows;
@@ -694,6 +883,7 @@ class GameScene extends Phaser.Scene {
     this.createPlaceButton();
     this.createRotateButton(); 
     this.createForfeitButton();
+    this.createExportButton();
     this.createMenuReturnButton();
     this.createViewControlsHUD();
     this.gameOverText = null;
@@ -714,6 +904,11 @@ class GameScene extends Phaser.Scene {
     if (this.gameMode === 'Tutorial') {
       this.startTutorial();
       return;
+    }
+
+    // --- Start game tracking for Human vs AI mode ---
+    if (this.gameMode === 'HvAI') {
+      humanGameLogger.startGame(this.gameMode, this.aiDifficulty, this.humanPlayerNumber, this.gridManager);
     }
 
     // If Player 1 is non-human (e.g., HvAI with Human as P2, or AvR/AvH/AvA), trigger P1's first move
@@ -842,11 +1037,87 @@ class GameScene extends Phaser.Scene {
     });
   }
 
+  createExportButton() {
+    // Only show in Human vs AI mode
+    if (this.gameMode !== 'HvAI') return;
+
+    const btnWidth = 64;
+    const btnHeight = 40;
+    const buttonX = this.cameras.main.width - 80;
+    const buttonY = 62;
+
+    this.exportButton = this.add.graphics().setScrollFactor(0).setDepth(150);
+    const drawExport = (hover = false) => {
+      this.drawChamferedPanel(
+        this.exportButton,
+        buttonX,
+        buttonY,
+        btnWidth,
+        btnHeight,
+        8,
+        hover ? 0x0D2238 : 0x071120,
+        0.92,
+        0x00F0FF,
+        hover ? 1.0 : 0.75,
+        1.5
+      );
+    };
+    drawExport(false);
+
+    this.exportButtonText = this.add.text(buttonX, buttonY, '📤', {
+      fontFamily: 'Arial',
+      fontSize: '20px',
+      color: '#E6F9FF',
+      align: 'center'
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(151);
+
+    this.exportButton.setInteractive(
+      new Phaser.Geom.Rectangle(buttonX - btnWidth / 2, buttonY - btnHeight / 2, btnWidth, btnHeight),
+      Phaser.Geom.Rectangle.Contains
+    );
+
+    // Update button text with game count
+    this.updateExportButton = () => {
+      const status = humanGameLogger.getStatus();
+      this.exportButtonText.setText(`${status.count}`);
+    };
+
+    this.exportButton.on('pointerover', () => {
+      drawExport(true);
+      const status = humanGameLogger.getStatus();
+      this.debugText?.setText(`Export: ${status.count} games (${status.humanWins}W/${status.aiWins}L)`);
+    });
+    this.exportButton.on('pointerout', () => {
+      drawExport(false);
+      this.debugText?.setText('');
+    });
+    this.exportButton.on('pointerdown', () => {
+      if (this.tutorialActive) return;
+      const status = humanGameLogger.getStatus();
+      if (status.count > 0) {
+        humanGameLogger.exportAndFlush();
+        this.updateExportButton?.();
+      } else {
+        this.debugText?.setText('No games to export');
+      }
+    });
+
+    // Initial update
+    this.updateExportButton();
+  }
+
   handleForfeit() {
     const winner = this.gridManager.currentPlayer === 1 ? 2 : 1; // [cite: 171]
     this.gridManager.winRounds[winner]++;
     const p1Score = this.gridManager.getLargestContiguous(1);
     const p2Score = this.gridManager.getLargestContiguous(2);
+    
+    // --- End game tracking ---
+    if (this.gameMode === 'HvAI') {
+      humanGameLogger.endGame(this.gridManager);
+      this.updateExportButton?.();
+    }
+    
     this.showGameOver(`Player ${this.gridManager.currentPlayer} forfeits!\nPlayer ${winner} wins!\nFinal Score: P1: ${p1Score}, P2: ${p2Score}`); // [cite: 172]
     this.updateScore();
     this.disableHumanInput();
@@ -1579,6 +1850,15 @@ class GameScene extends Phaser.Scene {
         console.log(`Player ${this.gridManager.currentPlayer} enclosed ${enclosedTriangles} triangle(s) and gets extra turn(s).`);
       }
 
+      // --- Log human move ---
+      if (this.gameMode === 'HvAI') {
+        humanGameLogger.logMove(this.gridManager, {
+          x: this.cursorPos.x,
+          y: this.cursorPos.y,
+          rotation: this.gridManager.selectedRotation
+        }, this.gridManager.currentPlayer, enclosedTriangles);
+      }
+
       // Update UI and turn logic
       this.redrawTriangles();
       this.updateScore();
@@ -1606,6 +1886,12 @@ class GameScene extends Phaser.Scene {
         message += "Player 2 wins!"; // [cite: 223]
     } else {
         message += "It's a draw!"; // [cite: 221]
+    }
+
+    // --- End game tracking ---
+    if (this.gameMode === 'HvAI') {
+      humanGameLogger.endGame(this.gridManager);
+      this.updateExportButton?.();
     }
 
     this.showGameOver(message); // [cite: 224, 226]
@@ -1656,6 +1942,12 @@ class GameScene extends Phaser.Scene {
   resetGame() {
     this.gridManager.reset();
     this.totalMovesPlayed = 0;
+    
+    // --- Start tracking new game ---
+    if (this.gameMode === 'HvAI') {
+      humanGameLogger.startGame(this.gameMode, this.aiDifficulty, this.humanPlayerNumber, this.gridManager);
+    }
+    
     this.redrawTriangles();
     this.updateScore();
     this.updateCursor();
@@ -1905,6 +2197,12 @@ triggerAIMove() {
                     this.gridManager.extraTurns += Math.floor((1 + enclosed) / 2);
                     console.log(`AI Player ${this.gridManager.currentPlayer} enclosed ${enclosed} triangle(s) and gets extra turn(s).`);
                   }
+                  
+                  // --- Log AI move for human games ---
+                  if (this.gameMode === 'HvAI') {
+                    humanGameLogger.logMove(this.gridManager, move, this.gridManager.currentPlayer, enclosed);
+                  }
+                  
                   this.redrawTriangles(); // [cite: 231]
                   this.updateScore(); // [cite: 250]
 
@@ -2031,6 +2329,12 @@ triggerAIMove() {
               this.gridManager.extraTurns += Math.floor((1 + enclosed) / 2);
               console.log(`${playerType} Player ${this.gridManager.currentPlayer} enclosed ${enclosed} triangle(s) and gets extra turn(s).`);
             }
+            
+            // --- Log opponent move for human games ---
+            if (this.gameMode === 'HvAI') {
+              humanGameLogger.logMove(this.gridManager, move, this.gridManager.currentPlayer, enclosed);
+            }
+            
             this.redrawTriangles();
             this.updateScore();
 

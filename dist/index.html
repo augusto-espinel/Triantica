@@ -1,11 +1,77 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>Triantica</title>
+    
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#03060C" />
+    <meta name="description" content="A grid-based triangle placement strategy game with AI trained via reinforcement learning" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Triantica" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="data:application/json;base64,ewogICJuYW1lIjogIlRyaWFudGljYSAtIE5ldXJhbCBOZXR3b3JrIFN0cmF0ZWd5IEdhbWUiLAogICJzaG9ydF9uYW1lIjogIlRyaWFudGljYSIsCiAgImRlc2NyaXB0aW9uIjogIkEgZ3JpZC1iYXNlZCB0cmlhbmdsZSBwbGFjZW1lbnQgc3RyYXRlZ3kgZ2FtZSB3aXRoIEFJIHRyYWluZWQgdmlhIHJlaW5mb3JjZW1lbnQgbGVhcm5pbmciLAogICJzdGFydF91cmwiOiAiLyIsCiAgImRpc3BsYXkiOiAic3RhbmRhbG9uZSIsCiAgIm9yaWVudGF0aW9uIjogInBvcnRyYWl0IiwKICAiYmFja2dyb3VuZF9jb2xvciI6ICIjMDMwNjBDIiwKICAidGhlbWVfY29sb3IiOiAiIzAwRjBGRiIsCiAgImNhdGVnb3JpZXMiOiBbImdhbWVzIiwgInN0cmF0ZWd5Il0sCiAgImljb25zIjogWwogICAgewogICAgICAic3JjIjogImljb25zL2ljb24tNzIucG5nIiwKICAgICAgInNpemVzIjogIjcyeDcyIiwKICAgICAgInR5cGUiOiAiaW1hZ2UvcG5nIiwKICAgICAgInB1cnBvc2UiOiAiYW55IgogICAgfSwKICAgIHsKICAgICAgInNyYyI6ICJpY29ucy9pY29uLTk2LnBuZyIsCiAgICAgICJzaXplcyI6ICI5Nng5NiIsCiAgICAgICJ0eXBlIjogImltYWdlL3BuZyIsCiAgICAgICJwdXJwb3NlIjogImFueSIKICAgIH0sCiAgICB7CiAgICAgICJzcmMiOiAiaWNvbnMvaWNvbi0xMjgucG5nIiwKICAgICAgInNpemVzIjogIjEyOHgxMjgiLAogICAgICAidHlwZSI6ICJpbWFnZS9wbmciLAogICAgICAicHVycG9zZSI6ICJhbnkiCiAgICB9LAogICAgewogICAgICAic3JjIjogImljb25zL2ljb24tMTQ0LnBuZyIsCiAgICAgICJzaXplcyI6ICIxNDR4MTQ0IiwKICAgICAgInR5cGUiOiAiaW1hZ2UvcG5nIiwKICAgICAgInB1cnBvc2UiOiAiYW55IgogICAgfSwKICAgIHsKICAgICAgInNyYyI6ICJpY29ucy9pY29uLTE1Mi5wbmciLAogICAgICAic2l6ZXMiOiAiMTUyeDE1MiIsCiAgICAgICJ0eXBlIjogImltYWdlL3BuZyIsCiAgICAgICJwdXJwb3NlIjogImFueSIKICAgIH0sCiAgICB7CiAgICAgICJzcmMiOiAiaWNvbnMvaWNvbi0xOTIucG5nIiwKICAgICAgInNpemVzIjogIjE5MngxOTIiLAogICAgICAidHlwZSI6ICJpbWFnZS9wbmciLAogICAgICAicHVycG9zZSI6ICJhbnkgbWFza2FibGUiCiAgICB9LAogICAgewogICAgICAic3JjIjogImljb25zL2ljb24tMzg0LnBuZyIsCiAgICAgICJzaXplcyI6ICIzODR4Mzg0IiwKICAgICAgInR5cGUiOiAiaW1hZ2UvcG5nIiwKICAgICAgInB1cnBvc2UiOiAiYW55IgogICAgfSwKICAgIHsKICAgICAgInNyYyI6ICJpY29ucy9pY29uLTUxMi5wbmciLAogICAgICAic2l6ZXMiOiAiNTEyeDUxMiIsCiAgICAgICJ0eXBlIjogImltYWdlL3BuZyIsCiAgICAgICJwdXJwb3NlIjogImFueSBtYXNrYWJsZSIKICAgIH0KICBdLAogICJzY3JlZW5zaG90cyI6IFtdLAogICJyZWxhdGVkX2FwcGxpY2F0aW9ucyI6IFtdLAogICJwcmVmZXJfcmVsYXRlZF9hcHBsaWNhdGlvbnMiOiBmYWxzZQp9Cg==" />
+    
+    <!-- Fallback icons for iOS -->
+    <link rel="apple-touch-icon" sizes="180x180" href="data:image/png;base64,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" />
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #03060C;
+            background-image: radial-gradient(circle at 50% 45%, #081528 0%, #03060C 75%);
+            overflow: hidden;
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        #game-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser-arcade-physics.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/brain.js@2.0.0-beta.23/dist/browser.min.js"></script>
-  <script type="module" crossorigin src="./assets/index-e65049a0.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+    
+    <!-- Service Worker Registration -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then((registration) => {
+                        console.log('[PWA] Service Worker registered:', registration.scope);
+                    })
+                    .catch((error) => {
+                        console.warn('[PWA] Service Worker registration failed:', error);
+                    });
+            });
+        }
+    </script>
+  <script type="module" crossorigin src="./assets/index-870e9c9e.js"></script>
 </head>
 <body>
+    <div id="game-container"></div>
     
     <script src="game.js"></script>
 </body>
