@@ -8,7 +8,7 @@
 
 ![Training Dashboard — Overview of experiment progress and metrics](./assets/triantica-dashboard-overview.png)
 
-After 22 brain.js experiments and 10+ TF.js experiments, a clear pattern emerged:
+After 22 `brain.js` experiments and 10+ early `TensorFlow.js` experiments, a stark empirical pattern emerged—while our networks reliably beat `RandomPlayer` (`27%–91%`), every single experiment scored **`0.0%` (`0` wins across `3,000+` evaluation games)** against the deterministic rule-based opponent (`src/ai/HeuristicPlayer.js`):
 
 <details>
 <summary>📐 Diagram: Performance Summary (click to expand ASCII)</summary>
@@ -31,6 +31,11 @@ After 22 brain.js experiments and 10+ TF.js experiments, a clear pattern emerged
 </details>
 
 ### Why Can't a Feedforward Network Beat Heuristic?
+
+To understand why the Heuristic Wall was so formidable, compare how the deterministic heuristic opponent (`src/ai/HeuristicPlayer.js`) evaluates the board against what a 1-ply feedforward network (`src/ai/NeuralNetwork.js`) computes:
+
+- **The Deterministic Heuristic Opponent (`HeuristicPlayer.js`):** On every turn, it clones the board and explicitly simulates every legal move, assigning `+100 points` per enclosed triangle, `-80 points` for any move that leaves an immediate counter-enclosure for the opponent, and `+10 points` per contiguous cluster connection. It is a **2-ply tactical lookahead engine** that never misses an immediate capture and never walks into a 1-move cavity trap.
+- **The 1-Ply Feedforward Network:** Flattens the $10 \times 10$ board into `401` unstructured scalars, multiplies by a single dense matrix (`[401 × 200]`), and outputs `400` move probabilities in one pass—with **no spatial translation invariance, no state-value critic, and zero lookahead search**.
 
 <details>
 <summary>📐 Diagram: Heuristic Strategy (click to expand ASCII)</summary>
@@ -74,6 +79,13 @@ When we first diagnosed the Heuristic Wall after `exp22` and `TF-B4`, our initia
 **We were wrong.** Even after building the `10×10×18` ConvNet and fixing every gradient bug in standard MCTS-50 (`TF-B9` and `TF-B10`), our win rate against `Random` climbed to **`87.0%`**, yet our win rate against `HeuristicPlayer` remained **locked at `0.0%`!**
 
 Why did both a `2-Head ConvNet` (`TF-B5`) AND `Vanilla AlphaZero MCTS-50` (`TF-B10`) score `0%` against `Heuristic`? Because of two distinct domain mechanics in Triantica:
+
+1. **Blind Spot #1 — Spatial Translation & Toroidal Border Blindness:**
+   - In a flat `401`-element vector (`Stage 1`), shifting a 3-sided cavity by one cell to the right maps to completely different input neuron indices; without spatial weight sharing, a dense network must re-learn the same cavity shape 100 separate times across all 100 cells.
+   - In a standard zero-padded $3\times 3$ ConvNet (`Stages 2–4`, `padding='same'`), the convolutional kernel shares weights across the interior $8\times 8$ cells, but fills the 1-cell border around the $10\times 10$ array with **zeros**. To the network, the board edges look like an impenetrable brick wall, blinding it to enclosures that wrap across the toroidal seam (`x=9 ↔ x=0`, `y=9 ↔ y=0`).
+2. **Blind Spot #2 — The MCTS Horizon Effect on Forced Enclosure Cascades:**
+   - Suppose the AI considers a non-enclosing move at the root of a vanilla 50-simulation MCTS search (`TF-B8`–`TF-B10`) that accidentally leaves a 1-move cavity. When MCTS expands that move as a new leaf node $s_{\text{leaf}}$ and queries the Value Head $V(s_{\text{leaf}})$, **the opponent's cascade has not happened yet!** The board still looks balanced in piece count, so $V(s_{\text{leaf}})$ returns a mildly positive score (`~+0.10`).
+   - Then, in the real game, `HeuristicPlayer` steps up, spots the 1-move cavity with 100% determinism, chains 4 bonus turns in a row, and sweeps the board before the AI ever gets another turn. Solving this required **Quiescence MCTS** (`src/server/QuiescenceMCTS.cjs`), which rolls out forced greedy opponent cascades at leaf nodes *before* querying the Value Head.
 
 <details>
 <summary>📐 Diagram: BLIND SPOT #1: SPATIAL TRANSLATION BLINDNESS (FLAT vs CONV vs TORUS) (click to expand ASCII)</summary>
@@ -182,8 +194,6 @@ To turn this diagnosis into a complete engineering solution, we progressed throu
 ```
 
 </details>
-
----
 
 ---
 

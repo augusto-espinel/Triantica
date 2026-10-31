@@ -4,7 +4,9 @@
 
 ## 6. Training Strategies {#6-training-strategies}
 
-### Strategy 1: Pure Self-Play
+### Strategy 1: Pure Feedforward Self-Play
+
+In **Pure Self-Play**, the neural network plays both sides of the board (`Player 1` and `Player 2`) with $\varepsilon$-greedy exploration (`exploration = 0.3`), generating training data entirely from its own games without any external teacher or heuristic opponent:
 
 <details>
 <summary>📐 Diagram: Pure Self-Play (click to expand ASCII)</summary>
@@ -37,6 +39,12 @@
 The network learned basic legality but no strategic depth.
 
 ### Strategy 2: Mixed Opponents ("Learn from the Master" vs Curriculum Learning)
+
+A natural intuition when pure self-play stalls is to pair the learning agent against a strong rule-based opponent (`src/ai/HeuristicPlayer.js`) so it can "learn from the master." Yet across our experiments, mixed-opponent training produced **opposite results** depending on whether the agent had lookahead search:
+
+- **Attempt A — Feedforward Policy Gradient vs. Heuristic (`exp21` & `TF-B2`):** When a 1-ply feedforward network played `40%–70%` of its training games against the Heuristic player, it lost **100% of those games** (`avg score: 4 vs 170`). In pure Policy Gradient, losing every game means *every single move* played against the Heuristic opponent receives a negative gradient ($z = -1$). Instead of learning from the master, `exp21`'s win rate against `Random` **collapsed from `91%` down to `49%`** because constant negative punishment erased its existing positional structure!
+- **Attempt B — Quiescence MCTS + 50/50 Curriculum (`TF-B12` & `TF-B13`):** Once we introduced 50-simulation Quiescence MCTS (`src/server/QuiescenceMCTS.cjs`), the search tree could anticipate and survive multi-step enclosure traps, winning `20%–60%` of its training games against the Heuristic opponent. Moreover, even in games the AI lost, the MCTS visit distribution $\pi_{\text{MCTS}}$ still trained the Policy Head toward the best defensive replies discovered by the tree while only the Value Head $V(s)$ absorbed the $-1$ outcome. This broke the Heuristic Wall (`63%` in `TF-B12`, `89%` peak in `TF-B13`).
+- **Attempt C — Pure Dual-Side Quiescence MCTS Self-Play (`TF-B14` & `TF-B15` Champion):** Once the search tree itself modeled cascade physics via Quiescence rollouts, removing the Heuristic opponent from training altogether (`100%` Dual-Side QuiescenceMCTS self-play) outperformed mixed-opponent training—reaching **`90%` (`TF-B14`)** and **`99%` Raw / `100%` +Safety (`TF-B15`)** because *both* sides of every training game generated rich, 50-simulation search targets.
 
 <details>
 <summary>📐 Diagram: WHY OPPONENT MIX FAILED IN STAGE 1 BUT WORKED IN STAGE 4 (click to expand ASCII)</summary>
@@ -92,6 +100,8 @@ The network learned basic legality but no strategic depth.
 
 ### Strategy 3: Cluster Reward Shaping ($TD(\lambda)$) vs True Value Critics
 
+To help pure Policy Gradient overcome delayed credit assignment across 150-move games, we tested **Temporal-Difference ($TD(\lambda)$) Cluster Reward Shaping** (`exp17`, `exp22`, and `TF-B3`), blending immediate enclosure and cluster-growth bonuses ($r_{\text{immediate}} = 0.3 \times \text{enclosed} + 0.1 \times \Delta\text{cluster}$, with $\lambda = 0.9, \gamma = 0.99$) into the terminal game outcome:
+
 <details>
 <summary>📐 Diagram: CLUSTER REWARD SHAPING (TD-λ) vs VALUE HEAD (click to expand ASCII)</summary>
 
@@ -128,7 +138,9 @@ The network learned basic legality but no strategic depth.
 
 **Finding:** Hand-crafted intermediate rewards ($TD(\lambda)$ cluster bonuses) help beat naive `Random` players by encouraging piece connectivity, but **backfire against tactical opponents** because they reward *greedy local expansion* over *defensive cavity prevention*. Replacing hand-crafted reward shaping with a learned **Value Head ($V(s) \in [-1, +1]$) trained on pure terminal game outcomes ($z \in \{-1, 0, +1\}$) + Quiescence MCTS** eliminated this bias completely.
 
-### Strategy 4: Optimized Hyperparameters
+### Strategy 4: Optimized Feedforward Hyperparameters
+
+Before abandoning feedforward networks, we ran a systematic hyperparameter optimization (`TF-B1_optimized`), lowering `learningRate` (`0.05 → 0.01`), increasing `iterations` (`10 → 100`), tightening `batchSize` (`256 → 32`), and enabling `gradientIsolation: true`:
 
 <details>
 <summary>📐 Diagram: Optimized Training (click to expand ASCII)</summary>
@@ -158,9 +170,7 @@ The network learned basic legality but no strategic depth.
 - Final vs Random: 47%
 - Final vs Heuristic: 0%
 
-**Key lesson:** Hyperparameter tuning improves performance but doesn't change the fundamental capability ceiling.
-
----
+**Key lesson:** Hyperparameter tuning improves stability and convergence speed within a paradigm (`37% → 47%` vs Random), but **cannot overcome a fundamental representational or algorithmic ceiling** (`0%` vs Heuristic). Breaking that ceiling required spatial convolutions and lookahead tree search.
 
 ---
 

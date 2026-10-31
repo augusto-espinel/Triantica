@@ -8,6 +8,17 @@
 
 ### Game Rules in One Minute
 
+Triantica is a two-player territorial strategy game played on a **$10 \times 10$ toroidal grid** where opposite edges wrap around seamlessly into a continuous doughnut-shaped surface ($T^2$ torus). Players (**Red = Player 1**, **Blue = Player 2**) take turns placing right-isosceles triangles into grid cells:
+
+- **2 Triangles per Square (`╱` or `╲`):** Each square cell `(x, y)` can hold up to **2 triangles**, provided they share the same diagonal cut:
+  - **Group 0 (`╱` slash diagonal):** Rotation `0` (Top-Left `◤`) and Rotation `2` (Bottom-Right `◢`).
+  - **Group 1 (`╲` backslash diagonal):** Rotation `1` (Bottom-Left `◣`) and Rotation `3` (Top-Right `◥`).
+- **Corner-Touch Placement Rule (`getValidMoves`):** After the opening move, every newly placed triangle must touch at least one vertex of an already-placed triangle anywhere in the 8-cell toroidal neighborhood.
+- **Enclosure & Automatic Capture (`claimEnclosedTriangles`):** Whenever a placement seals off a pocket of $k \ge 1$ empty triangle slots so they can no longer reach the wider open board across unblocked edges, all $k$ enclosed slots are **automatically filled** with the active player's triangles.
+- **Extra-Turn Snowball Mechanic:** Capturing an enclosure of $k$ triangles immediately awards bonus turns before the opponent can respond:
+  $$\text{extraTurns} = \left\lfloor \frac{1 + k}{2} \right\rfloor$$
+- **Victory Condition (Largest Contiguous Cluster):** When all 200 triangle slots on the $10 \times 10$ board are filled, each player's score is the size of their **single largest contiguous cluster** of triangles connected across shared edges (corner contact alone does not connect a cluster).
+
 <details>
 <summary>📐 Diagram: 10×10 toroidal grid (edges wrap around seamlessly) (click to expand ASCII)</summary>
 
@@ -30,7 +41,7 @@
 
 #### Cell Geometry & The 4 Triangle Rotations
 
-Every square cell `(x, y)` on the $10 \times 10$ board can hold up to **2 right-isosceles triangles**. Because two triangles in the same square cannot overlap, they must share the same diagonal cut (`╱` or `╲`):
+Every square cell `(x, y)` on the $10 \times 10$ board can hold up to **2 right-isosceles triangles**. Because two triangles in the same square cannot overlap, they must share the same diagonal cut (`╱` or `╲`). Crucially, **placement legality** only requires touching an existing vertex (corner), whereas **scoring connectivity** requires sharing a full triangle leg or hypotenuse across adjacent cells:
 
 ![Cell Geometry & 4 Triangle Rotations](./assets/diagrams/cell-geometry-rotations.svg)
 
@@ -136,7 +147,15 @@ When a move encloses $k \ge 1$ empty triangle slots via flood-fill (`claimEnclos
 
 The 2.5D tilted viewport shows both players' triangles in their canonical colors (Red = P1, Blue = P2), with the wrap-around toroidal seam visible at the board edges.
 
-### Why This Game Exposes RL Challenges
+### Why This Game Exposes Fundamental RL Challenges
+
+Compared to classic board games like Chess or Go, Triantica combines a moderate branching factor with an unusually volatile, non-linear reward surface:
+
+| Game | Typical Legal Moves | Positional Evaluation | Core RL Challenge |
+| :--- | :--- | :--- | :--- |
+| **Chess** | ~35 | Material balance + piece activity | Deep tactical lines, discrete material exchanges |
+| **Go** | ~250 | Global territory & group life/death | Huge branching factor, subtle influence |
+| **Triantica** | **~50** (out of 400 slots) | **Non-linear cascade potential** | **Delayed credit assignment + snowball traps** |
 
 <details>
 <summary>📐 Diagram: Game Complexity Comparison (click to expand ASCII)</summary>
@@ -163,9 +182,11 @@ The 2.5D tilted viewport shows both players' triangles in their canonical colors
 
 **This is the core RL problem:** Credit assignment. How do you learn which move, 30 turns ago, caused your victory?
 
-### State Representation
+### State Representation: How the AI Sees the Board
 
-The neural network doesn't see the board visually. It sees a vector of numbers:
+A neural network cannot perceive pixels or geometric shapes directly; the core board state and rules engine (`src/core/GridManager.js`) must translate the board into a mathematical tensor.
+
+In our earliest feedforward experiments (`brain.js` and `TF-B1` through `TF-B4`), we encoded the board as a **flat `401`-element vector** (`100` cells $\times$ `4` values per cell $+$ `1` bias unit). For each cell, two slots recorded the owner (`+1` for self, `-1` for opponent, `0` for empty) and normalized rotation (`0.0, 0.25, 0.5, 0.75`):
 
 <details>
 <summary>📐 Diagram: Input Vector (401 values) (click to expand ASCII)</summary>
@@ -203,7 +224,11 @@ This is critical for generalization (see Bug #1 in Section 7).
 
 While our early feedforward experiments (`brain.js` and `TF-B1` through `TF-B4`) used this flat `401`-element vector, a 1D vector destroys 2D board geometry: cells `(x=4, y=4)` and `(x=4, y=5)` are adjacent on the board, yet sit `40` indices apart in the flattened array.
 
-To unlock spatial pattern recognition and eventually break the Heuristic Wall, our representation evolved through three distinct stages (detailed in [Chapter 11](./11-deep-dive-convolutions-mcts.md)):
+To unlock spatial pattern recognition and eventually break the Heuristic Wall, our state representation evolved through three distinct stages (explored in full mathematical detail in [Chapter 11A](./11a-replay-and-conv-encoding.md) and [Chapter 11E](./11e-quiescence-mcts-and-torus-mastery.md)):
+
+1. **Stage 1 — Flat `401`-Element Vector (`brain.js` & `TF-B1`–`TF-B4`):** Encodes `100` cells $\times$ `4` scalar values $+$ `1` bias. Suffers from zero 2D spatial locality and an arbitrary creation-order slot-shuffling bug (where the same geometric cell state produced different vectors depending on which triangle was placed first).
+2. **Stage 2 — Canonical `10×10×18` Ego-Centric Spatial Tensor (`TF-B5`–`TF-B14`):** Assigns deterministic geometric slots (`Slot 0` = rotations `{0, 1}`, `Slot 1` = rotations `{2, 3}`) with a 9-way one-hot encoding per slot (`18` channels per cell). This unlocked $3 \times 3$ convolutional cavity detection, though standard zero-padding still treated the edges of the $10 \times 10$ array as artificial walls.
+3. **Stage 3 — Full $T^2$ Toroidal Manifold + Circular Padding (`TF-B15` Champion):** Wraps the `[10, 10, C]` feature map into `[12, 12, C]` by copying opposite borders (`ToroidalPad2D`) before every $3 \times 3$ convolution layer, achieving exact translation equivariance across all 100 cells with zero border seams.
 
 <details>
 <summary>📐 Diagram: EVOLUTION OF TRIANTICA BOARD STATE REPRESENTATION (click to expand ASCII)</summary>
@@ -232,8 +257,6 @@ To unlock spatial pattern recognition and eventually break the Heuristic Wall, o
 </details>
 
 ![Toroidal Wrap-Around — Seamless edge connections on T²](./assets/diagrams/toroidal-wrap.svg)
-
----
 
 ---
 

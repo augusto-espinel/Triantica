@@ -37,6 +37,15 @@ const output = net.run(inputState);
 
 ### Phase 2: TensorFlow.js Migration
 
+To break past the limitations of a CPU-only feedforward network, we migrated the training pipeline to **TensorFlow.js (`@tensorflow/tfjs-node`)**. This unlocked custom masked cross-entropy loss functions, 2D convolutional layers (`Conv2D`), multi-head Actor-Critic outputs, manual gradient control (`tf.variableGrads`), and hardware-accelerated matrix math on the Mac Studio M2 Ultra:
+
+| Capability | `brain.js` (Phase 1) | `TensorFlow.js` (`tfjs-node`, Phases 2–5) |
+| :--- | :--- | :--- |
+| **Loss Functions** | Unmasked 400-output MSE only | Custom Legal-Move Masked Cross-Entropy + Value MSE |
+| **Network Topology** | 1-layer Feedforward MLP (`401 → 200 → 400`) | Shared $3\times 3$ Conv2D Trunk + Dual Policy/Value Heads + `ToroidalPad2D` |
+| **Hardware Acceleration** | Single-threaded CPU JavaScript | Native C++ / Apple Accelerate / Metal unified memory execution |
+| **Gradient Control** | Black-box `.train()` loop | Explicit `tf.tidy()` / `tf.variableGrads()` with custom mini-batching |
+
 ![The 5-Stage Architecture Climb — Breaking the Heuristic Wall](./assets/diagrams/architecture-climb.svg)
 
 <details>
@@ -61,9 +70,13 @@ const output = net.run(inputState);
 
 </details>
 
-### Migration Challenges
+### Migration Challenges: Why a Rewrite Initially Performed Worse
 
-The TF.js implementation initially got **49% vs Random** (vs 91% with brain.js). Investigation revealed three critical bugs:
+When we first ported the training loop (`src/server/train_tfjs.cjs`) and neural network wrapper (`src/ai/TFNeuralNetwork.js`) to TensorFlow.js, the new implementation scored only **`49%` vs Random**—a dramatic regression from `91%` in `brain.js`. Side-by-side log comparison revealed three classic framework migration bugs:
+
+1. **Bug 1 — $400\times$ Reward Signal Dilution:** In `brain.js`, only the target entry for the chosen move was modified while the remaining 399 outputs copied the network's current prediction (zero error). In our first TensorFlow.js port, the loss averaged MSE across all 400 outputs against static baseline targets (`0.5` for legal moves, `0.01` for illegal moves), diluting the chosen move's reward gradient by a factor of $400$.
+2. **Bug 2 — Input Normalization Mismatch:** `brain.js` dynamically scaled inputs based on observed range, whereas our initial TensorFlow.js port used hardcoded rotation scaling (`r / 3.0` instead of `r / 4.0`), shifting the input distribution seen by the first dense layer.
+3. **Bug 3 — Epoch Under-Training (`10` vs. `200` Iterations):** A configuration typo ran only `10` gradient passes per cycle instead of `brain.js`'s `200` iterations, leaving the network under-fitted on each batch of self-play games.
 
 <details>
 <summary>📐 Diagram: Migration Bugs (click to expand ASCII)</summary>
@@ -120,6 +133,17 @@ Even after fixing the initial migration bugs above, a deeper mystery remained: w
 
 We built a dedicated numerical audit suite (`reward_forensic_audit.cjs` and `reward_signal_audit.cjs`) to trace every gradient update and sample count across both engines:
 
+| Metric / Mechanism | `exp20` (`brain.js` Champion) | `TF-B1` (Early TensorFlow.js Baseline) |
+| :--- | :--- | :--- |
+| **Games per Cycle** | `100` games (`~8,500` board positions) | `20` games (`~850` board positions) |
+| **Experience Replay Buffer** | **Yes** (`+50%` historical mix = `12,750` states) | **No** (trained on current cycle only) |
+| **Weight Update Mode** | Online per-sample SGD (`batchSize = 1`) | Mini-batch MSE (`batchSize = 32`) |
+| **Weight Updates per Cycle** | **`382,500` updates** | **`5,300` batched updates** |
+| **Gradient Isolation** | `false` (full 400-output MSE) | `true` (masked 1-of-400 chosen move) |
+| **Win Rate vs. Random / Heuristic** | **`91.0%`** / `0.0%` | **`49.0%`** / `0.0%` |
+
+- **The Gradient Dilution & Isolation Paradox:** Without gradient isolation (full 400-output MSE), `~350` illegal moves are pushed toward `0.01` on every step, generating `98.2%` of the total gradient magnitude while the single chosen move receives only `1.8%`. In `brain.js`, `382,500` online SGD steps combined with a 50% replay buffer brute-forced the network to suppress all 350 illegal moves first—which alone was enough to beat `RandomPlayer` `91%` of the time. Conversely, when `TF-B1` enabled 1-of-400 gradient isolation on a tiny 20-game buffer *without* replay memory, the network overfit the 850 chosen moves to zero error ($e_{\text{end}} \to 0.000000$) while forgetting illegal move boundaries from earlier cycles.
+
 <details>
 <summary>📐 Diagram: FORENSIC AUDIT: exp20 (brain.js, 91%) vs TF-B1 (TF.js, 49%) (click to expand ASCII)</summary>
 
@@ -159,9 +183,7 @@ We built a dedicated numerical audit suite (`reward_forensic_audit.cjs` and `rew
 **Three Enduring Lessons from the Migration Audit:**
 1. **Experience Replay is Non-Negotiable:** Training only on the current cycle's games causes the network to oscillate and forget earlier board configurations. Adding the **500,000-state sliding-window Replay Buffer** (`--replay-buffer-size 500000 --replay-ratio 2.0`) stabilized every subsequent TF.js run.
 2. **Suppressing Illegal Moves Beat `Random`, Not `Heuristic`:** `exp20`'s `91%` win rate against `RandomPlayer` was largely achieved by learning legal corner-touch boundaries and basic 1-ply captures—not deep territorial strategy. Against `HeuristicPlayer`, both `exp20` and `TF-B1` scored **`0.0%`**.
-3. **Core Engineering Principle (Masked Cross-Entropy over Active Decisions):** A policy loss function must neither average MSE across 399 unchosen outputs (which dilutes the chosen move gradient by $400\times$, see Bug #10 in Chapter 7) nor leave unchosen legal moves unconstrained. This realization directly led to our **Legal-Move Masked Softmax Cross-Entropy** ($-\sum_{a \in \text{legal}} \pi_{\text{MCTS}}(a) \log p(a)$) in `TFConvNetwork`.
-
----
+3. **Core Engineering Principle (Masked Cross-Entropy over Active Decisions):** A policy loss function must neither average MSE across 399 unchosen outputs (which dilutes the chosen move gradient by $400\times$, see Bug #10 in Chapter 7) nor leave unchosen legal moves unconstrained. This realization directly led to our **Legal-Move Masked Softmax Cross-Entropy** ($-\sum_{a \in \text{legal}} \pi_{\text{MCTS}}(a) \log p(a)$) in the convolutional Actor-Critic network (`src/server/ConvNetwork.cjs`).
 
 ---
 

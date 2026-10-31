@@ -2,9 +2,9 @@
 
 ---
 
-### Phase 2 Results (2026-10-25)
+### Phase 2 Results: Isolating Spatial Perception Without Search (`TF-B5` & `TF-B6`)
 
-**Experiments Completed:** TF-B5_conv, TF-B6_optimized
+Our first experiments with the 2-Head Convolutional Network tested whether upgrading the input representation (`10×10×18` canonical one-hot slots) and spatial feature extractor (`3×Conv2D + BatchNorm`) could break the Heuristic Wall using 1-ply self-play alone.
 
 #### TF-B5: Canonical Conv Network + Value Head
 
@@ -33,6 +33,10 @@
 | vs Heuristic | **0%** (0 wins in 2000 games) |
 
 #### Key Findings
+
+1. **Spatial Representation Validated:** Switching from a `401`-element vector to the `10×10×18` canonical one-hot tensor with three $3\times 3$ `Conv2D` layers (`TF-B5`) eliminated rotation ambiguity and achieved healthy within-cycle loss convergence (`1.91 → 1.38`).
+2. **Hyperparameter Tuning Did Not Move the Ceiling:** Doubling the learning rate (`0.01 → 0.02`) and equalizing the Value Head weight in `TF-B6` produced the exact same **`50%` vs Random and `0%` vs Heuristic** result across 2,000 evaluation games.
+3. **Root Cause Confirmed — Lack of Lookahead Search:** Even when a convolutional network can perceive local $7\times 7$ geometry, a 1-ply policy trained purely on terminal game outcomes without tree search cannot foresee multi-step enclosure cascades. Breaking the Heuristic Wall required pairing the 2-Head ConvNet with **Monte Carlo Tree Search (MCTS)**.
 
 <details>
 <summary>📐 Diagram: Phase 2: No Breakthrough (click to expand ASCII)</summary>
@@ -102,20 +106,10 @@
 node src/server/train_tfjs.cjs --cycles 10 --games 100 --mcts-sims 50 --architecture conv --output dashboard/data/TF-B8.json
 ```
 
-**Expected:** vs Random 65-70%, vs Heuristic 3-8%
+**Outcome Summary (`438.1` min across 10 cycles):**
+Instead of improving toward the `65–70%` expectation, the network **systematically degraded** over the course of training—starting at `40%` vs Random in Cycle 1, briefly touching `42%` in Cycle 2, and falling to **`30%` vs Random** by Cycle 10 (`0%` vs Heuristic).
 
-**Actual:** vs Random **30%**, vs Heuristic **0%**
-
-**Status:** ❌ Failed — Network learned to lose (performance degraded)
-
-**Runtime:** 438.1 minutes (~7.3 hours)
-
-**Key Finding:** The network consistently got worse over training:
-- Started: 40% vs Random
-- Peak (cycle 2): 42% vs Random
-- Final (cycle 10): 30% vs Random
-
-This confirms a **sign flip bug** in the training signal. The network IS learning — just learning the wrong thing. The learning mechanism works; the reward signal is inverted.
+This paradoxical behavior—where within-cycle training loss converged smoothly (`~1.00`) while evaluation win rate dropped well below a uniform random player (`50%`)—provided the smoking gun for **Bug 5 (Value Perspective Sign Inversion)**: the gradient descent machinery was working, but the reward signal feeding MCTS backpropagation was inverted.
 
 **Cycle-by-Cycle Results:**
 
@@ -132,37 +126,19 @@ This confirms a **sign flip bug** in the training signal. The network IS learnin
 | 9 | 32% | 0% | 2.04 → 1.00 |
 | 10 | **30%** | 0% | 2.03 → 1.00 |
 
-**Analysis:**
-- Win rate fluctuates but trend is **downward**
-- Final performance (30%) is **worse than random** (50%)
-- Training loss converges well (always reaches ~1.00)
-- This is NOT overfitting — loss decreases smoothly
-- This is NOT capacity issue — network CAN learn
-- **This is inverted signal** — network learned to play badly
+**Analysis & Root Cause Confirmed (See Chapter 7, Bug 5):**
+- Win rate fluctuated downward (`40% → 42% → 26% → 30%`), finishing worse than random play (`50%`), even though training loss converged smoothly (`~1.00`) every cycle.
+- Smooth loss convergence paired with systematic performance degradation is the unmistakable signature of a **sign-inverted training signal**.
+- Auditing `src/server/MCTS.cjs` confirmed the cause: `network.run(leafState)` returns a value $V(s_L)$ from the *leaf player's* ego-centric perspective, whereas `_backpropagate(path, leafValue, rootPlayer)` expected the value from the *root player's* perspective (`leaf.player === rootPlayer ? leafValue : -leafValue`). Whenever the leaf node belonged to the opponent, MCTS treated the opponent's best states as the AI's best states!
 
-**Bug Hypotheses (to debug):**
-1. `rewardForPlayer` sign flipped somewhere in self-play
-2. Canonical encoding: `myPieces=1, enemy=-1` inverted
-3. Value target: game outcome from wrong player's perspective
-4. Visit count normalization: high visits = bad move?
+**Key Implementation Details (`MCTS.cjs`):**
 
-**Key Implementation Details:**
-
-1. **Training Pipeline Change:**
-   - Policy target: Visit distribution π(a) = N(child)/N(root)
-   - Value target: Game outcome (unchanged)
-   - Network learns: "What would MCTS do?"
-
-2. **MCTS Parameters:**
-   - Exploration constant c = 1.5
-   - Dirichlet noise α = 0.03, ε = 0.25
-   - Temperature: 1.0 early, 0.0 late game
-   - Batch size: 8 (parallel leaf evaluation)
-
-3. **Performance Notes:**
-   - ~50x slower than regular self-play
-   - 1 game ≈ 50 seconds with MCTS-50
-   - Batched evaluation: 2x speedup over sequential
+1. **Training Pipeline Shift:**
+   - **Policy Target:** Normalized MCTS root visit distribution $\pi_{\text{MCTS}}(a) = N(s_0, a) / \sum_b N(s_0, b)$.
+   - **Value Target:** Terminal game outcome $z \in \{-1, 0, +1\}$ from the active player's perspective.
+   - **Learning Objective:** Distill 50-step tree lookahead ("What did MCTS choose after simulating the consequences?") into the 1-ply Policy Head.
+2. **Search Hyperparameters:**
+   - PUCT exploration constant $c_{\text{puct}} = 1.5$; root Dirichlet noise $\alpha = 0.03, \varepsilon = 0.25$; temperature $\tau = 1.0$ in opening plies decaying to $\tau = 0.0$ in the endgame; virtual-loss leaf batch size $B = 8$.
 
 ---
 
@@ -209,11 +185,7 @@ node src/server/train_tfjs.cjs --cycles 10 --games 100 --eval-games 100 --mcts-s
 ```
 
 **Live Pre-Run Verification (20 Games, Cycle 1):**
-- Policy Head immediately separates top MCTS moves (`0.985`) from bad/illegal moves (`0.000`).
-- Value Head stays unsaturated (`+0.2538` on mid-game boards).
-- Achieved **56.0% vs Random** (`52.0% as P1`, `60.0% as P2`) in the 20-game live verification test.
-
-**Status:** ✅ **Completed** (`292.6` minutes, 10/10 cycles, **84.0% Peak / 79.0% Final vs Random**, **69.9% 10-Cycle Mean**, published to `dashboard/data/TF-B9.json` and `trainedAI_network.json`).
+Before launching the full 10-cycle run, a 20-game diagnostic pass confirmed that the Policy Head immediately separated top MCTS moves (`0.985`) from illegal/weak moves (`0.000`), the Value Head remained unsaturated (`+0.2538` on mid-game boards), and the 1-ply network reached **56.0% vs Random** (`52.0% as P1`, `60.0% as P2`) after a single cycle. Across the full 10-cycle run (`292.6` minutes), `TF-B9` climbed to an **84.0% Peak / 79.0% Final win rate vs Random** (**69.9% 10-Cycle Mean**).
 
 **Complete 10-Cycle Trajectory (`TF-B9`):**
 
@@ -310,8 +282,7 @@ nohup node src/server/train_tfjs.cjs \
   --output dashboard/data/TF-B10.json > dashboard/data/TF-B10.log 2>&1 < /dev/null &
 ```
 - **Warm-Start:** Initialized from `dashboard/data/TF-B9_network.json` (`79.0%` final / `84.0%` peak vs Random).
-- **Opponent Curriculum:** `50%` MCTS-50 Self-Play + `50%` `HeuristicPlayer` (`explorationFactor: 0.1`), exposing the AI to aggressive early enclosure chains while maintaining self-play stability via the 500K Replay Buffer.
-- **Status:** ✅ **Completed** (`161.3` minutes, 10/10 cycles, **87.0% Peak & Final vs Random**, **81.8% 10-Cycle Mean**, published to `dashboard/data/TF-B10.json` and `trainedAI_network.json`).
+- **Opponent Curriculum:** `50%` MCTS-50 Self-Play + `50%` `HeuristicPlayer` (`explorationFactor: 0.1`), exposing the AI to aggressive early enclosure chains while maintaining self-play stability via the 500K Replay Buffer. Across 10 cycles (`161.3` minutes), `TF-B10` reached a new record of **87.0% Peak & Final vs Random** (**81.8% 10-Cycle Mean**).
 
 **Complete 10-Cycle Trajectory (`TF-B10`):**
 
@@ -377,8 +348,6 @@ nohup node src/server/train_tfjs.cjs \
   --start-from dashboard/data/TF-B12_network.json \
   --output dashboard/data/TF-B13.json > dashboard/data/TF-B13.log 2>&1 < /dev/null &
 ```
-
----
 
 ---
 

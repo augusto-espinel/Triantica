@@ -4,7 +4,13 @@
 
 ## 10. Key Takeaways for RL Practitioners {#10-takeaways}
 
-### What We Learned
+### Five Core Engineering Lessons
+
+1. **Architecture & Representation Dominate Hyperparameters:** No amount of learning-rate tuning, momentum tweaking, or reward shaping could make a 1D feedforward network play strategically (`0%` vs Heuristic across `3,000+` games). True progress came from matching the network topology (`10×10×18` canonical spatial tensor + $3\times 3$ Conv2D) and search algorithm to the structure of the game.
+2. **Domain-Aware Search Breaks the Strategic Barrier:** Neither a 2-Head ConvNet alone (`TF-B5`) nor vanilla AlphaZero MCTS (`TF-B10`) could beat `HeuristicPlayer`, because evaluating non-quiescent leaf states blinded the Value Head to multi-turn enclosure cascades. Extending MCTS with **greedy leaf quiescence rollouts** (`src/server/QuiescenceMCTS.cjs`) immediately unlocked `63% → 90% → 99%` mastery.
+3. **Systemic Bugs Hide Silently Across Subsystem Boundaries:** Across our journey we uncovered **14 critical bugs** spanning perspective alignment, diagonal overlap logic, canonical slot collisions, replay value zeroing, $400\times$ policy loss dilution, `tanh` saturation, browser heuristic overrides, and evaluation seat-swaps. Auditing tensor magnitudes, role-split win rates (`as P1` vs. `as P2`), and cycle loss curves is mandatory before trusting any benchmark.
+4. **Convolution Padding Must Respect Manifold Topology:** Standard zero-padding (`padding='same'`) treats the borders of a toroidal grid as artificial walls, causing a ~20% win-rate ceiling at the seam. Replacing zero-padding with **Toroidal Circular Padding (`ToroidalPad2D`)** across all convolutional layers lifted raw 1-ply policy performance from `80.1%` to **`95.9%` average (`99.0%` peak)**.
+5. **Hybrid Neuro-Symbolic Safety Eliminates Residual Blunders:** Pairing the `0.8 ms` raw 1-ply neural policy with an $O(1)$ **`topK = 12` Inference-Time Tactical Safety Filter** (`< 0.4 ms` total budget) closed the final 1% horizon gap, achieving **`100.0%` (`1,000W / 0L / 0D` across all 10 cycles)** against `HeuristicPlayer`.
 
 <details>
 <summary>📐 Diagram: Key Lessons (click to expand ASCII)</summary>
@@ -48,27 +54,11 @@
 
 </details>
 
-### Recommendations for Similar Projects
+### Practical Recommendations for Systems & RL Engineers
 
-**Starting Out:**
-1. Use simple frameworks first (brain.js) for rapid iteration
-2. Implement comprehensive logging before tuning
-3. Verify baseline metrics match expected distributions
-
-**During Development:**
-1. Keep a training journal (like this one)
-2. Compare against previous experiments, not just absolute metrics
-3. Use visualization to catch bugs early (win rate histograms, score distributions)
-
-**Architecture Decisions:**
-1. Start with feedforward to establish baseline
-2. If you hit a wall, evaluate if search is needed
-3. Actor-critic helps with variance but may not break strategic walls
-
-**Hardware:**
-1. Unified memory (Apple Silicon) simplifies batch size tuning
-2. Node.js version compatibility matters for native ML libraries
-3. Profile GPU utilization to find batch size sweet spot
+- **Prototype Fast, Instrument Deeply:** Start with the simplest viable model (`brain.js`) to validate the game loop and build diagnostic telemetry first (role-split win rates, cluster score distributions, opening/board Shannon entropy, and start-vs-end cycle loss).
+- **Separate Representation, Critic, and Search:** When an agent stalls against a tactical baseline, diagnose whether the bottleneck is **spatial perception** (1D vector vs. 2D/toroidal tensor), **credit assignment** (outcome smearing vs. learned Value Critic $V(s)$), or **lookahead horizon** (1-ply vs. MCTS with quiescence rollouts).
+- **Design for Hardware Symmetry:** On unified memory architectures like the Mac Studio M2 Ultra, aligning tensor channel depths (`32, 64`), MCTS leaf batches (`B = 8`), and replay mini-batches (`B = 256`) keeps the entire `594 KB` weight set in L2 cache and saturates AMX/Metal matrix tiles without PCIe copy bottlenecks.
 
 ### Further Reading
 
@@ -83,8 +73,6 @@
 **TensorFlow.js:**
 - [TF.js Documentation](https://www.tensorflow.org/js)
 - [tfjs-node GitHub](https://github.com/tensorflow/tfjs-node)
-
----
 
 ---
 

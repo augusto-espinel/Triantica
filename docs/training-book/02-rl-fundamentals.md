@@ -40,15 +40,17 @@ Reinforcement learning is different from supervised learning. There's no labeled
 </details>
 
 **In Triantica:**
-- **Agent**: Neural network that outputs move probabilities
-- **Environment**: The game board + rules
-- **State**: 401-number vector representing the board
-- **Action**: Which triangle to place where (400 options)
-- **Reward**: Points scored + bonus for winning
+- **Agent**: The neural network policy and value architecture (`src/ai/NeuralNetwork.js` in Stage 1; `src/server/ConvNetwork.cjs` in Stages 2–5) that outputs move probabilities $\pi(a|s)$ and position evaluations $V(s)$.
+- **Environment**: The $10 \times 10$ toroidal game board and rules engine (`src/core/GridManager.js`).
+- **State ($s_t$)**: The mathematical representation of the board from the active player's ego-centric perspective (evolving from a flat `401`-element vector to a canonical `10×10×18` spatial tensor).
+- **Action ($a_t$)**: Which triangle rotation (`0..3`) to place in which cell (`(x, y)`), giving $100 \times 4 = 400$ total action indices (`~35–60` legal on a typical turn).
+- **Reward / Return ($z$)**: In early experiments, a blend of intermediate cluster shaping and game outcome; in our champion AlphaZero architecture, the pure terminal outcome $z \in \{-1, 0, +1\}$ coupled with MCTS lookahead.
 
 ### What is a Policy?
 
-A **policy** (denoted π) is the agent's strategy — it maps states to actions.
+A **policy** (denoted $\pi_\theta(a|s)$) is the agent's strategy — a mathematical function parameterized by network weights $\theta$ that maps any board state $s$ to a probability distribution over all $400$ possible actions:
+$$\pi_\theta(a|s) = P(\text{taking action } a \mid \text{in state } s)$$
+In our initial feedforward architecture, a `401`-neuron input layer fed into a `200`-neuron hidden layer and a `400`-neuron output layer, transforming raw cell occupancy into move preferences:
 
 <details>
 <summary>📐 Diagram: Policy Network (click to expand ASCII)</summary>
@@ -81,9 +83,13 @@ Mathematical form: π(a|s) = P(taking action a | in state s)
 1. **Exploration**: Sometimes picking lower-probability moves to discover new strategies
 2. **Training**: We can reinforce good moves (increase their probability) and discourage bad ones
 
-### Policy Gradient: How We Train
+### Policy Gradient: How We Train Without a Teacher
 
-The simplest RL algorithm is **policy gradient**. Here's how it works:
+The simplest family of RL algorithms is **Policy Gradient (REINFORCE)**. Because there is no ground-truth "correct move" label in self-play, Policy Gradient uses the eventual outcome of the game as a retroactive credit signal across three steps:
+
+1. **Self-Play Rollout:** The agent plays full games against itself (or a sparring partner), recording every trajectory step $(s_t, a_t)$ along the way.
+2. **Outcome Credit Assignment:** When the game ends, every move played by the winner receives a positive reinforcement target (e.g., $+1$ or `0.95` in sigmoid space), while every move played by the loser receives a negative target ($-1$ or `0.05`), optionally discounted by temporal position so late-game blunders carry more weight than opening moves.
+3. **Gradient Update:** The optimizer adjusts the network weights $\theta$ to shift the predicted probability $\pi_\theta(a_t | s_t)$ toward the outcome target—making moves that appeared in winning games more likely in the future, and moves from losing games less likely.
 
 <details>
 <summary>📐 Diagram: Policy Gradient Training (click to expand ASCII)</summary>
@@ -127,7 +133,15 @@ If reward is positive (won): minimize -log(π) → increase π
 If reward is negative (lost): minimize -log(π) → decrease π
 ```
 
-### Three Approaches to RL
+### Three Approaches to RL Built in Triantica
+
+Over the course of this project, we systematically built and benchmarked three progressively more capable reinforcement learning paradigms:
+
+| Paradigm | Experiments | Core Mechanism | Best Win Rate vs Random | Best Win Rate vs Heuristic |
+| :--- | :--- | :--- | :---: | :---: |
+| **1. Pure Policy Gradient** | `brain.js` (`exp1`–`exp22`), `TF-B1`–`TF-B4` | Flat `401` vector $\to$ Dense MLP trained directly on game outcomes (no lookahead) | `91.0%` | `0.0%` *(Heuristic Wall)* |
+| **2. 2-Head Convolutional Actor-Critic** | `TF-B5`–`TF-B7` | `10×10×18` spatial tensor $\to$ shared $3\times 3$ Conv2D trunk + Policy Head ($\pi$) & Value Head ($V \in [-1,+1]$) | `82.0%` | `0.0%` *(No lookahead)* |
+| **3. AlphaZero + Quiescence MCTS on $T^2$ Torus** | `TF-B8`–`TF-B15` | 2-Head ConvNet + `ToroidalPad2D` guiding 50-sim PUCT MCTS with leaf Quiescence rollouts & Top-12 Safety Filter | **`100.0%`** | **`99.0%` Raw / `100.0%` +Safety** |
 
 <details>
 <summary>📐 Diagram: THE 3 RL PARADIGMS BUILT IN TRIANTICA (click to expand ASCII)</summary>
@@ -166,7 +180,11 @@ Our initial feedforward network (`brain.js` and `TF-B1`–`TF-B4`) used pure **p
 
 ### Why Credit Assignment Fails in Triantica Without a Value Critic & Search
 
-Why did pure Policy Gradient hit an impenetrable `0%` ceiling against a tactical opponent, even after 45 training cycles? Because of **delayed catastrophic punishment**:
+Why did pure Policy Gradient hit an impenetrable `0%` ceiling against a tactical opponent, even after 45 training cycles? Because of **delayed catastrophic punishment**—a structural pathology of snowball games:
+
+- **The Snowball Blunder Scenario:** Imagine the AI plays 19 solid territorial moves across Plies $1\dots 38$, building a healthy 30-triangle cluster. On Ply 40, it makes **one careless placement** that leaves a single-move enclosure cavity. On Ply 41, the deterministic heuristic opponent (`src/ai/HeuristicPlayer.js`) caps that cavity, earns a bonus turn, chains a 12-turn enclosure cascade, and wins the game `166` to `14` ($z = -1$).
+- **Why Pure Policy Gradient Breaks:** Because pure Policy Gradient assigns the terminal loss ($z = -1$) to *every action in the trajectory*, the 19 strong positional moves at Plies $1\dots 38$ are punished right alongside the single blunder at Ply 40. The network literally unlearns its good opening and mid-game patterns because of one late-game tactical oversight!
+- **How Actor-Critic + Quiescence MCTS Solves It:** With Monte Carlo Tree Search and a Value Critic (`src/server/QuiescenceMCTS.cjs`), the agent simulates the candidate move at Ply 40 *before* playing it, triggers the opponent's forced cascade rollout at the leaf node, observes $V \approx -0.90$, and shifts visit counts away from the blunder immediately. Each state $s_t$ is evaluated on its own strategic merit rather than smeared across the entire game.
 
 <details>
 <summary>📐 Diagram: THE CREDIT ASSIGNMENT PROBLEM IN SNOWBALL GAMES (click to expand ASCII)</summary>
@@ -241,7 +259,14 @@ In our project, how we balanced exploration and exploitation evolved alongside t
 
 When training a reinforcement learning agent over hours of self-play, watching a single "Win Rate" number is like flying an airplane with only an altimeter. When the win rate stalls at `0%` or suddenly crashes from `54%` to `15%`, you need diagnostic instruments that separate **exploration health**, **optimization health**, **role symmetry**, and **true strategic dominance**.
 
-Throughout this guide, every experiment is tracked through six core telemetry signals on the Triantica Training Dashboard:
+Throughout this guide, every experiment is tracked through **six core telemetry signals** on the Triantica Training Dashboard (`dashboard.html`):
+
+1. **Win Rate Split by Role (`P1` First-Mover vs. `P2` Second-Mover):** Because Player 2 enjoys a natural counter-attack advantage in deterministic openings, an aggregate win rate of `50%` can hide complete role blindness (`0%` as P1, `100%` as P2) or an evaluation harness seat-swap bug. Tracking `P1` and `P2` separately proves true bidirectional competence (`100%` as P1 and `98%` raw / `100%` +Safety as P2 in `TF-B15`).
+2. **Score Distribution (Largest Contiguous Cluster: AI vs. Opponent):** Win rate is a binary step function (`0%` until the AI exceeds the opponent's cluster size). Tracking average cluster scores out of 200 triangles reveals structural progress *before* the first win—showing when the AI progresses from total cascade wipeouts (`4 vs 170`) to competitive mid-game survival (`65 vs 95`) to territorial dominance (`138 vs 32`).
+3. **Opening Diversity (Shannon Entropy of First Moves, $H_{\text{open}}$):** Computed as $H_{\text{open}} = -\sum p(m_1)\log_2 p(m_1)$ (theoretical maximum $\log_2(100) \approx 6.64\text{ bits}$). Healthy MCTS self-play maintains **`5.0–6.2 bits`** (`40–75` distinct openings per 100-game cycle); a drop below `2.5 bits` warns of early policy mode collapse.
+4. **Board Diversity (Shannon Entropy of Completed Boards):** Measures structural variety across all 200 triangle slots at game end. Healthy runs sustain **`~1.95–1.98 bits`**, confirming that games do not funnel into repetitive end-game stalemates.
+5. **Cycle Error Curve — Initial Error ($e_{\text{start}}$) vs. Final Error ($e_{\text{end}}$):** Measures how surprised the network is by newly generated MCTS self-play trajectories ($e_{\text{start}}$) versus how well gradient descent fits the replay buffer by the end of the cycle ($e_{\text{end}}$). A healthy AlphaZero run exhibits a characteristic **sawtooth descent** (e.g., `1.91 → 1.38` within a cycle, then jumping at the start of the next cycle as MCTS discovers deeper tactics), whereas a crash to `0.000000` diagnoses replay buffer starvation and a flat micro-drop (`1.312 → 1.299`) diagnoses gradient dilution or cancellation.
+6. **Raw 1-Ply Policy Evaluation vs. `+Safety` Filter Evaluation:** Separates pure neural intuition (a single `0.8 ms` forward pass $\arg\max_a \pi_\theta(a|s)$ with zero tree search) from the $O(1)$ top-12 tactical blunder filter (`99.0%` raw vs. `100.0%` with safety filter).
 
 <details>
 <summary>📐 Diagram: THE 6 CORE TELEMETRY SIGNALS & WHAT THEY DIAGNOSE (click to expand ASCII)</summary>
@@ -303,8 +328,6 @@ Throughout this guide, every experiment is tracked through six core telemetry si
 ```
 
 </details>
-
----
 
 ---
 

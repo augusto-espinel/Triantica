@@ -4,11 +4,10 @@
 
 ### Phase 5: Monte Carlo Tree Search (MCTS)
 
-**Priority:** High (required to break the Heuristic Wall)
+**Architectural Motivation — Bridging the Lookahead Asymmetry:**
+Even with a 18-channel canonical representation and a 3-layer convolutional trunk (`TF-B5` and `TF-B6`), a standalone neural network is fundamentally reactive: it observes a static snapshot of the board $s_t$ and emits a 1-ply probability distribution $\pi_\theta(a|s_t)$, without any mechanism to ask *"What happens if I place a triangle here and my opponent responds there?"*
 
-**Problem:** Network has no mechanism for "what if" reasoning. It sees the current position and outputs move probabilities, but cannot simulate consequences.
-
-**Why this matters:** The Heuristic player evaluates 5-10 moves ahead through simulation. Our network sees only the current board. This is a fundamental asymmetry that no architecture can overcome without search.
+Because `HeuristicPlayer` explicitly simulates the consequences of candidate moves—checking whether a placement completes an enclosure, earns an extra turn, or hands a 3-sided cavity to the opponent—any pure 1-ply network faces a structural lookahead asymmetry. Integrating **Monte Carlo Tree Search (MCTS)** eliminates that asymmetry by using the neural network's Policy and Value heads to guide multi-step forward simulation.
 
 ---
 
@@ -274,31 +273,19 @@ The network learns: "What would MCTS do?" not "What do I think?"
 
 ---
 
-#### Expected Performance Impact
+#### Expected vs. Empirical Performance of Vanilla MCTS (`MCTS.cjs`)
 
-Based on AlphaGo Zero results and our current baseline:
+When we first designed the Phase 5 MCTS integration, we projected that 50 simulations per move would lift performance against `RandomPlayer` to `70–75%` and achieve an initial `5–10%` breakthrough against `HeuristicPlayer`:
 
-| Metric | Current (NN only) | With MCTS-50 | With MCTS-200 |
-|--------|-------------------|-------------|---------------|
-| vs Random | 50% | 70-75% | 75-80% |
-| vs Heuristic | 0% | **5-10%** | **10-15%** |
-| Time/move | 50ms | 2-3s | 8-10s |
+| Metric | 1-Ply ConvNet (`TF-B5`/`B6`) | Original MCTS-50 Projection | **Actual Vanilla MCTS-50 (`TF-B9`/`TF-B10`)** | **With Quiescence MCTS-50 (`TF-B12`–`TF-B15`)** |
+|--------|------------------------------|-----------------------------|-----------------------------------------------|-------------------------------------------------|
+| vs Random | 50% | 70–75% | **79% (`TF-B9`) → 87% (`TF-B10`)** | **100.0% (`4,000W / 0L` across 40 cycles)** |
+| vs Heuristic | 0% | 5–10% | **0% (Horizon Blindness at unquiet leaves)** | **63% (`TF-B12`) → 90% (`TF-B14`) → 99% Raw / 100% +Safety (`TF-B15`)** |
+| Time / 50-sim move | ~0.8 ms (1-ply) | 2,000–3,000 ms | **~140 ms (Batched GPU/AMX evaluation, $B=8$)** | **~140 ms (Concatenated Dual-State Batching, $B=16$)** |
 
-**The breakthrough:** MCTS provides the lookahead that the network cannot learn. The Heuristic player wins by planning enclosures 10-20 moves ahead. MCTS gives our network the same capability.
-
----
-
-#### Risk Assessment
-
-| Risk | Mitigation |
-|------|------------|
-| Slow training (MCTS per move) | Batch evaluation, start with 50 sims |
-| Bug in tree logic (memory leak) | Unit tests, tree visualization, N tracking |
-| Overfitting to MCTS policy | Dirichlet noise, temperature schedule |
-| Still doesn't beat Heuristic | Increase simulations, tune c parameter |
-| Implementation complexity | Start simple (sequential), optimize later |
-
----
+**Why Vanilla MCTS Exceeded Expectations Against Random (`87%`) Yet Scored `0%` Against Heuristic:**
+1. **Throughput & Strategic Depth vs. Random:** By batching 8 leaf evaluations into a single TensorFlow.js forward pass (`mctsBatchSize = 8`) with virtual loss (`-1.0` visit penalty), the Mac Studio M2 Ultra completed 50 simulations in just **`~140 ms` per move**—over **$20\times$ faster** than our initial `2–3 second` estimate. Once Policy Cross-Entropy was summed over legal actions (`Bug 11`), distilling 50-step MCTS visit distributions into the 1-ply Policy Head propelled win rates against `RandomPlayer` from `50%` to **`84%` peak (`TF-B9`)** and **`87%` (`TF-B10`)**.
+2. **The Horizon Effect Against Deterministic Cascades:** Why did Vanilla MCTS-50 still score `0%` against `HeuristicPlayer`? Because standard MCTS stops at an arbitrary leaf node $s_L$ and immediately queries the neural Value Head $V_\theta(s_L)$ without checking whether $s_L$ is in the middle of a tactical capture sequence. As we prove in Section 11E, resolving that **Horizon Blindness** required extending `MCTS.cjs` into **Quiescence MCTS (`QuiescenceMCTS.cjs`)**, which plays out forced greedy enclosure cascades at every leaf before calling the Value Head.
 
 <details>
 <summary>📐 Diagram: MCTS Integration (click to expand ASCII)</summary>
@@ -332,40 +319,6 @@ Based on AlphaGo Zero results and our current baseline:
 ```
 
 </details>
-
-**Implementation Steps:**
-
-| Step | Task | Estimated Time |
-|------|------|----------------|
-| 5.1 | Implement `MCTSNode` class with parent/children pointers, Q, N, P fields | 1 hour |
-| 5.2 | Implement `select()` with UCT formula and c parameter | 45 min |
-| 5.3 | Implement `expand()` with policy network priors | 45 min |
-| 5.4 | Implement `evaluate()` with value network | 30 min |
-| 5.5 | Implement `backpropagate()` | 20 min |
-| 5.6 | Implement `search(root, simulations)` main loop | 30 min |
-| 5.7 | Add Dirichlet noise at root node | 20 min |
-| 5.8 | Add temperature schedule for move selection | 15 min |
-| 5.9 | Test: 100 simulations from start position, verify tree builds | 30 min |
-| 5.10 | Implement batched evaluation for M2 Ultra optimization | 2 hours |
-| 5.11 | Add virtual loss for parallel search | 1 hour |
-| 5.12 | Integrate MCTS into self-play training loop | 1 hour |
-| 5.13 | Run experiment TF-B8 (MCTS 50 sims, 10 cycles) | 2 hours |
-| 5.14 | Run experiment TF-B9 (MCTS 200 sims, 10 cycles) | 4 hours |
-| 5.15 | Analyze: compare MCTS vs no-MCTS performance | 30 min |
-| 5.16 | Document results in TRAINING_BOOK | 30 min |
-| **Total** | | **~16 hours** |
-
-**Success Criteria (Verified across `TF-B9` → `TF-B15`):**
-- [x] Batched MCTS (`mctsBatchSize = 8`) completes 50 simulations in `~140 ms` (`0.14s`, **20× faster** than the `< 3 seconds` target!)
-- [x] MCTS improves policy vs raw network (verified via `test_quiescence.cjs` and cross-entropy distillation)
-- [x] vs Random exceeds 70%+ (`79%` in `TF-B9`, `87%` in `TF-B10`, **`100.0%`** across all 4,000 eval games in `TF-B12`–`TF-B15`)
-- [x] vs Heuristic breaks 5%+ once extended with Quiescence rollouts (`63%` in `TF-B12` → `89%` peak in `TF-B13` → `90%` peak in `TF-B14` → **`99%` raw / `100%` +Safety** in `TF-B15`)
-- [x] No memory leaks during extended 10-hour MCTS self-play runs (`tf.tidy()` + explicit tensor disposal)
-
-**M2 Ultra Optimization:**
-- Batch evaluate leaves (collect all leaves, evaluate in one forward pass)
-- Use Web Workers for parallel simulations
-- Virtual loss for parallel MCTS (add −1 to Q during search)
 
 **System Component:** Monte Carlo Tree Search Engine (`src/server/MCTS.cjs`, extended by the Quiescence MCTS Engine, `src/server/QuiescenceMCTS.cjs`)
 
@@ -523,8 +476,6 @@ class MCTS {
 - Later moves: temperature = 0.0 (greedy)
 
 This prevents the AI from playing the same opening every game.
-
----
 
 ---
 

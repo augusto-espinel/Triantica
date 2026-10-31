@@ -6,6 +6,8 @@
 
 ### The Unified Memory Advantage
 
+In traditional x86 workstations with a discrete PCIe GPU, every mini-batch or tree-search leaf evaluation must cross the PCIe bus (`32–64 GB/s`), serializing JavaScript/CPU arrays in system RAM and copying them into discrete GPU VRAM. On the **Mac Studio M2 Ultra**, the 24-core CPU and 60/76-core Metal GPU share a single **Unified Memory Fabric (`800 GB/s` bandwidth, up to `192 GB` shared pool)**—allowing the `500,000`-state Experience Replay Buffer and batched MCTS leaf tensors to reside in the exact same physical memory pool with zero PCIe copy stalls:
+
 <details>
 <summary>📐 Diagram: Traditional x86 + Discrete GPU (click to expand ASCII)</summary>
 
@@ -36,9 +38,9 @@
 
 **Why Unified Memory is a Game-Changer for AlphaZero-Style MCTS:**
 In standard supervised deep learning, large batches sit on the GPU while the CPU stays idle. In **MCTS Self-Play RL**, execution alternates thousands of times per game between:
-1. **CPU-bound Tree Traversal & Board Simulation** (`GridManager.clone()`, `executeMove()`, `claimEnclosedTriangles()`).
-2. **GPU-bound Neural Network Inference** (`TFConvNetwork.batchPredict()` on $B=8$ MCTS leaves).
-3. **GPU-bound Mini-Batch Backpropagation** (`trainBatchWithIsolation()` on $B=256$ replay samples).
+1. **CPU-bound Tree Traversal & Board Simulation** in the core rules engine (`src/core/GridManager.js`: `clone()`, `placeTriangle()`, `claimEnclosedTriangles()`).
+2. **GPU/AMX-bound Neural Network Inference** in the convolutional Actor-Critic model (`src/server/ConvNetwork.cjs`: `batchPredict()` on $B=8$ MCTS leaves).
+3. **GPU/AMX-bound Mini-Batch Backpropagation** (`trainBatchWithIsolation()` on $B=256$ replay samples).
 
 On discrete PCIe GPUs, copying small MCTS leaf batches ($B=8$) back and forth across PCIe introduces latency that dwarfs the matrix multiplication itself. On the **Mac Studio M2 Ultra** (800 GB/s memory bandwidth), CPU arrays (`Float32Array`) and TensorFlow C++/Metal tensors share physical memory pages, eliminating bus stalls.
 
@@ -46,7 +48,7 @@ On discrete PCIe GPUs, copying small MCTS leaf batches ($B=8$) back and forth ac
 
 ### How Matrix & Tensor Sizes Come About at Every Step
 
-Every layer in `TFConvNetwork` transforms a 4D spatial tensor or 2D flattened matrix. Understanding **where each dimension comes from** and **how `im2col` (Image-to-Column) turns 2D convolutions into dense Matrix Multiplications (`GEMM`)** explains both the network's representational power and its hardware efficiency on the M2 Ultra.
+Every layer in the convolutional Actor-Critic network (`src/server/ConvNetwork.cjs`) transforms a 4D spatial tensor or 2D flattened matrix. Understanding **where each dimension comes from** and **how `im2col` (Image-to-Column) turns 2D convolutions into dense Matrix Multiplications (`GEMM`)** explains both the network's representational power and its hardware efficiency on the M2 Ultra.
 
 <details>
 <summary>📐 Diagram: END-TO-END TENSOR & MATRIX PIPELINE (Batch Size B = 256) (click to expand ASCII)</summary>
@@ -152,6 +154,15 @@ Use: fnm use v20.20.2  (or nvm use 20.20.2)
 
 ### Batch Size Optimization on M2 Ultra
 
+Choosing the right batch size requires balancing hardware SIMD utilization against tree-search diversity (during MCTS leaf evaluation) and gradient signal quality (during backpropagation):
+
+| Batch Size ($B$) | Hardware Utilization | Throughput & Gradient Behavior |
+| :---: | :---: | :--- |
+| **`1`** | `~5%` *(overhead bound)* | High C++ kernel-launch overhead; noisy single-sample gradients |
+| **`8`** | `~45%` *(MCTS leaf sweet spot)* | Optimal balance between virtual-loss tree diversity and vectorized leaf inference |
+| **`32`** | `~65%` | Suitable for lightweight 1-layer feedforward policy updates |
+| **`256`** | **`~98%`** *(AMX/GPU saturated)* | **Optimal for ConvNet + BatchNorm + Experience Replay gradient updates** |
+
 <details>
 <summary>📐 Diagram: Batch Size Hardware Utilization Throughput & Gradient Behavior (click to expand ASCII)</summary>
 
@@ -218,8 +229,6 @@ After weight updates, the model plays **300 full evaluation games** (`100` vs Ra
 | **Total per Cycle** | **400 total games played** (`100` MCTS + `300` 1-ply eval) | — | **`~44.8 min`** (`2,690s`) | **`100.0%`** | **`~7.4 hours` for 10 cycles** |
 
 > **Practical Takeaway for Experiment Design:** Because self-play dominates 96% of runtime, total training duration scales almost purely with `cycles × games × mctsSims`. Increasing training epochs (`--iterations 10 → 20`), increasing `--replay-ratio`, or expanding evaluation from 200 to 300 games (as in our 3-way evaluation split) adds less than **1–2% overhead** to total cycle time!
-
----
 
 ---
 

@@ -4,7 +4,7 @@
 
 ## 11. Deep Dive: Convolutions, Dual Heads, MCTS & Pipeline Consolidation {#11-optimization-roadmap}
 
-This chapter walks through the step-by-step architectural roadmap that took Triantica from the feedforward baseline (`37–52%` vs Random, `0%` vs Heuristic) to **100.0% Full Torus ($T^2$) mastery (`TF-B15`)**. Each phase builds on the previous one, with exact tensor dimensions, success verification checklists, and implementation notes specific to TensorFlow.js on Mac Studio M2 Ultra.
+This chapter walks through the step-by-step architectural roadmap that took Triantica from the feedforward baseline (`37–52%` vs Random, `0%` vs Heuristic) to **100.0% Full Torus ($T^2$) mastery (`TF-B15`)**. Each phase builds on the previous one, detailing the underlying reinforcement learning theory, exact tensor transformations, and hardware-level design decisions for TensorFlow.js on the Mac Studio M2 Ultra.
 
 ### Initial Pre-ConvNet Baseline vs. Final Achieved State
 
@@ -21,11 +21,11 @@ This chapter walks through the step-by-step architectural roadmap that took Tria
 
 ### Phase 1: Experience Replay Buffer
 
-**Priority:** Highest (immediate gain, low complexity)
+**Architectural Motivation:**
+In our earliest TensorFlow.js baseline (`TF-B1`), the training loop played 20–100 self-play games, ran gradient descent on those trajectories, and immediately discarded them before starting the next cycle. Because the neural network only ever saw the most recent cycle's board states, it suffered from **catastrophic forgetting**: optimizing weights for Cycle $k$ overwrote the decision boundaries learned in Cycles $1 \dots k-1$, causing the within-cycle training error to collapse to `0.0000` while evaluation win rates oscillated wildly.
 
-**Problem:** Current training uses each game once. The network forgets early games by the time it sees later ones.
-
-**Solution:** Store game histories in a circular buffer. Sample random batches for training.
+**How Experience Replay Solves Catastrophic Forgetting:**
+To stabilize non-stationary self-play, we introduced the **Experience Replay Buffer** (`src/server/ReplayBuffer.cjs`)—a circular First-In-First-Out (FIFO) memory store that retains historical `(state, targetPolicy, chosenIndex, valueTarget)` tuples across cycles. During backpropagation at the end of each cycle, the training pipeline (`src/server/train_tfjs.cjs`) mixes **100% of the newly generated self-play states** with a **`2.0×` random sample of historical states** drawn uniformly from the buffer (`--replay-ratio 2.0`).
 
 <details>
 <summary>📐 Diagram: Experience Replay Buffer (click to expand ASCII)</summary>
@@ -55,29 +55,9 @@ This chapter walks through the step-by-step architectural roadmap that took Tria
 
 </details>
 
-**Implementation Steps:**
-
-| Step | Task | Estimated Time |
-|------|------|----------------|
-| 1.1 | Create `ReplayBuffer` class with circular storage | 30 min |
-| 1.2 | Implement `add(samples)` method | 15 min |
-| 1.3 | Implement `sample(batchSize)` with priority sampling | 30 min |
-| 1.4 | Modify training loop to use buffer instead of immediate training | 45 min |
-| 1.5 | Add buffer size parameter to CLI | 10 min |
-| 1.6 | Test: Train 5 cycles, verify buffer fills correctly | 20 min |
-| 1.7 | Run experiment TF-B4 (replay buffer, 20 cycles) | 40 min |
-| 1.8 | Document results in TRAINING_BOOK | 15 min |
-
-**Success Criteria (Verified in `TF-B4` & Upgraded to 45K Sliding-Window FIFO in `TF-B14`/`TF-B15`):**
-- [x] Buffer fills to capacity (100K–500K samples, refined to a `45,000`-sample AlphaZero sliding window in `TF-B14`/`B15`)
-- [x] Training loss decreases smoothly (eliminated the `0.0000` single-cycle overfitting collapse)
-- [x] vs Random improves to 60%+ once paired with spatial ConvNet + MCTS (`87%` in `TF-B10`, `100%` in `TF-B12`–`B15`; standalone feedforward replay in `TF-B4` scored `45%`, proving the bottleneck was architectural)
-- [x] No memory leaks (verified via `tf.tidy()` / explicit tensor disposal on M2 Ultra)
-
-**M2 Ultra Optimization:**
-- Set buffer size to 500K-1M samples (64GB unified memory)
-- Use `tf.data.Dataset` for efficient streaming
-- Store tensors in GPU memory when possible
+**Evolution from Unbounded (`500K`) to Sliding-Window (`45K`) Replay Memory:**
+1. **Stage 1 Validation (`TF-B4`):** Adding a `500,000`-sample circular buffer immediately eliminated the `0.0000` single-cycle overfitting collapse and stabilized gradient descent across 20 cycles (`tf.tidy()` ensured zero tensor memory leaks on the M2 Ultra). However, pairing Experience Replay with the flat `401`-input feedforward network still plateaued at **`45%` vs Random and `0%` vs Heuristic**, confirming that memory stability alone cannot substitute for spatial perception.
+2. **Stage 4 Refinement (`TF-B14` & `TF-B15` — The `45,000`-Sample AlphaZero Sliding Window):** Once Quiescence MCTS was generating `~13,000` high-precision dual-side search states per cycle, we discovered that an unbounded `500,000`-sample buffer kept Cycle 1's amateur self-play trajectories alive all the way through Cycle 10 ("replay buffer staleness"). Constraining the buffer to a **`45,000`-sample FIFO sliding window** (`~3.5` cycles of recent self-play) ensured that weak early-cycle habits were automatically evicted as the agent's tactical horizon matured, lifting the 10-cycle average against `HeuristicPlayer` from `71.6%` (`TF-B13`) to **`80.1%` (`90.0%` peak in `TF-B14`)** and **`95.9%` raw / `100.0%` +Safety (`TF-B15`)**.
 
 **System Component:** Experience Replay Buffer Module (`src/server/ReplayBuffer.cjs`)
 
@@ -85,15 +65,13 @@ This chapter walks through the step-by-step architectural roadmap that took Tria
 
 ### Phase 2: Canonical Slot Encoding + Convolutional Layers
 
-**Priority:** High (architectural fix for input representation AND spatial reasoning)
+**Architectural Motivation:**
+Two structural bottlenecks in the Stage 1 feedforward architecture (`brain.js` and `TF-B1`–`TF-B4`) prevented the agent from perceiving geometry:
+1. **Ambiguous Continuous Rotation Encoding:** Representing triangle orientation as a continuous scalar (`0, 0.25, 0.5, 0.75`) implies an ordinal relationship that does not exist on the board ($90^\circ$ is not numerically "between" $0^\circ$ and $180^\circ$ in terms of edge adjacency).
+2. **Spatial Flattening:** Flattening the $10\times 10$ grid into a `401`-element vector (`401 inputs → [200 hidden] → 400 outputs`) destroys two-dimensional neighborhood topology, forcing the network to re-learn the same $3\times 3$ enclosure pattern separately at every `(x, y)` coordinate.
 
-**Two problems, one solution:**
-1. **Encoding is ambiguous** — rotation is a continuous value (0, 0.25, 0.5, 0.75), implying ordinal relationships that don't exist (90° isn't "between" 0° and 180°)
-2. **Architecture flattens the board** — losing spatial relationships that are essential for detecting enclosures
-
-**Legacy Feedforward Architecture (`brain.js` / `TF-B1`–`B4`):** `401 inputs → [200 hidden] → 400 outputs` (dense, continuous rotation)
-
-**Implemented Phase 2–6 Architecture (`ConvNetwork.cjs`):** `10×10×18 one-hot input → [ToroidalPad2D + 3×3 Conv2D + BatchNorm + ReLU] → Policy head + Value head`
+**The Unified Spatial Solution (`src/server/ConvNetwork.cjs`):**
+We replaced the flat vector with a **`10×10×18` canonical one-hot tensor** fed into a 3-layer convolutional trunk (`[ToroidalPad2D + 3×3 Conv2D + BatchNorm + ReLU]`) that branches into dual Policy and Value heads.
 
 ![2-Head ConvNet Architecture — Triantica Champion (TF-B15)](./assets/diagrams/convnet-architecture.svg)
 
@@ -258,42 +236,16 @@ Once `Conv3` produces the `[B, 10, 10, 64]` spatial feature representation (wher
    - A more accurate **Value Head** gives MCTS reliable leaf evaluations at depth 4–6, producing higher-quality visit counts $N(s,a)$, which in turn become a stronger training target $\pi_{\text{MCTS}}$ for the Policy Head in the next cycle!
 
 **Why convolutions work for Triantica (with proper encoding):**
-- Enclosures are local spatial patterns (3-7 cells)
-- One-hot channels let filters detect exact rotation combinations
-- Territory = contiguous regions → convs naturally detect regions
-- No spurious ordinal relationships between rotations
+- Enclosures are local spatial patterns (`3–7` cells wide) that match the growing receptive field of stacked $3\times 3$ kernels (`3×3 → 5×5 → 7×7`).
+- One-hot channels let convolutional filters detect exact triangle rotation combinations without false ordinal assumptions.
+- Territory consists of contiguous edge-connected regions, which 2D convolutions naturally aggregate across space.
 
-**Implementation Steps:**
-
-| Step | Task | Estimated Time |
-|------|------|----------------|
-| 2.1 | Implement `getStateCanonical(grid, aiPlayerNumber)` — 18-channel one-hot encoding | 45 min |
-| 2.2 | Write roundtrip test: encode → decode → verify board state matches | 30 min |
-| 2.3 | Implement `createConvNetwork()` function with 10×10×18 input | 1 hour |
-| 2.4 | Add policy head (flatten → dense → softmax) | 30 min |
-| 2.5 | Add value head (flatten → dense → tanh) — combining Phase 2 + 3 | 30 min |
-| 2.6 | Modify training loop: canonical encoding + conv network | 45 min |
-| 2.7 | Test: Single game with conv network, verify output shapes | 20 min |
-| 2.8 | Run experiment TF-B5 (canonical + conv, 20 cycles) | 50 min |
-| 2.9 | Compare training curves vs dense baseline | 20 min |
-| 2.10 | Document results in TRAINING_BOOK | 20 min |
-
-**Success Criteria (Verified across `TF-B5` → `TF-B15`):**
-- [x] Roundtrip test passes: canonical 18-channel encoding (`encodeBoardState` in `ConvNetwork.cjs`) captures 100% of board state
-- [x] Network produces valid probability distribution over legal moves (via masked softmax cross-entropy)
-- [x] Training time per cycle < 3 minutes for 1-ply Actor-Critic (`~2.1 min/cycle` in `TF-B5`/`TF-B6`)
-- [x] vs Random matches dense baseline (50%) in `TF-B5`/`B6` (`50%`)
-- [x] vs Random exceeds dense baseline (60%+) once paired with MCTS (`79%` in `TF-B9`, `87%` in `TF-B10`, **`100%`** in `TF-B12`–`B15`)
-- [x] vs Heuristic achieves breakthrough wins once paired with Quiescence MCTS (`63%` in `TF-B12` → `90%` peak in `TF-B14` → **`99%` raw / `100%` +Safety** in `TF-B15`)
-
-**M2 Ultra Optimization:**
-- Use `tf.conv2d` with `tf.memory()` monitoring
-- Batch size 64-128 (larger batches for conv)
-- Enable `tf.webgl.forceHalfFloat()` for faster computation
+**Empirical Validation Across Stages (`TF-B5` → `TF-B15`):**
+- **Lossless Roundtrip State Encoding:** Unit verification confirmed that `getCanonicalState(player)` in the core board engine (`src/core/GridManager.js`) and `encodeBoardState()` in the convolutional network (`src/server/ConvNetwork.cjs`) capture `100%` of both triangles in every cell with strict move-order invariance.
+- **Fast Hardware Execution:** On the Mac Studio M2 Ultra (`batchSize = 256`), a 20-cycle 1-ply Actor-Critic run (`TF-B5`/`TF-B6`) completed in just `42 minutes` (`~2.1 min/cycle`).
+- **Foundation for Search Mastery:** While the standalone 1-ply ConvNet matched the dense baseline (`50%` vs Random, `0%` vs Heuristic) prior to tree search, pairing this exact `10×10×18` 2-Head ConvNet with MCTS unlocked **`79% → 87% → 100%` vs Random** and **`63% → 90% → 99%` Raw / `100%` +Safety vs Heuristic**.
 
 **System Component:** 2-Head Convolutional Actor-Critic Network (`src/server/ConvNetwork.cjs`)
-
----
 
 ---
 

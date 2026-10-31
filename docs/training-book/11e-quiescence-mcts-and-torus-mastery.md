@@ -4,7 +4,7 @@
 
 ### Phase 5.5: Quiescence MCTS — Why It Improves Over Simple MCTS
 
-**Status:** ✅ Completed (Quiescence MCTS Engine, `src/server/QuiescenceMCTS.cjs`, and Mathematical Specification, `docs/QUIESCENCE_MCTS.md`) — **Broke the Heuristic Wall in `TF-B12` (`63%` vs Heuristic), Reached `89%` Peak in `TF-B13`, Achieved `90.0%` Peak (`80.1%` Avg) in `TF-B14`, and Culminated in `99.0%` Peak (`95.9%` Avg) Raw / `100.0%` (`1,000W/0L`) +Safety in `TF-B15` (`100%` vs Random across all 40 cycles)**
+This section details the architecture and mathematical formulation of the **Quiescence MCTS Engine** (`src/server/QuiescenceMCTS.cjs`, specified in `docs/QUIESCENCE_MCTS.md`), which broke the Heuristic Wall in `TF-B12` (`63%` vs Heuristic), scaled to `89%` peak in `TF-B13`, achieved `90.0%` peak (`80.1%` avg) in `TF-B14`, and culminated in **`99.0%` peak (`95.9%` avg) raw / `100.0%` (`1,000W/0L`) with the Tactical Safety Filter in `TF-B15`** (`100%` vs Random across all 40 cycles).
 
 #### 1. The Horizon Effect & Why Simple MCTS Fails Against Deterministic Cascades
 In `TF-B10` (Simple MCTS-50 + 50% Heuristic opponents), the AI reached a record **87% vs Random**, yet remained at **0% vs `HeuristicPlayer`** (averaging only ~14 turns to Heuristic's ~96 turns per game). An inflection-point audit of `TF-B10` exposed two structural blind spots in the standard Monte Carlo Tree Search engine (`MCTS.cjs`):
@@ -195,10 +195,10 @@ Warm-started from `TF-B13_network.json`, **`TF-B14`** tested the resolution of *
 | **9** | `0.000109` | **`45,000 / 45K`** (`117,017`) | `3.916 → 3.081` | `41 / 59 / 0` | **100.0%** (`174.6 – 2.9`) | **🏆 `90.0%`** (`90W/9L/1D`) | **`88% / 92%`** | **`123.8 – 54.2` (`+69.7`)** | **`62 / 28 / 1 / 2 / 7`** | `4.43 / 1.87` |
 | **10** | `0.000100` | **`45,000 / 45K`** (`129,962`) | `3.860 → 3.089` | `48 / 51 / 1` | **100.0%** (**`175.3 – 2.6`**) | **`78.0%`** (`78W/21L/1D`) | `78% / 78%` | `118.4 – 62.0` (`+56.5`) | `51 / 27 / 1 / 9 / 12` | **`5.03 / 1.85`** |
 
-**Key Takeaways from `TF-B14` (Official 2D Baseline Champion — `v1.0.0-2d`):**
+**Key Takeaways from `TF-B14` (Planar-Corner Baseline Champion):**
 1. **New All-Time Record Peak (`90.0%` vs Heuristic in Cycle 9):**
    - In Cycle 9 (`LR = 0.000109`), the 1-ply ConvNet achieved **`90.0%` (`90W / 9L / 1D`, `88.0%` as P1 and `92.0%` as P2)** with an all-time record mean cluster score of **`123.8` vs `54.2` (`+69.7` margin)**, reducing close positional losses to just `2` games and cascade blunders to `7` games out of `100`.
-   - Automatic peak checkpointing captured this exact model in **`dashboard/data/TF-B14_best_network.json`** (`MD5: f2eb302a23dc4a38397a7ed34bd27b2a`), which has been promoted to **`trainedAI_network.json`** as the official 2D Triantica AI.
+   - Automatic peak checkpointing captured this exact model in **`dashboard/data/TF-B14_best_network.json`**, establishing the planar-corner baseline before full $T^2$ toroidal promotion.
 2. **Massive Gain in 10-Cycle Stability (`80.1%` Avg vs `71.6%` in `TF-B13`):**
    - Across all 1,000 evaluation games vs `HeuristicPlayer`, `TF-B14` won **`801W / 196L / 3D` (`80.1%`)**—an **+8.5 percentage point increase** over `TF-B13` (`71.6%`), never dropping below `76.0%` in any cycle (`76%–90%` range vs `52%–89%` in `TF-B13`).
    - Against `RandomPlayer`, `TF-B14` went **`1,000W / 0L / 0D` (`100.0%`)**, reaching a record **`175.3` vs `2.6`** mean cluster score in Cycle 10 (`3,000` consecutive wins across `TF-B12`–`TF-B14`).
@@ -211,7 +211,7 @@ Warm-started from `TF-B13_network.json`, **`TF-B14`** tested the resolution of *
 
 #### 9. Experiment `TF-B15` Results: Phase 3 Full Torus ($T^2$) + Circular Convolutions + Tactical Safety Filter (`99.0%` Peak Raw / `95.9%` Avg Raw / **`100.0%` Across All 10 Cycles with Safety Filter**)
 
-Following the official release of the 2D baseline (`v1.0.0-2d`), **Phase 3 (`TF-B15`)** unified the board's topology and resolved **Bottlenecks 2, 3, and 4** simultaneously. Let's visualize how **Toroidal Circular Padding (`ToroidalPad2D`)** and the **Inference-Time Tactical Safety Filter** work under the hood before examining the 10-cycle telemetry:
+Building directly on the `TF-B14` planar-corner champion, **Phase 3 (`TF-B15`)** unified the board's topology and resolved **Bottlenecks 2, 3, and 4** simultaneously. Let's visualize how **Toroidal Circular Padding (`ToroidalPad2D`)** and the **Inference-Time Tactical Safety Filter** work under the hood before examining the 10-cycle telemetry:
 
 ![Toroidal Wrap-Around — Seamless edge connections on T²](./assets/diagrams/toroidal-wrap.svg)
 
@@ -318,13 +318,14 @@ Warm-started from `TF-B14_best_network.json`, **`TF-B15`** ran 10 cycles of 100%
 
 ---
 
-### Phase 6: Self-Play Tournament + Iterative Retraining
+### Phase 6: Automated Peak Checkpoint Promotion & Cross-Checkpoint Tournaments
 
-**Priority:** Lower (polish after core improvements)
+**Architectural Motivation:**
+Even with a sliding-window replay buffer (`45,000` samples) and cosine learning rate annealing, non-stationary self-play exhibits natural cycle-to-cycle variance as the search tree explores new tactical sub-manifolds (for example, `TF-B14` peaked at `90.0%` in Cycle 9 before settling at `78.0%` in Cycle 10, while `TF-B15` hit `99.0%` raw in Cycles 7 and 10 and `97.0%` in Cycles 8–9). Relying blindly on the final cycle's weights risks deploying a checkpoint from the middle of a local strategic transition rather than the peak equilibrium.
 
-**Problem:** Network may overfit to its own play style.
-
-**Solution:** Maintain pool of historical versions. Train against diverse opponents.
+**How Peak Promotion and Cross-Checkpoint Evaluation Work (`train_tfjs.cjs` & `evaluate.cjs`):**
+1. **Automated High-Water-Mark Promotion (`*_best_network.json`):** At the end of every self-play cycle, the training pipeline (`src/server/train_tfjs.cjs`) runs a 200-game deterministic evaluation suite (100 games vs `RandomPlayer` + 100 random-2-ply games vs `HeuristicPlayer`, balanced 50/50 across P1 and P2). Whenever the current cycle's network achieves a new high-water mark against `HeuristicPlayer` (breaking ties by mean cluster margin), its weights are automatically snapshotted to `*_best_network.json`.
+2. **Cross-Checkpoint Tournament Validation (`--tournament`):** The standalone evaluation harness (`src/server/evaluate.cjs`) supports round-robin head-to-head tournaments across historical checkpoints (`TF-B5` through `TF-B15`) alongside `HeuristicPlayer` and `RandomPlayer`, verifying that each architectural generation strictly dominates its predecessors without rock-paper-scissors style collapse.
 
 <details>
 <summary>📐 Diagram: Training Tournament Loop (click to expand ASCII)</summary>
@@ -354,54 +355,29 @@ Warm-started from `TF-B14_best_network.json`, **`TF-B15`** ran 10 cycles of 100%
 
 </details>
 
-**Implementation Steps:**
-
-| Step | Task | Estimated Time |
-|------|------|----------------|
-| 6.1 | Implement `ModelPool` class to manage network versions | 1 hour |
-| 6.2 | Implement tournament evaluation loop | 45 min |
-| 6.3 | Add candidate promotion logic | 30 min |
-| 6.4 | Add diversity injection (5-10% random games) | 20 min |
-| 6.5 | Run experiment TF-B10 (tournament, 20 cycles) | 2 hours |
-| 6.6 | Analyze: win rate vs past versions | 30 min |
-| 6.7 | Document results in TRAINING_BOOK | 20 min |
-
-**Success Criteria:**
-- [ ] Current network beats all past versions (55%+)
-- [ ] vs Random 80%+ (from Phase 5's 75%)
-- [ ] vs Heuristic 15%+ (from Phase 5's 10%)
-- [ ] No catastrophic forgetting (past skills retained)
-
 **System Component:** Automated Peak Checkpoint Promotion & Tournament Harness (`*_best_network.json` auto-promotion in `src/server/train_tfjs.cjs` and cross-checkpoint tournament mode in `src/server/evaluate.cjs`)
 
 ---
 
-### Progress Tracking
+### Complete Architectural Progression (`TF-B1` → `TF-B15`)
 
-Use this table to track implementation progress. Update after each experiment.
+The table below synthesizes every major experimental milestone across the TensorFlow.js architectural progression, tracing how each structural upgrade contributed to breaking the Heuristic Wall:
 
-| Phase | Experiment | Status | vs Random | vs Heuristic | Notes |
-|-------|------------|--------|-----------|--------------|-------|
-| Baseline | TF-B1_pure | ✅ Done | 49% | 0% | Pure self-play |
-| Baseline | TF-B2_mixed | ✅ Done | 44% | 0% | Mixed opponents |
-| Baseline | TF-B3_cluster | ✅ Done | 52% | 0% | TD(λ) rewards |
-| 1: Replay | TF-B4 | ❌ No gain | 45% | 0% | Replay alone doesn't help; architecture limit |
-| 2: Conv+Slot+Val | TF-B5 | ✅ Done | 50% | 0% | Canonical 18ch + Conv + Value head |
-| 3: Actor-Critic | TF-B6 | ✅ Done | 50% | 0% | Optimized hyperparams (LR=0.02, value weight=1.0) |
-| 4: BatchNorm+Conv | TF-B7 | ✅ Merged | — | — | BatchNorm integrated directly into Phase 2 ConvNet (`ConvNetwork.cjs`) |
-| 5: MCTS-50 | TF-B8 | ❌ Failed | 30% | 0% | Inverted value perspective bug: network learned to lose (see Bug 5) |
-| 5: MCTS-50 | TF-B9 | ✅ Done | 79% (84% peak) | 0% | Single-perspective MCTS + 400× policy loss fix; +41% jump vs Random |
-| 5: MCTS-50 Mixed | TF-B10 | ✅ Done | 87% | 0% | 50% Network / 50% Heuristic; record 87% vs Random |
-| 5.5: Quiescence MCTS | TF-B12 | ✅ Done | **100%** | **63%** | **Heuristic Wall Broken!** 100% vs Random (all 10 cycles), 63% vs Heuristic (66% P1, 60% P2; random 2-ply eval C8–C10) |
-| 5.6: Dual-Side Quiescence | TF-B13 | ✅ Done | **100%** | **73% (89% peak)** | **New Record vs Heuristic!** 89% peak (C8: 90% P1, 88% P2), 73% final (C10: 80% P1, 66% P2), 71.6% 10-cycle avg; 115.9K dual-side MCTS samples |
-| 5.7: Sliding-Window Pure SP | TF-B14 | ✅ Done | **100%** | **78% (90% peak, 80.1% avg)** | **Official 2D Release Champion (`v1.0.0-2d`)!** 90% peak (C9: 88% P1, 92% P2, score `123.8–54.2`), 80.1% 10-cycle avg (`76%–90%` band) under 100% pure network self-play + 45K sliding buffer + Cosine LR. See [`docs/EXECUTION_ROADMAP.md`](./EXECUTION_ROADMAP.md). |
-| 6.0: Phase 3 Full Torus ($T^2$) | TF-B15 | ✅ Done | **100%** | **99% Raw (95.9% avg) / 100% +Safety** | **All-Time Record!** Full $T^2$ toroidal placement + `ToroidalPad2D` circular convolutions + Tactical Safety Filter (`topK=12`). `1,000W/0L/0D` (`100.0%`) with safety filter; `99.0%` peak (`95.9%` avg) raw policy. Promoted to `trainedAI_network.json`. |
-
-**Status Legend:**
-- ✅ Done — Experiment complete, documented
-- 🔄 Running — Currently executing
-- ⏳ Pending — Not started
-- ❌ Failed — Did not meet success criteria (requires revision)
+| Phase | Experiment | vs Random | vs Heuristic | Architectural Milestone & Key Finding |
+|-------|------------|-----------|--------------|---------------------------------------|
+| **Baseline** | `TF-B1_pure` | 49% | 0% | Pure 1-ply feedforward self-play (`401 → 200 → 400`). |
+| **Baseline** | `TF-B2_mixed` | 44% | 0% | Mixed opponents without search led to policy dilution. |
+| **Baseline** | `TF-B3_cluster` | 52% | 0% | $TD(\lambda)$ cluster reward shaping improved territory size vs Random. |
+| **1: Replay** | `TF-B4` | 45% | 0% | Circular Replay Buffer eliminated single-cycle overfitting; proved bottleneck was spatial/search. |
+| **2: Conv+Slot+Val** | `TF-B5` | 50% | 0% | Canonical `10×10×18` one-hot slot encoding + 3-layer `Conv2D` + Actor-Critic Value Head. |
+| **3–4: Actor-Critic+BN** | `TF-B6` / `TF-B7` | 50% | 0% | BatchNorm + tuned value weighting (`LR = 0.02`); confirmed 1-ply ceiling without lookahead search. |
+| **5: MCTS-50 (Bug 5)** | `TF-B8` | 30% → 47% | 0% | Initial run (`30%`) exposed inverted leaf value sign (`Bug 5`); clean re-run (`47%`) exposed `1/400` policy loss dilution (`Bug 11`). |
+| **5: MCTS-50** | `TF-B9` | 79% (84% peak) | 0% | Single-perspective MCTS + `400×` policy cross-entropy sum fix; **+35% peak jump vs Random**. |
+| **5: MCTS-50 Mixed** | `TF-B10` | 87% | 0% | 50% Network / 50% Heuristic curriculum; record `87%` vs Random, but vanilla MCTS remained blind to leaf cascades. |
+| **5.5: Quiescence MCTS** | `TF-B12` | **100%** | **63%** | **Heuristic Wall Broken!** Greedy leaf enclosure rollouts + root prior shaping (`66%` P1, `60%` P2 vs Heuristic). |
+| **5.6: Dual-Side Quiescence** | `TF-B13` | **100%** | **73% (89% peak)** | Dual-side MCTS sample collection (`115.9K` samples) + 75/25 curriculum; reached **`89%` peak** in Cycle 8 (`71.6%` 10-cycle avg). |
+| **5.7: Sliding-Window Pure SP** | `TF-B14` | **100%** | **78% (90% peak, 80.1% avg)** | **Planar-Corner Champion!** 100% pure network self-play + `45K` FIFO sliding replay window + Cosine LR (`90%` peak in Cycle 9). |
+| **6.0: Full Torus ($T^2$)** | `TF-B15` | **100%** | **99% Raw (95.9% avg) / 100% +Safety** | **All-Time Toroidal Champion!** Full $T^2$ vertex symmetry + `ToroidalPad2D` circular convolutions + Top-12 Tactical Safety Filter (`1,000W / 0L / 0D`). |
 
 ---
 
@@ -410,14 +386,12 @@ Use this table to track implementation progress. Update after each experiment.
 | Phase | Architectural Upgrade | Expected vs Random | Expected vs Heuristic | **Actual Achieved (`TF-B4` → `TF-B15`)** |
 |-------|-----------------------|--------------------|-----------------------|------------------------------------------|
 | 1 | Experience Replay Buffer (`TF-B4`) | 45% | 0% | **45% vs Random, 0% vs Heuristic** (Feedforward bottleneck) |
-| 2–3 | 18-Channel Canonical Slot Encoding + Conv2D + Value Head (`TF-B5`/`B6`) | 50% | 0% | **50% vs Random, 0% vs Heuristic** (Spatial features learned, but no lookahead) |
+| 2–4 | 18-Channel Canonical Slot Encoding + Conv2D + Value Head + BatchNorm (`TF-B5`–`B7`) | 50% | 0% | **50% vs Random, 0% vs Heuristic** (Spatial features learned, but no lookahead) |
 | 5 | Single-Perspective MCTS-50 + Bug 6–11 Fixes (`TF-B9`/`B10`) | 75% | 5–15% | **87% vs Random, 0% vs Heuristic** (Vanilla MCTS blind to deterministic cascades) |
 | 5.5 | Quiescence MCTS + 50/50 Mixed Opponents (`TF-B12`) | 85% | 15–20% | **100% vs Random, 63% vs Heuristic** (🏆 Heuristic Wall Broken!) |
 | 5.6 | Dual-Side Quiescence MCTS + 75/25 Mix (`TF-B13`) | 100% | 70%+ | **100% vs Random, 89% Peak (71.6% Avg) vs Heuristic** |
-| 5.7 | 100% Pure Self-Play + 45K Sliding Replay + Cosine LR (`TF-B14`) | 100% | 80%+ | **100% vs Random, 90% Peak (80.1% Avg) vs Heuristic** (`v1.0.0-2d` Champion) |
+| 5.7 | 100% Pure Self-Play + 45K Sliding Replay + Cosine LR (`TF-B14`) | 100% | 80%+ | **100% vs Random, 90% Peak (80.1% Avg) vs Heuristic** (Planar-Corner Champion) |
 | 6.0 | Full $T^2$ Torus + Circular Conv (`ToroidalPad2D`) + Safety Filter (`TF-B15`) | 100% | 95%+ | **100% vs Random, 99.0% Peak (95.9% Avg) Raw / 100.0% (`1,000W/0L`) +Safety** |
-
----
 
 ---
 

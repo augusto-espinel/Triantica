@@ -71,9 +71,7 @@ To see *why* our telemetry metrics (introduced in [Chapter 2](./02-rl-fundamenta
 | Risk Penalty | `--risk-penalty` | $w_{\text{risk}}$ | `0.0` – `0.5` (`0.20`) | Value penalty per cascaded opponent claim when a move passes turn with open cavities |
 | Enclosure Bonus | `--enclosure-bonus` | $w_{\text{enc}}$ | `0.0` – `0.5` (`0.15`) | Value bonus for moves that immediately capture enclosures and earn bonus turns |
 | Toroidal Pad | `--toroidal-pad` | - | `true \| false` | Wraps all $3\times 3$ `Conv2D` layers in `ToroidalPad2D` for circular $T^2$ continuity (`TF-B15`) |
-| Safety Filter | `--safety-filter` | - | `true \| false` | Top-$K$ ($K=8$) 1-ply tactical blunder check during fast inference (`100%` vs Heuristic) |
-
----
+| Safety Filter | `--safety-filter` | - | `true \| false` | Top-$K$ ($K=12$) 1-ply tactical blunder check during fast inference (`100%` vs Heuristic) |
 
 ---
 

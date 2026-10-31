@@ -4,7 +4,11 @@
 
 ## 7. Critical Bugs, Forensic Audits, and Why They Matter {#7-critical-bugs}
 
-### Bug 1: Self-Play Perspective Mismatch (exp19)
+In Reinforcement Learning, a bug rarely throws a syntax error or crashes the process—instead, the neural network silently optimizes the wrong mathematical objective or adapts to a corrupted environment. Across the development of Triantica, we uncovered and resolved **14 critical systemic bugs** spanning perspective symmetry, reward scaling, board geometry, tree search physics, and evaluation harnesses.
+
+### Bug 1: Self-Play Perspective Mismatch (`exp19`)
+
+**Observed Symptom:** During self-play training, Player 1 won `100%` of all games, yet against a purely random opponent (`RandomPlayer`), the trained network won only `50%–55%`—a statistical impossibility in a fair symmetric game.
 
 <details>
 <summary>📐 Diagram: What We Saw (click to expand ASCII)</summary>
@@ -38,7 +42,9 @@ move = getAIMove(network, grid, exploration, aiPlayerNumber);
 
 **Generalizable Principle (Canonical Ego-Centric State):** In symmetric multi-agent RL, the neural network must always view the state from the active agent's perspective (`+1` = self, `-1` = opponent), never in global player coordinates (`Player 1` vs `Player 2`).
 
-### Bug 2: Reward Signal Dilution (TF.js Migration)
+### Bug 2: Reward Signal Dilution (`TF.js` Migration)
+
+**Observed Symptom:** When migrating the exact same feedforward architecture and training data from `brain.js` (`91%` vs Random) to `TensorFlow.js`, the win rate dropped to **`49%` vs Random**.
 
 <details>
 <summary>📐 Diagram: What We Saw (click to expand ASCII)</summary>
@@ -73,7 +79,9 @@ const chosenMoveReward = vector[chosenMoveIndex];
 
 **Generalizable Principle (Action-Specific Credit Assignment):** Only the action actually executed (or the target MCTS distribution) should drive the policy gradient; averaging over unselected outputs destroys signal-to-noise ratio.
 
-### Bug 3: Heuristic Player Number (TF Baselines)
+### Bug 3: Heuristic Opponent Identity Collision (`TF` Baselines)
+
+**Observed Symptom:** During baseline evaluation against the deterministic heuristic opponent (`src/ai/HeuristicPlayer.js`), the heuristic player scored `173 / 173` (the maximum possible cluster score) in every single game where the AI played as Player 2, while the AI scored `3–4` points.
 
 <details>
 <summary>📐 Diagram: What We Saw (click to expand ASCII)</summary>
@@ -108,7 +116,9 @@ const heuristicOpponent = new HeuristicPlayer(opponentNumber, {...});
 
 **Generalizable Principle (Role-Swap Invariance):** Whenever an evaluation harness alternates first-mover and second-mover seats for fairness, opponent identity must be dynamically bound to `(3 - aiPlayerNumber)`.
 
-### Bug 4: Win Rate Measurement (exp12)
+### Bug 4: Seat-Index vs. Agent-Identity Win Counting (`exp12`)
+
+**Observed Symptom:** Inside the training loop, telemetry reported a **`~70%` win rate**, yet running the external evaluation script on the exact same checkpoint reported **`~50%`**.
 
 <details>
 <summary>📐 Diagram: What We Saw (click to expand ASCII)</summary>
@@ -143,7 +153,9 @@ if (winner === aiPlayer) results.wins.ai++;
 
 **Generalizable Principle (Decouple Seat Index from Agent Identity):** Metrics must always be keyed by agent identity (`ai` vs `opponent`), while separately tracking role-split performance (`as P1` vs `as P2`) to detect first-mover bias.
 
-### Bug 5: MCTS Value Perspective Mismatch (TF-B8)
+### Bug 5: MCTS Value Perspective Sign Inversion (`TF-B8`)
+
+**Observed Symptom:** During our first MCTS run (`TF-B8`), the neural network loss converged smoothly (`0.99 → 1.00`), yet the AI's win rate against `Random` **systematically degraded across training cycles (`40% → 42% → 30% → 26%`)**—the network was actively learning how to lose!
 
 <details>
 <summary>📐 Diagram: What We Saw (click to expand ASCII)</summary>
@@ -198,6 +210,15 @@ The smooth loss curve + consistent degradation = inverted learning signal.
 Following the completion of `TF-B8-V2` (which still oscillated between 15% and 54% vs Random and scored 0% vs Heuristic despite fixing Bug 5), we conducted a complete line-by-line audit across the **Browser Game (`game.js`, `AIPlayer.js`)**, **Core Engine (`src/core/GridManager.js`)**, **MCTS & Training (`src/server/MCTS.cjs`, `src/server/train_tfjs.cjs`, `src/server/ReplayBuffer.cjs`)**, and **Evaluation (`eval_tfjs.cjs`, `scripts/evaluate.cjs`)**.
 
 We uncovered **six severe systemic bugs** spanning game geometry, tree search physics, tensor encoding, and gradient calculus:
+
+| Bug ID | Subsystem & Component | Systemic Impact on Training |
+| :--- | :--- | :--- |
+| **Bug 6** | **Diagonal Overlap Check Inverted** (`src/core/GridManager.js`) | Server & MCTS played a mutated game where triangles crossed diagonals (`50%` physical overlap)! |
+| **Bug 7** | **MCTS Blind to Enclosures & Bonus Turns** (`MCTSNode.expand()`) | Tree search never claimed enclosed cells or granted extra turns during lookahead! |
+| **Bug 8** | **Canonical Encoding Dropped 2nd Triangle** (`getCanonicalState()`) | Completed 2-triangle cells hid `50%` of their pieces from the ConvNet! |
+| **Bug 9** | **Replay Buffer Zeroed Value Targets** (`src/server/ReplayBuffer.cjs`) | `67%` of mini-batches trained the Value Head to predict `0.0` (draw) on every board! |
+| **Bug 10** | **Dual-Perspective Gradient Clash** (`src/server/train_tfjs.cjs`) | Pushing both winning and losing sides of asymmetric games without perspective alignment destabilized early updates. |
+| **Bug 11** | **$1/400$ Policy Loss Dilution & `tanh` Saturation** (`ConvNetwork.cjs`) | Policy gradients were $400\times$ too weak (`0.45–0.54`), while the Value Head saturated permanently to `-1.0000`! |
 
 <details>
 <summary>📐 Diagram: THE 6 SYSTEMIC BUGS UNCOVERED IN PHASE 5 (click to expand ASCII)</summary>
@@ -355,6 +376,12 @@ In a 20-game live verification test immediately after applying Bug 11's fix:
 **What We Saw (2026-10-22 Night Audit):**
 When watching "AI vs AI" in the browser game controller (`game.js`), both AIs appeared to play balanced, highly tactical games with large enclosure cascades—yet when we tested the exact same trained `brain.js` network in the server evaluation harness (`evaluate.cjs`), it lost `0–100` against the deterministic heuristic opponent (`HeuristicPlayer`)!
 
+| Move Selection Source | Browser AI (`game.js` Before Fix) | Server Training / Evaluation (`evaluate.cjs`) |
+| :--- | :---: | :---: |
+| **Neural Network Policy Prediction** | **`10%` of moves!** ❌ | `80%` (Train) / **`100%` (Eval)** ✅ |
+| **Hardcoded Greedy Heuristic Override** | **`90%` of moves!** ❌ | `10%` (Train) / **`0%` (Eval)** ✅ |
+| **Random Exploration** | `0%` of moves | `10%` (Train) / `0%` (Eval) |
+
 <details>
 <summary>📐 Diagram: THE BROWSER "ILLUSION OF COMPETENCE" (TRAIN/TEST MISMATCH) (click to expand ASCII)</summary>
 
@@ -378,7 +405,7 @@ When watching "AI vs AI" in the browser game controller (`game.js`), both AIs ap
 
 </details>
 
-- **The Fix (`76cece8` & Phase 6 Consolidation):** Aligned browser `AIPlayer` move selection directly with the pure neural network policy (`100%` network prediction during evaluation/play, with optional 1-ply safety filter toggle). Once the 90% heuristic crutch was removed, the browser immediately revealed the true state of the network—and later allowed us to verify `TF-B15`'s genuine `99%` raw / `100%` +Safety mastery in real time.
+- **The Fix (Browser-Server Policy Alignment):** Aligned the browser AI controller (`src/ai/AIPlayer.js` and `game.js`) directly with the pure neural network policy (`100%` network prediction during evaluation and human play, paired with the optional 1-ply tactical safety filter toggle). Once the 90% heuristic crutch was removed, the browser immediately revealed the true state of the network—and later allowed us to verify `TF-B15`'s genuine `99%` raw / `100%` +Safety mastery in real time.
 
 #### Bug 13: The Standalone Evaluator Role-Swap Bug (`eval_tfjs.cjs` — Why Every Model Looked Locked at `50.0%`)
 
