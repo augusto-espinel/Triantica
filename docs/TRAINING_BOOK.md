@@ -19,7 +19,7 @@ This document is both a training journal and a comprehensive introduction to rei
 
 **Prerequisites:** Basic programming knowledge. No ML background required.
 
-> **Modular Chapter Layout:** To make updates fast and prevent LLM context-window saturation, the Training Book is organized into standalone chapter files under `docs/training-book/`.
+> **Modular Chapter Layout:** To make updates fast and prevent LLM context-window saturation, the Training Book is organized into standalone chapter files under `docs/training-book/` (with Chapter 11 further split into 5 sub-parts `11a`–`11e`, keeping every file under 500 lines).
 
 ---
 
@@ -37,7 +37,12 @@ This document is both a training journal and a comprehensive introduction to rei
 | **8** | **[The Heuristic Wall: Architectural Limits & How We Broke It](./training-book/08-the-heuristic-wall.md)** | Why feedforward networks plateaued at `0%` vs Heuristic, and the 5-stage architectural climb (`0% → 63% → 90% → 100%`). |
 | **9** | **[Experiment Reference](./training-book/09-experiment-reference.md)** | Complete cross-stage experiment results table (`exp12` through `TF-B15`), telemetry signatures, and parameter glossary. |
 | **10** | **[Key Takeaways for RL Practitioners](./training-book/10-key-takeaways.md)** | Core engineering lessons, diagnostic checklists, recommendations for board-game RL projects, and further reading. |
-| **11** | **[Deep Dive: Convolutions, Dual Heads, MCTS & Pipeline Consolidation](./training-book/11-deep-dive-convolutions-mcts.md)** | Phase-by-phase technical blueprint (Phases 1–6): Replay Buffer, `10×10×18` ConvNet, Dual-Head Actor-Critic, BatchNorm, PUCT MCTS, Quiescence MCTS math, and $T^2$ Toroidal Padding. |
+| **11** | **[Deep Dive Overview: Convolutions, Dual Heads, MCTS & Consolidation](./training-book/11-deep-dive-convolutions-mcts.md)** | Chapter 11 hub & baseline-vs-champion comparison table across Phases 1–6. |
+| **↳ 11A** | **[Phase 1 & 2: Replay Buffer & Canonical ConvNet Encoding](./training-book/11a-replay-and-conv-encoding.md)** | Experience Replay Buffer (`ReplayBuffer.cjs`), Canonical `10×10×18` 1-to-1 Slot Encoding, 3-Layer `Conv2D` receptive fields, and Policy/Value head wiring. |
+| **↳ 11B** | **[Phase 2 Results & Milestone Runs (`TF-B5` → `TF-B13`)](./training-book/11b-milestone-runs-tf-b5-to-b13.md)** | Experimental progression (`TF-B5` to `TF-B13`), the `400x` Policy CE sum fix, and theoretical analysis of Initial Error sawtoothing across cycles. |
+| **↳ 11C** | **[Phase 3 & 4: Value Head (Actor-Critic) & Batch Normalization](./training-book/11c-actor-critic-and-batchnorm.md)** | Actor-Critic shared trunk design, Value MSE loss dynamics, and stabilizing deep convolutional layers with `BatchNormalization`. |
+| **↳ 11D** | **[Phase 5: Monte Carlo Tree Search (MCTS) Theory & Implementation](./training-book/11d-mcts-theory-and-implementation.md)** | Complete PUCT MCTS derivation, 4-step search loop, M2 Ultra batched leaf evaluation, virtual loss, Dirichlet noise, and annotated `MCTS.cjs` code. |
+| **↳ 11E** | **[Phase 5.5 & 6: Quiescence MCTS, Full Torus ($T^2$) Mastery & Summary](./training-book/11e-quiescence-mcts-and-torus-mastery.md)** | Horizon effect & enclosure cascades, `QuiescenceMCTS.cjs` math, `TF-B14` (45K FIFO pure self-play), `TF-B15` (`ToroidalPad2D` + Safety Filter), and Phase 1–6 summary. |
 | **12** | **[Toroidal 3D Visualization, Dual-View Projection & Human Telemetry](./training-book/12-toroidal-3d-and-telemetry.md)** | Synchronized 2D viewport + interactive 3D ring torus (`Torus3DView.js`), parametric surface math, and continuous human match telemetry (`HumanGameLogger.js`). |
 | **Appendices** | **[Appendices A, B & C: Commands, Project Structure & Telemetry Schema](./training-book/appendices.md)** | Reproducible CLI commands for all 6 phases, repository directory tree, and complete CLI flag & dashboard JSON schema reference. |
 

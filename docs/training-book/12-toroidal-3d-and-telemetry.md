@@ -1,4 +1,4 @@
-> **[📚 Training Book Index](./README.md)** | [← Chapter 11: Deep Dive — Convolutions, Dual Heads & MCTS](./11-deep-dive-convolutions-mcts.md) | [Appendices A, B & C →](./appendices.md)
+> **[📚 Training Book Index](./README.md)** | [← 11E: Quiescence MCTS & Full Torus (T²)](./11e-quiescence-mcts-and-torus-mastery.md) | [Appendices A, B & C →](./appendices.md)
 
 ---
 
@@ -45,4 +45,4 @@ With `TF-B15` deployed to production (`trainedAI_network.json`) across **Easy**,
 
 ---
 
-> [← Chapter 11: Deep Dive — Convolutions, Dual Heads & MCTS](./11-deep-dive-convolutions-mcts.md) | **[📚 Training Book Index](./README.md)** | [Appendices A, B & C →](./appendices.md)
+> [← 11E: Quiescence MCTS & Full Torus (T²)](./11e-quiescence-mcts-and-torus-mastery.md) | **[📚 Training Book Index](./README.md)** | [Appendices A, B & C →](./appendices.md)
