@@ -1427,6 +1427,19 @@ Because P1/P2 wins were inverted on every odd-numbered game (`50` games normal +
 $$\text{Reported Win Rate} = \frac{1}{2} w + \frac{1}{2}(1 - w) = \mathbf{50.0\%}$$
 - **The Fix:** Consolidated all evaluation logic across the training pipeline, standalone CLI evaluator, and tournament runner (`train_tfjs.cjs`, `eval_tfjs.cjs`, and `scripts/evaluate.cjs`) to bind player seats strictly by `aiPlayerNumber`, enforce **2-ply random opening seeding** (`1` random legal move per player so 100-game evals test 100 distinct board openings rather than 1 repeated deterministic trajectory), and report explicit **`as P1` vs `as P2` win splits**.
 
+#### Bug 14: The Subclass Inheritance Bypass (`search()` vs. `searchBatched()` in `QuiescenceMCTS.cjs`)
+
+**What We Saw (2026-10-27 Pre-`TF-B12` Audit):**
+When we first implemented the Quiescence MCTS engine (`src/server/QuiescenceMCTS.cjs`) as a subclass of the standard Monte Carlo Tree Search engine (`src/server/MCTS.cjs`), unit tests calling `qMcts.search(grid, 50)` passed—yet during full self-play training runs, the AI still played into 1-move enclosure traps and failed to discover enclosing trains!
+
+**Root Cause:**
+In the base MCTS engine (`MCTS.cjs`), there are two distinct entry points:
+1. `search(grid, simulations)` — single-simulation sequential loop (used for unit debugging).
+2. `searchBatched(grid, simulations)` $\to$ `_runBatch(root, batchSize, rootPlayer)` — virtual-loss batched GPU evaluation loop (called by the self-play training pipeline, `src/server/train_tfjs.cjs`, for M2 Ultra speed).
+
+The initial `QuiescenceMCTS` implementation overrode `search()`, **but forgot to override `searchBatched()` and `_runBatch()`!** Consequently, when the training pipeline (`train_tfjs.cjs`) invoked `mcts.searchBatched(grid, 50)`, JavaScript's prototype chain silently inherited `MCTS.prototype.searchBatched` and `MCTS.prototype._runBatch`, **bypassing quiescence rollouts and root risk shaping 100% of the time during batched training!**
+- **The Fix & Unit Verification (`test_quiescence.cjs`):** We overrode both `searchBatched()` and `_runBatch()` in the Quiescence MCTS engine (`src/server/QuiescenceMCTS.cjs`) so that pre-cascade expansion states and post-cascade quiescent states are packed into a single combined `network.batchPredict(allStates)` GPU call, and created a dedicated regression test suite (`test_quiescence.cjs`) verifying that `searchBatched()` selects enclosing moves and avoids hole traps even under a completely flat (`0.5` uniform) network prior.
+
 ## 8. The Heuristic Wall: Understanding Architectural Limits & How We Broke It {#8-heuristic-wall}
 
 ### The Experiment That Changed Everything
@@ -2983,7 +2996,7 @@ This prevents the AI from playing the same opening every game.
 
 ### Phase 5.5: Quiescence MCTS — Why It Improves Over Simple MCTS
 
-**Status:** ✅ Completed (Quiescence MCTS Engine, `src/server/QuiescenceMCTS.cjs`) — **Broke the Heuristic Wall in `TF-B12` (`63%` vs Heuristic), Reached `89%` Peak in `TF-B13`, and Achieved `90.0%` Peak (`88%` P1 / `92%` P2) & `80.1%` 10-Cycle Avg vs Heuristic in `TF-B14` (`100%` vs Random across all 30 cycles)**
+**Status:** ✅ Completed (Quiescence MCTS Engine, `src/server/QuiescenceMCTS.cjs`, and Mathematical Specification, `docs/QUIESCENCE_MCTS.md`) — **Broke the Heuristic Wall in `TF-B12` (`63%` vs Heuristic), Reached `89%` Peak in `TF-B13`, Achieved `90.0%` Peak (`80.1%` Avg) in `TF-B14`, and Culminated in `99.0%` Peak (`95.9%` Avg) Raw / `100.0%` (`1,000W/0L`) +Safety in `TF-B15` (`100%` vs Random across all 40 cycles)**
 
 #### 1. The Horizon Effect & Why Simple MCTS Fails Against Deterministic Cascades
 In `TF-B10` (Simple MCTS-50 + 50% Heuristic opponents), the AI reached a record **87% vs Random**, yet remained at **0% vs `HeuristicPlayer`** (averaging only ~14 turns to Heuristic's ~96 turns per game). An inflection-point audit of `TF-B10` exposed two structural blind spots in the standard Monte Carlo Tree Search engine (`MCTS.cjs`):
@@ -2991,7 +3004,7 @@ In `TF-B10` (Simple MCTS-50 + 50% Heuristic opponents), the AI reached a record 
 1. **The Horizon Effect at Unquiet Leaves:**
    Simple MCTS expands a leaf node $s_L$ after a single candidate move and immediately queries the neural Value Head $V_\theta(s_L)$. If $s_L$ is a **"noisy" (tactically unstable) position**—specifically, a single move (`claimed = 0`) that passes the turn to the opponent while leaving a 3-sided enclosure hole—`HeuristicPlayer` will deterministically claim that enclosure with probability $P(\text{capture}) = 1.0$, earn an extra turn via $\lfloor (1 + \text{claimed})/2 \rfloor$, and chain a 5–10 move capture cascade.
 2. **Self-Play Value Head Inversion on Single-Move Openings:**
-   Because the Value Head was trained primarily on states where local cluster density correlated with winning against non-cascading play, $V_\theta(s_L)$ rated a hole-creating blunder at **`+0.4794`** while rating a safe move at **`+0.1060`**. With 50 simulations spread across ~35 legal moves, simple MCTS never searched deep enough down the forced opponent cascade to see the collapse—instead, UCT **amplified** the `+0.4794` blunder (`13` visits vs `1–2` visits for safe moves).
+   Because the Value Head was trained primarily on states where local cluster density correlated with winning against non-cascading play, $V_\theta(s_L)$ rated a hole-creating blunder at **`+0.4794`** while rating a safe move at **`+0.1060`**. With 50 simulations spread across ~35 legal moves, simple MCTS never searched deep enough down the forced opponent cascade to see the collapse—instead, UCT **amplified** the `+0.4794` blunder (`13` visits, `Q = +0.344` vs `1–2` visits for safe moves).
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -3001,7 +3014,7 @@ In `TF-B10` (Simple MCTS-50 + 50% Heuristic opponents), the AI reached a record 
 │  SIMPLE MCTS (Blind to Forced Cascades):                                │
 │  Root ──(Move A: claimed=0, leaves hole)──► Leaf s_L                    │
 │    • Evaluates raw V_θ(s_L) = +0.4794 ("cluster grew, looks great!")    │
-│    • Backpropagates +0.4794 → UCT visits Move A 13 times                │
+│    • Backpropagates +0.4794 → UCT visits Move A 13 times (Q = +0.344)   │
 │    • Reality: Heuristic chains 6 enclosures + extra turns → AI loses    │
 │                                                                         │
 │  QUIESCENCE MCTS (Resolves Tactical Cascades Before Evaluation):        │
@@ -3020,27 +3033,34 @@ A foundational rule of Triantica dictates when a move is safe versus exploitable
 $$\text{extraTurns} = \left\lfloor \frac{1 + \text{claimed}}{2} \right\rfloor$$
 
 - **Enclosing Moves (`claimed > 0`) Are NEVER Risky (`risk = 0`):**
-  Claiming even a single enclosed triangle (`claimed = 1`) awards $\lfloor 2/2 \rfloor = 1$ full extra turn, meaning **the active player retains the turn (`nextPlayer === mover`)**. Even if placing that triangle creates a new 3-sided pocket elsewhere on the board, the AI immediately moves again—allowing it to either **chain an enclosing train in its own favor** or patch the hole before the opponent ever gets a turn. Therefore, `calculateEnclosureRisk` and `calculateChildNodeRisk` strictly enforce `risk = 0` whenever `claimed > 0 || nextPlayer === mover`.
+  Claiming even a single enclosed triangle (`claimed = 1`) awards $\lfloor 2/2 \rfloor = 1$ full extra turn, meaning **the active player retains the turn (`nextPlayer === mover`)**. Even if placing that triangle creates a new 3-sided pocket elsewhere on the board, the AI immediately moves again—allowing it to either **chain an enclosing train in its own favor** or patch the hole before the opponent ever gets a turn. Therefore, the enclosure risk calculators (`calculateEnclosureRisk` and `calculateChildNodeRisk` in `src/server/QuiescenceMCTS.cjs`) strictly enforce `risk = 0` whenever `claimed > 0 || nextPlayer === mover`.
 - **Single-Move Openings (`claimed === 0`) Carry All Opponent Risk:**
-  Only when `claimed === 0` (and `extraTurns === 0`) does the turn pass to the opponent. If that single move leaves enclosure opportunities for the opponent, the opponent can immediately exploit them and snowball extra turns.
+  Only when `claimed === 0` (and `extraTurns === 0`) does the turn pass to the opponent. If that single move leaves enclosure opportunities $\mathcal{O}_{\text{opp}}$ for the opponent, each opportunity $o \in \mathcal{O}_{\text{opp}}$ contributes both a direct triangle-loss weight (`0.3` per enclosed triangle) and a turn-snowball weight (`0.5` per bonus turn earned):
+  $$\text{risk}(s, a) = \begin{cases} 0 & \text{if } \text{claimed}(s, a) > 0 \;\lor\; \text{nextPlayer} = \text{mover} \\[6pt] \displaystyle\sum_{o \in \mathcal{O}_{\text{opp}}(s')} \Big(0.3 \cdot o.\text{claimed} + 0.5 \cdot \Big\lfloor \frac{1 + o.\text{claimed}}{2} \Big\rfloor\Big) & \text{otherwise} \end{cases}$$
 
 #### 3. Four Mechanisms That Make `QuiescenceMCTS` a Superior Teacher
-Recall that during evaluation (`getAIMove`) and browser/mobile play (via the AI player controller, `AIPlayer.js`), the AI uses a **single forward pass of the Policy Head** (no MCTS at test time). MCTS is the **training teacher** that generates target distributions $\pi_{\text{MCTS}}$ and value targets for the 2-head ConvNet. The Quiescence MCTS engine (`QuiescenceMCTS.cjs`) directly upgrades the teacher in four ways without needing a 3rd network head or artificial TD($\lambda$) reward shaping:
+Recall that during evaluation (`getAIMove`) and browser/mobile play (via the AI player controller, `AIPlayer.js`), the AI uses a **single forward pass of the Policy Head** (no MCTS at test time). MCTS is the **training teacher** that generates target distributions $\pi_{\text{MCTS}}$ and value targets for the 2-head ConvNet. The Quiescence MCTS engine (`src/server/QuiescenceMCTS.cjs`) directly upgrades the teacher in four ways without needing a 3rd network head or artificial TD($\lambda$) reward shaping:
 
 1. **Root Prior Shaping (`_expandRootWithRisk`):**
    At the root node, every legal child move records `child.claimed` and `child.enclosureRisk`.
-   - Enclosing moves (`child.claimed > 0`) receive a multiplicative prior boost, ensuring the 50 MCTS simulations immediately explore offensive **enclosing trains**.
+   - Enclosing moves (`child.claimed > 0`) receive both a multiplicative and additive prior boost, ensuring that even if an early-cycle Policy Head assigns $P_0(a) \approx 0$ to an enclosing move, the additive floor (`+0.05 × claimed`) guarantees the 50 MCTS simulations immediately explore offensive **enclosing trains**:
+     $$P'(s_0, a) \propto \begin{cases} P_0(s_0, a)\cdot\big(1 + 1.5\cdot\text{claimed}\big) + 0.05\cdot\text{claimed} & \text{if } \text{claimed} > 0 \\[4pt] P_0(s_0, a)\cdot\max\!\big(0.05,\; 1 - 2\cdot w_{\text{risk}}\cdot\text{risk}\big) & \text{if } \text{claimed} = 0 \;\land\; \text{risk} > 0 \\[4pt] P_0(s_0, a) & \text{otherwise} \end{cases}$$
    - Hole-creating single moves (`child.claimed === 0` and `risk > 0`) have their prior scaled down by $\max(0.05, 1 - 2 \cdot \text{risk} \cdot w_{\text{risk}})$, preventing wasted simulations on obvious blunders.
-2. **Pre-Cascade Leaf Expansion + Post-Cascade Quiescent Value (`_runBatch`):**
-   During batched MCTS (`searchBatched`), every non-terminal leaf `leaf` is:
-   - **Expanded** using the neural policy $P_\theta(\text{leaf.grid})$ of the true **pre-cascade** board so child moves and priors match `leaf.grid`.
-   - **Evaluated** by running a deterministic greedy cascade (`_runQuiescenceRollout`, up to `quiescenceDepth = 5`) to reach a quiet board `qEval.grid`, then combining the neural value $V_\theta(\text{qEval.grid})$ with tactical cascade adjustments (`+claimed × enclosureBonusWeight` for AI claims, `-claimed × riskPenaltyWeight` for opponent claims):
-     $$V_{\text{leaf}} = \text{clip}_{[-1, 1]}\!\left(V_\theta(s_{\text{quiet}}) + w_{\text{bonus}}\sum \text{claimed}_{\text{AI}} - w_{\text{risk}}\sum \text{claimed}_{\text{opp}}\right)$$
-   - Both pre-cascade states (for expansion) and post-cascade states (for value) are packed into a **single combined `network.batchPredict(allStates)` GPU call**.
+2. **Concatenated Dual-State GPU Batching for Pre-Cascade Expansion + Post-Cascade Quiescent Value (`_runBatch`):**
+   During batched MCTS (`searchBatched`), every non-terminal leaf `leaf` requires two distinct evaluations when a tactical cascade occurs (`qEval.depth > 0`):
+   - **Pre-Cascade Expansion (`expandStates`):** `leaf` must be expanded using the neural policy $P_\theta(\text{leaf.grid})$ of the true **pre-cascade** board so child moves and priors match `leaf.grid`.
+   - **Post-Cascade Quiescent Value (`quietStates`):** `leaf` must be evaluated by running a deterministic greedy cascade (`_runQuiescenceRollout`, up to `quiescenceDepth = 5`, configurable across `quiescenceMode ∈ {'none', 'greedy', 'heuristic', 'hybrid'}`) to reach a quiet board `qEval.grid`, then combining the perspective-signed neural value $\pm V_\theta(\text{qEval.grid})$ with tactical cascade adjustments (`+claimed × enclosureBonusWeight` for AI claims, `-claimed × riskPenaltyWeight` for opponent claims):
+     $$V_{\text{leaf}} = \text{clip}_{[-1, 1]}\!\left(\text{sign}(p_{\text{quiet}}, p_{\text{root}})\cdot V_\theta(s_{\text{quiet}}) + w_{\text{bonus}}\sum \text{claimed}_{\text{AI}} - w_{\text{risk}}\sum \text{claimed}_{\text{opp}}\right)$$
+     *(Note: If the quiescence cascade fills the board or leaves zero legal moves, `_getGridTerminalValue(qEval.grid, rootPlayer)` computes the exact terminal cluster winner $\in \{-1, 0, +1\}$ directly without a neural call.)*
+   - **Zero-Extra-Roundtrip GPU Packing:** Rather than issuing two separate GPU calls per simulation batch, `_runBatch` concatenates `allStates = expandStates.concat(quietStates)` (up to `8 + 8 = 16` canonical `10×10×18` tensors) into a **single combined `network.batchPredict(allStates)` call**, slicing `policies[0 .. expandStates.length - 1]` for leaf expansion and `values[quietOffset + k]` for quiescent leaf evaluation!
 3. **Direct Policy Target Distillation (`_getRiskAdjustedPolicy`):**
-   After all 50 simulations finish, the root visit distribution $\pi(a) \propto N(s_0, a)$ is further refined by rewarding enclosing moves (`child.claimed > 0`) and penalizing risky non-enclosing moves (`child.enclosureRisk.risk > 0`). Because the ConvNet Policy Head trains directly via cross-entropy against $\pi_{\text{MCTS}}$, **the 1-ply Policy Head internalizes both offensive enclosing trains and defensive hole avoidance**.
+   After all 50 simulations finish, the raw root visit distribution $N(s_0, a)/N(s_0)$ is further refined before being returned as the training target $\pi_{\text{MCTS}}$:
+   $$\pi_{\text{MCTS}}(a) \propto \begin{cases} \dfrac{N(s_0, a)}{N(s_0)}\big(1 + w_{\text{bonus}}\cdot\text{claimed}\big) + 0.02\cdot\text{claimed} & \text{if } \text{claimed} > 0 \\[8pt] \dfrac{N(s_0, a)}{N(s_0)}\max\!\big(0.02,\; 1 - 2\cdot w_{\text{risk}}\cdot\text{risk}\big) & \text{if } \text{claimed} = 0 \;\land\; \text{risk} > 0 \\[8pt] \dfrac{N(s_0, a)}{N(s_0)} & \text{otherwise} \end{cases}$$
+   Because the ConvNet Policy Head trains directly via cross-entropy against $\pi_{\text{MCTS}}$, **the 1-ply Policy Head internalizes both offensive enclosing trains and defensive hole avoidance**—which is verified in the standalone quiescence regression suite (`test_quiescence.cjs`), where `searchBatched()` selects enclosing chains even when initialized with a completely flat (`0.5` uniform) mock network prior.
 4. **$O(1)$ Local Neighborhood Enclosure Detection (`countWouldBeEnclosed`):**
-   Because `isTriangleEnclosed(cx, cy, rot)` only depends on cell `(cx, cy)` and its 4 orthogonal neighbors, placing a triangle at `(mx, my)` can only enclose `(mx, my)` itself or one of its 4 orthogonal neighbors. Checking just those 5 cells in-place (pushing/popping the candidate triangle without cloning the grid or rebuilding clusters) produces **100% identical results** to full-board simulation while running **3.2× faster** (~140ms per 50-sim move on M2 Ultra).
+   Because `isTriangleEnclosed(cx, cy, rot)` only depends on cell `(cx, cy)` and its 4 orthogonal neighbors, placing a triangle at `(mx, my)` can only enclose `(mx, my)` itself or one of its 4 orthogonal neighbors:
+   $$\mathcal{N}_5(x, y) = \Big\{(x, y),\; \big((x+1)\bmod 10, y\big),\; \big((x+9)\bmod 10, y\big),\; \big(x, (y+1)\bmod 10\big),\; \big(x, (y+9)\bmod 10\big)\Big\}$$
+   Pushing the candidate triangle onto `grid[my][mx].triangles`, checking just those 5 cells in-place via `mapping = [2, 3, 0, 1]` (the complementary rotation in a 1-triangle cell), and popping the triangle back off avoids cloning the $10 \times 10$ grid (`80×` fewer checks than scanning all 400 slots) and runs **3.2× faster** (~140ms per 50-sim move on M2 Ultra).
 
 #### 4. Experiment `TF-B12` Results: Breaking the Heuristic Wall (`100%` vs Random, `63%` vs Heuristic)
 Warm-started from `TF-B10_network.json`, `TF-B12` ran 10 cycles (100 games/cycle, 50% `QuiescenceMCTS-50` self-play / 50% `HeuristicPlayer`, `quiescenceMode = greedy`, `quiescenceDepth = 5`, `riskPenalty = 0.2`, `enclosureBonusWeight = 0.15`, `LR = 0.001` Adam, runtime `270.5 min`).
