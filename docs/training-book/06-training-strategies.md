@@ -6,6 +6,9 @@
 
 ### Strategy 1: Pure Self-Play
 
+<details>
+<summary>📐 Diagram: Pure Self-Play (click to expand ASCII)</summary>
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    Pure Self-Play                           │
@@ -25,6 +28,8 @@
 └─────────────────────────────────────────────────────────────┘
 ```
 
+</details>
+
 **Experiments TF-B1_v3, TF-B1_pure:** Pure self-play baselines
 - Final vs Random: 37-49%
 - Final vs Heuristic: 0%
@@ -32,6 +37,9 @@
 The network learned basic legality but no strategic depth.
 
 ### Strategy 2: Mixed Opponents ("Learn from the Master" vs Curriculum Learning)
+
+<details>
+<summary>📐 Diagram: WHY OPPONENT MIX FAILED IN STAGE 1 BUT WORKED IN STAGE 4 (click to expand ASCII)</summary>
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -74,6 +82,8 @@ The network learned basic legality but no strategic depth.
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
+</details>
+
 **Experiments `exp21` (`brain.js`) & `TF-B2` (`TF.js`):** Mixed opponent feedforward training
 - `exp21` ("Learn from the Master"): Degraded from `91%` to **`49%` vs Random**, **`0%` vs Heuristic**
 - `TF-B2_v3`, `TF-B2_mixed`: **`43–51%` vs Random**, **`0%` vs Heuristic**
@@ -81,6 +91,9 @@ The network learned basic legality but no strategic depth.
 **Key Systems Lesson:** In pure Policy Gradient RL, **an opponent that beats you 100% of the time teaches you nothing**—it only injects uniform negative gradients that destroy existing policy structure. Curriculum opponents (`Heuristic`) only become useful once your search architecture (`QuiescenceMCTS`) is strong enough to survive their tactical traps and separate move quality ($\pi_{\text{MCTS}}$) from game outcome ($z$).
 
 ### Strategy 3: Cluster Reward Shaping ($TD(\lambda)$) vs True Value Critics
+
+<details>
+<summary>📐 Diagram: CLUSTER REWARD SHAPING (TD-λ) vs VALUE HEAD (click to expand ASCII)</summary>
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -111,9 +124,14 @@ The network learned basic legality but no strategic depth.
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
+</details>
+
 **Finding:** Hand-crafted intermediate rewards ($TD(\lambda)$ cluster bonuses) help beat naive `Random` players by encouraging piece connectivity, but **backfire against tactical opponents** because they reward *greedy local expansion* over *defensive cavity prevention*. Replacing hand-crafted reward shaping with a learned **Value Head ($V(s) \in [-1, +1]$) trained on pure terminal game outcomes ($z \in \{-1, 0, +1\}$) + Quiescence MCTS** eliminated this bias completely.
 
 ### Strategy 4: Optimized Hyperparameters
+
+<details>
+<summary>📐 Diagram: Optimized Training (click to expand ASCII)</summary>
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -133,6 +151,8 @@ The network learned basic legality but no strategic depth.
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+</details>
 
 **Experiment TF-B1_optimized:** Optimized hyperparameters
 - Final vs Random: 47%

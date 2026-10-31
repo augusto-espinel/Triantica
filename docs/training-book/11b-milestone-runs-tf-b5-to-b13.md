@@ -34,6 +34,9 @@
 
 #### Key Findings
 
+<details>
+<summary>📐 Diagram: Phase 2: No Breakthrough (click to expand ASCII)</summary>
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │              Phase 2: No Breakthrough                        │
@@ -65,6 +68,8 @@
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+</details>
 
 #### Comparison: Dense vs Conv
 
@@ -239,6 +244,9 @@ A fascinating empirical phenomenon appears in the `TF-B9` training logs above: w
 
 Does this oscillation in initial error mean the network is reaching **new valleys in the loss landscape where qualitatively different strategies are learned**? **Yes — and the mathematics of Generalized Policy Iteration explains exactly why.**
 
+<details>
+<summary>📐 Diagram: THE "SAWTOOTH" LOSS LANDSCAPE OF ALPHAZERO SELF-PLAY (TF-B9) (click to expand ASCII)</summary>
+
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │     THE "SAWTOOTH" LOSS LANDSCAPE OF ALPHAZERO SELF-PLAY (TF-B9)             │
@@ -258,6 +266,8 @@ Does this oscillation in initial error mean the network is reaching **new valley
 │         Win Rate: 52% → 64%    Win Rate: 74%      Win Rate: 84% (88%/80%)    │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
+
+</details>
 
 ##### 1. Supervised Learning vs. Non-Stationary Self-Play
 In standard **supervised learning**, the dataset $\mathcal{D}$ is static. Because the data distribution never changes, the loss surface is fixed: the final error at the end of Epoch 10 (`2.371`) would be the exact initial error at the start of Epoch 11 (`2.371`).

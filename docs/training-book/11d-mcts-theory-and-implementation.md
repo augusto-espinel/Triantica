@@ -60,6 +60,9 @@ Monte Carlo Tree Search combines tree search with neural network evaluation. It'
 
 **The UCT Formula (Upper Confidence Bound for Trees):**
 
+<details>
+<summary>📐 Diagram: UCT(action) = Q(action)/N(action) + c × P(action) × √(N(parent))/(1+ (click to expand ASCII)</summary>
+
 ```
 UCT(action) = Q(action)/N(action) + c × P(action) × √(N(parent))/(1+N(action))
               ↑                              ↑
@@ -72,6 +75,8 @@ Where:
 - P = policy prior from neural network
 - c = exploration constant (typically 1.0-2.0)
 ```
+
+</details>
 
 **Why UCT works:** The first term exploits good moves (high Q/N). The second term explores moves with high prior (P) but few visits (low N). This balances exploitation vs exploration.
 
@@ -89,6 +94,9 @@ Our Phase 2 architecture is perfectly suited for MCTS:
 | BatchNorm layers | Stable inference during search |
 
 **Data Flow:**
+
+<details>
+<summary>📐 Diagram: MCTS + Neural Network Pipeline (click to expand ASCII)</summary>
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -134,6 +142,8 @@ Our Phase 2 architecture is perfectly suited for MCTS:
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+</details>
 
 ---
 
@@ -240,6 +250,9 @@ function addDirichletNoise(priors, alpha = 0.03, epsilon = 0.25) {
 
 The key innovation from AlphaGo Zero: train the network to predict MCTS output.
 
+<details>
+<summary>📐 Diagram: Current (NN only): (click to expand ASCII)</summary>
+
 ```
 Current (NN only):
   Self-play games → Store positions → Train network → Repeat
@@ -249,6 +262,8 @@ With MCTS (AlphaGo Zero style):
                     ↑                              ↑
                     └── Stronger supervision ──────┘
 ```
+
+</details>
 
 **What changes:**
 - Input: Current board state (same)
@@ -285,6 +300,9 @@ Based on AlphaGo Zero results and our current baseline:
 
 ---
 
+<details>
+<summary>📐 Diagram: MCTS Integration (click to expand ASCII)</summary>
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    MCTS Integration                           │
@@ -312,6 +330,8 @@ Based on AlphaGo Zero results and our current baseline:
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+</details>
 
 **Implementation Steps:**
 
@@ -354,6 +374,9 @@ Based on AlphaGo Zero results and our current baseline:
 #### MCTS Implementation Details
 
 **Module Structure (`src/server/MCTS.cjs`):**
+<details>
+<summary>📐 Diagram: MCTS Engine (src/server/MCTS.cjs) (click to expand ASCII)</summary>
+
 ```
 MCTS Engine (src/server/MCTS.cjs)
 ├── class MCTSNode {
@@ -370,6 +393,8 @@ MCTS Engine (src/server/MCTS.cjs)
 │   └── getPolicy(node, temp)     // Visit count policy
 └── exports: { MCTS, MCTSNode }
 ```
+
+</details>
 
 **MCTSNode API:**
 ```javascript

@@ -8,6 +8,9 @@
 
 ### Game Rules in One Minute
 
+<details>
+<summary>📐 Diagram: 10×10 toroidal grid (edges wrap around seamlessly) (click to expand ASCII)</summary>
+
 ```
 ┌──────────────────────────────────────────────────────────┐
 │  • 10×10 toroidal grid (edges wrap around seamlessly)    │
@@ -22,6 +25,8 @@
 │  • Largest contiguous cluster of triangles wins!         │
 └──────────────────────────────────────────────────────────┘
 ```
+
+</details>
 
 #### Cell Geometry & The 4 Triangle Rotations
 
@@ -65,6 +70,9 @@ Every square cell `(x, y)` on the $10 \times 10$ board can hold up to **2 right-
 
 **Visual example of enclosure:**
 
+<details>
+<summary>📐 Diagram: Before move: After move (enclosure): (click to expand ASCII)</summary>
+
 ```
 Before move:          After move (enclosure):
     ┌───┬───┬───┐         ┌───┬───┬───┐
@@ -76,6 +84,8 @@ Before move:          After move (enclosure):
     └───┴───┴───┘         └───┴───┴───┘
                         Center enclosed!
 ```
+
+</details>
 
 #### Why the Extra-Turn Snowball Mechanic Changes Everything
 
@@ -128,6 +138,9 @@ The 2.5D tilted viewport shows both players' triangles in their canonical colors
 
 ### Why This Game Exposes RL Challenges
 
+<details>
+<summary>📐 Diagram: Game Complexity Comparison (click to expand ASCII)</summary>
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    Game Complexity Comparison                │
@@ -146,11 +159,16 @@ The 2.5D tilted viewport shows both players' triangles in their canonical colors
 └─────────────────────────────────────────────────────────────┘
 ```
 
+</details>
+
 **This is the core RL problem:** Credit assignment. How do you learn which move, 30 turns ago, caused your victory?
 
 ### State Representation
 
 The neural network doesn't see the board visually. It sees a vector of numbers:
+
+<details>
+<summary>📐 Diagram: Input Vector (401 values) (click to expand ASCII)</summary>
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -172,6 +190,8 @@ The neural network doesn't see the board visually. It sees a vector of numbers:
 └─────────────────────────────────────────────────────────────┘
 ```
 
+</details>
+
 **Why this encoding?** This "fixed perspective" encoding means:
 - AI always sees its own pieces as +1
 - Opponent's pieces as -1
@@ -184,6 +204,9 @@ This is critical for generalization (see Bug #1 in Section 7).
 While our early feedforward experiments (`brain.js` and `TF-B1` through `TF-B4`) used this flat `401`-element vector, a 1D vector destroys 2D board geometry: cells `(x=4, y=4)` and `(x=4, y=5)` are adjacent on the board, yet sit `40` indices apart in the flattened array.
 
 To unlock spatial pattern recognition and eventually break the Heuristic Wall, our representation evolved through three distinct stages (detailed in [Chapter 11](./11-deep-dive-convolutions-mcts.md)):
+
+<details>
+<summary>📐 Diagram: EVOLUTION OF TRIANTICA BOARD STATE REPRESENTATION (click to expand ASCII)</summary>
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -205,6 +228,8 @@ To unlock spatial pattern recognition and eventually break the Heuristic Wall, o
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
+
+</details>
 
 ![Toroidal Wrap-Around — Seamless edge connections on T²](./assets/diagrams/toroidal-wrap.svg)
 

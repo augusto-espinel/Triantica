@@ -6,6 +6,9 @@
 
 ### The Unified Memory Advantage
 
+<details>
+<summary>📐 Diagram: Traditional x86 + Discrete GPU (click to expand ASCII)</summary>
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │              Traditional x86 + Discrete GPU                 │
@@ -29,6 +32,8 @@
 └─────────────────────────────────────────────────────────────┘
 ```
 
+</details>
+
 **Why Unified Memory is a Game-Changer for AlphaZero-Style MCTS:**
 In standard supervised deep learning, large batches sit on the GPU while the CPU stays idle. In **MCTS Self-Play RL**, execution alternates thousands of times per game between:
 1. **CPU-bound Tree Traversal & Board Simulation** (`GridManager.clone()`, `executeMove()`, `claimEnclosedTriangles()`).
@@ -42,6 +47,9 @@ On discrete PCIe GPUs, copying small MCTS leaf batches ($B=8$) back and forth ac
 ### How Matrix & Tensor Sizes Come About at Every Step
 
 Every layer in `TFConvNetwork` transforms a 4D spatial tensor or 2D flattened matrix. Understanding **where each dimension comes from** and **how `im2col` (Image-to-Column) turns 2D convolutions into dense Matrix Multiplications (`GEMM`)** explains both the network's representational power and its hardware efficiency on the M2 Ultra.
+
+<details>
+<summary>📐 Diagram: END-TO-END TENSOR & MATRIX PIPELINE (Batch Size B = 256) (click to expand ASCII)</summary>
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -78,6 +86,8 @@ Every layer in `TFConvNetwork` transforms a 4D spatial tensor or 2D flattened ma
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
+
+</details>
 
 #### Step-by-Step Derivation of Matrix Dimensions
 
@@ -142,6 +152,9 @@ Use: fnm use v20.20.2  (or nvm use 20.20.2)
 
 ### Batch Size Optimization on M2 Ultra
 
+<details>
+<summary>📐 Diagram: Batch Size Hardware Utilization Throughput & Gradient Behavior (click to expand ASCII)</summary>
+
 ```
 Batch Size │  Hardware Utilization │  Throughput & Gradient Behavior
 ───────────┼───────────────────────┼──────────────────────────────────────────
@@ -150,6 +163,8 @@ Batch Size │  Hardware Utilization │  Throughput & Gradient Behavior
    32      │  ~65%                 │  Good for pure feedforward policy updates
   256      │  ~98% (AMX/GPU full)  │  Optimal for ConvNet + BatchNorm + Replay
 ```
+
+</details>
 
 **Recommendation:** Use `mctsBatchSize: 8` during tree search (balancing virtual-loss tree diversity against vectorization) and `batchSize: 256` with `tf.train.adam(0.001)` during replay-buffer gradient updates.
 

@@ -14,6 +14,9 @@ In `TF-B10` (Simple MCTS-50 + 50% Heuristic opponents), the AI reached a record 
 2. **Self-Play Value Head Inversion on Single-Move Openings:**
    Because the Value Head was trained primarily on states where local cluster density correlated with winning against non-cascading play, $V_\theta(s_L)$ rated a hole-creating blunder at **`+0.4794`** while rating a safe move at **`+0.1060`**. With 50 simulations spread across ~35 legal moves, simple MCTS never searched deep enough down the forced opponent cascade to see the collapse—instead, UCT **amplified** the `+0.4794` blunder (`13` visits, `Q = +0.344` vs `1–2` visits for safe moves).
 
+<details>
+<summary>📐 Diagram: Simple MCTS vs. Quiescence MCTS at a Leaf Node (click to expand ASCII)</summary>
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │             Simple MCTS vs. Quiescence MCTS at a Leaf Node              │
@@ -34,6 +37,8 @@ In `TF-B10` (Simple MCTS-50 + 50% Heuristic opponents), the AI reached a record 
 │                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
+
+</details>
 
 #### 2. Game-Mechanic Invariant: Enclosing Trains vs. Single-Move Openings
 A foundational rule of Triantica dictates when a move is safe versus exploitable:
@@ -210,6 +215,9 @@ Following the official release of the 2D baseline (`v1.0.0-2d`), **Phase 3 (`TF-
 
 ![Toroidal Wrap-Around — Seamless edge connections on T²](./assets/diagrams/toroidal-wrap.svg)
 
+<details>
+<summary>📐 Diagram: WHY ZERO-PADDING BLINDED TF-B14 AT THE BORDER vs. TOROIDALPAD2D (TF- (click to expand ASCII)</summary>
+
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  WHY ZERO-PADDING BLINDED TF-B14 AT THE BORDER vs. TOROIDALPAD2D (TF-B15)    │
@@ -274,6 +282,8 @@ Following the official release of the 2D baseline (`v1.0.0-2d`), **Phase 3 (`TF-
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
+</details>
+
 In summary, **Phase 3 (`TF-B15`)** combined three synergistic mechanisms:
 1. **Full Toroidal Edge Symmetry ($T^2$):** Wrapped vertex coordinates modulo `(cols, rows)` in `hasCorner(x, y)` (`toroidalPlacement = true`), giving the $10 \times 10$ grid exactly $100$ unique topological vertices (each shared by $12$ triangle slots) so both corner placement and enclosure detection are 100% translation-invariant.
 2. **Toroidal Circular Convolutions (`ToroidalPad2D` / `ToroidalPad3D`):** Replaced standard zero-padding (`padding: 'same'`) across all three `3×3` `Conv2D` layers with custom circular padding that wraps 1 row/column around all four borders (`10×10 → 12×12`) prior to `valid` convolution, achieving exact 2D periodic translation equivariance (`max abs diff = 5.96e-8`).
@@ -316,6 +326,9 @@ Warm-started from `TF-B14_best_network.json`, **`TF-B15`** ran 10 cycles of 100%
 
 **Solution:** Maintain pool of historical versions. Train against diverse opponents.
 
+<details>
+<summary>📐 Diagram: Training Tournament Loop (click to expand ASCII)</summary>
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                  Training Tournament Loop                     │
@@ -338,6 +351,8 @@ Warm-started from `TF-B14_best_network.json`, **`TF-B15`** ran 10 cycles of 100%
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+</details>
 
 **Implementation Steps:**
 

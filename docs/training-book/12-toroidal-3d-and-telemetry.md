@@ -10,6 +10,9 @@
 
 To make the $T^2$ topology intuitive for human players while preserving the mathematical integrity of the core engine and AI tensor pipeline, Triantica enforces a strict **Engine-View Separation Architecture**:
 
+<details>
+<summary>📐 Diagram: STRICT ENGINE / VIEW-PROJECTION SEPARATION (click to expand ASCII)</summary>
+
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │                 STRICT ENGINE / VIEW-PROJECTION SEPARATION                   │
@@ -41,6 +44,8 @@ To make the $T^2$ topology intuitive for human players while preserving the math
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
+
+</details>
 
 ### Continuous Learning from Human Play (Human Match Telemetry Logger, `HumanGameLogger.js`)
 With `TF-B15` deployed to production (`trainedAI_network.json`) across **Easy**, **Medium** (`99.0%` Raw 1-ply ConvNet), and **Hard** (`100.0%` ConvNet + Tactical Safety Filter), the browser and server runtimes include a **human match telemetry logger** (`src/data/HumanGameLogger.js`, persisted via `/api/human-games`). Every completed human match records canonical 18-channel states, chosen actions, enclosure claims, and final outcomes—enabling future human-in-the-loop replay mixing without altering the core self-play pipeline.

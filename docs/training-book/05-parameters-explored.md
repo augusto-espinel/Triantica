@@ -6,6 +6,9 @@
 
 ### Parameter Overview
 
+<details>
+<summary>📐 Diagram: Parameter Categories (click to expand ASCII)</summary>
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                   Parameter Categories                        │
@@ -45,9 +48,14 @@
 └─────────────────────────────────────────────────────────────┘
 ```
 
+</details>
+
 ### Learning Rate (α)
 
 **What it does:** Controls how much the network weights change with each gradient update.
+
+<details>
+<summary>📐 Diagram: High Learning Rate (0.1+) (click to expand ASCII)</summary>
 
 ```
                     High Learning Rate (0.1+)
@@ -74,6 +82,8 @@
                             ▲
                     Low Learning Rate (0.001-)
 ```
+
+</details>
 
 | Value | Observed Behavior | Best For |
 |-------|-------------------|----------|

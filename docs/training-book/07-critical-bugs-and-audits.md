@@ -6,6 +6,9 @@
 
 ### Bug 1: Self-Play Perspective Mismatch (exp19)
 
+<details>
+<summary>📐 Diagram: What We Saw (click to expand ASCII)</summary>
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                   What We Saw                                │
@@ -16,6 +19,8 @@
 │   Statistical impossibility in a fair game!                 │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+</details>
 
 **Root cause:** P2 was using P1's policy to select moves.
 
@@ -35,6 +40,9 @@ move = getAIMove(network, grid, exploration, aiPlayerNumber);
 
 ### Bug 2: Reward Signal Dilution (TF.js Migration)
 
+<details>
+<summary>📐 Diagram: What We Saw (click to expand ASCII)</summary>
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                   What We Saw                                │
@@ -45,6 +53,8 @@ move = getAIMove(network, grid, exploration, aiPlayerNumber);
 │   Same architecture, same data — why the drop?             │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+</details>
 
 **Root cause:** Averaged reward instead of chosen move reward.
 
@@ -65,6 +75,9 @@ const chosenMoveReward = vector[chosenMoveIndex];
 
 ### Bug 3: Heuristic Player Number (TF Baselines)
 
+<details>
+<summary>📐 Diagram: What We Saw (click to expand ASCII)</summary>
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                   What We Saw                                │
@@ -75,6 +88,8 @@ const chosenMoveReward = vector[chosenMoveIndex];
 │   Why does Heuristic always get perfect score?             │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+</details>
 
 **Root cause:** HeuristicPlayer hardcoded to `playerNumber=2`.
 
@@ -95,6 +110,9 @@ const heuristicOpponent = new HeuristicPlayer(opponentNumber, {...});
 
 ### Bug 4: Win Rate Measurement (exp12)
 
+<details>
+<summary>📐 Diagram: What We Saw (click to expand ASCII)</summary>
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                   What We Saw                                │
@@ -105,6 +123,8 @@ const heuristicOpponent = new HeuristicPlayer(opponentNumber, {...});
 │   Which is right?                                          │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+</details>
 
 **Root cause:** Player swap for fairness, but win counting by slot number.
 
@@ -125,6 +145,9 @@ if (winner === aiPlayer) results.wins.ai++;
 
 ### Bug 5: MCTS Value Perspective Mismatch (TF-B8)
 
+<details>
+<summary>📐 Diagram: What We Saw (click to expand ASCII)</summary>
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                   What We Saw                                │
@@ -135,6 +158,8 @@ if (winner === aiPlayer) results.wins.ai++;
 │   Network IS learning — just learning to LOSE!              │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+</details>
 
 **Root cause:** Neural network returns values from the perspective of the player whose turn it is at the leaf node, but MCTS backpropagation expected values from the root player's perspective.
 
@@ -174,6 +199,9 @@ Following the completion of `TF-B8-V2` (which still oscillated between 15% and 5
 
 We uncovered **six severe systemic bugs** spanning game geometry, tree search physics, tensor encoding, and gradient calculus:
 
+<details>
+<summary>📐 Diagram: THE 6 SYSTEMIC BUGS UNCOVERED IN PHASE 5 (click to expand ASCII)</summary>
+
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │                 THE 6 SYSTEMIC BUGS UNCOVERED IN PHASE 5                     │
@@ -200,12 +228,17 @@ We uncovered **six severe systemic bugs** spanning game geometry, tree search ph
 └──────────┴───────────────────────────────────┴───────────────────────────────┘
 ```
 
+</details>
+
 #### Bug 6: Inverted Diagonal Overlap Rule (Engine Split-Brain)
 
 **Geometry of a Triantica Cell:**
 Each cell `[x, y]` is split by one of two diagonals:
 - **Group 0 (`╱` slash diagonal):** Rotations `0` (Top-Left `◤`) and `2` (Bottom-Right `◢`)
 - **Group 1 (`╲` backslash diagonal):** Rotations `1` (Bottom-Left `◣`) and `3` (Top-Right `◥`)
+
+<details>
+<summary>📐 Diagram: GROUP 0 (╱ Diagonal) GROUP 1 (╲ Diagonal) (click to expand ASCII)</summary>
 
 ```
        GROUP 0 (╱ Diagonal)                  GROUP 1 (╲ Diagonal)
@@ -218,6 +251,8 @@ Each cell `[x, y]` is split by one of two diagonals:
    Valid 2nd triangle: SAME diagonal group (newGroup === existingGroup)
                        OPPOSITE rotation   (rot !== existingRot)
 ```
+
+</details>
 
 **What Was Wrong:**
 When the core board state & rules engine (`src/core/GridManager.js`) was extracted for server training, the boolean negation `!` was accidentally dropped from the overlap check:
@@ -320,6 +355,9 @@ In a 20-game live verification test immediately after applying Bug 11's fix:
 **What We Saw (2026-10-22 Night Audit):**
 When watching "AI vs AI" in the browser game controller (`game.js`), both AIs appeared to play balanced, highly tactical games with large enclosure cascades—yet when we tested the exact same trained `brain.js` network in the server evaluation harness (`evaluate.cjs`), it lost `0–100` against the deterministic heuristic opponent (`HeuristicPlayer`)!
 
+<details>
+<summary>📐 Diagram: THE BROWSER "ILLUSION OF COMPETENCE" (TRAIN/TEST MISMATCH) (click to expand ASCII)</summary>
+
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │          THE BROWSER "ILLUSION OF COMPETENCE" (TRAIN/TEST MISMATCH)          │
@@ -337,6 +375,8 @@ When watching "AI vs AI" in the browser game controller (`game.js`), both AIs ap
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
+
+</details>
 
 - **The Fix (`76cece8` & Phase 6 Consolidation):** Aligned browser `AIPlayer` move selection directly with the pure neural network policy (`100%` network prediction during evaluation/play, with optional 1-ply safety filter toggle). Once the 90% heuristic crutch was removed, the browser immediately revealed the true state of the network—and later allowed us to verify `TF-B15`'s genuine `99%` raw / `100%` +Safety mastery in real time.
 

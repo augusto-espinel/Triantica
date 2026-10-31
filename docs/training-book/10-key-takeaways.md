@@ -6,6 +6,9 @@
 
 ### What We Learned
 
+<details>
+<summary>📐 Diagram: Key Lessons (click to expand ASCII)</summary>
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    Key Lessons                               │
@@ -42,6 +45,8 @@
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+</details>
 
 ### Recommendations for Similar Projects
 

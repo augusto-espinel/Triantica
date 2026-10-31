@@ -39,6 +39,9 @@ const output = net.run(inputState);
 
 ![The 5-Stage Architecture Climb — Breaking the Heuristic Wall](./assets/diagrams/architecture-climb.svg)
 
+<details>
+<summary>📐 Diagram: Why TensorFlow.js? (click to expand ASCII)</summary>
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                Why TensorFlow.js?                           │
@@ -56,9 +59,14 @@ const output = net.run(inputState);
 └─────────────────────────────────────────────────────────────┘
 ```
 
+</details>
+
 ### Migration Challenges
 
 The TF.js implementation initially got **49% vs Random** (vs 91% with brain.js). Investigation revealed three critical bugs:
+
+<details>
+<summary>📐 Diagram: Migration Bugs (click to expand ASCII)</summary>
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -102,6 +110,8 @@ The TF.js implementation initially got **49% vs Random** (vs 91% with brain.js).
 └─────────────────────────────────────────────────────────────┘
 ```
 
+</details>
+
 **How we found them:** Compared TF.js training logs with brain.js logs side-by-side. The win signal magnitude was visibly different.
 
 ### Forensic Audit: Why `exp20` (`brain.js`, `91%`) Beat Early `TF-B1` (`TF.js`, `49%`)
@@ -109,6 +119,9 @@ The TF.js implementation initially got **49% vs Random** (vs 91% with brain.js).
 Even after fixing the initial migration bugs above, a deeper mystery remained: why did `exp20` in `brain.js` reach **`91%` vs Random**, whereas our initial clean `TF-B1` feedforward run in TensorFlow.js plateaued around **`49–53%` vs Random**?
 
 We built a dedicated numerical audit suite (`reward_forensic_audit.cjs` and `reward_signal_audit.cjs`) to trace every gradient update and sample count across both engines:
+
+<details>
+<summary>📐 Diagram: FORENSIC AUDIT: exp20 (brain.js, 91%) vs TF-B1 (TF.js, 49%) (click to expand ASCII)</summary>
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -140,6 +153,8 @@ We built a dedicated numerical audit suite (`reward_forensic_audit.cjs` and `rew
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
+
+</details>
 
 **Three Enduring Lessons from the Migration Audit:**
 1. **Experience Replay is Non-Negotiable:** Training only on the current cycle's games causes the network to oscillate and forget earlier board configurations. Adding the **500,000-state sliding-window Replay Buffer** (`--replay-buffer-size 500000 --replay-ratio 2.0`) stabilized every subsequent TF.js run.

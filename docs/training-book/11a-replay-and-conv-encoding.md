@@ -27,6 +27,9 @@ This chapter walks through the step-by-step architectural roadmap that took Tria
 
 **Solution:** Store game histories in a circular buffer. Sample random batches for training.
 
+<details>
+<summary>📐 Diagram: Experience Replay Buffer (click to expand ASCII)</summary>
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                  Experience Replay Buffer                    │
@@ -49,6 +52,8 @@ This chapter walks through the step-by-step architectural roadmap that took Tria
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+</details>
 
 **Implementation Steps:**
 
@@ -96,6 +101,9 @@ This chapter walks through the step-by-step architectural roadmap that took Tria
 
 **Key principle:** Triantica is Markovian — only the current board state matters, not the order moves were played. Each possible placement is a discrete binary fact: present or absent. Empty slots deserve first-class representation, not implicit absence.
 
+<details>
+<summary>📐 Diagram: Current vs Canonical Encoding (click to expand ASCII)</summary>
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │              Current vs Canonical Encoding                   │
@@ -127,6 +135,8 @@ This chapter walks through the step-by-step architectural roadmap that took Tria
 └─────────────────────────────────────────────────────────────┘
 ```
 
+</details>
+
 **Why empty slots need their own channel:**
 A conv filter detecting "empty cell next to my enclosure" needs to recognize absence. With the 16-channel encoding (all zeros = empty), the filter must apply negative weights across all 16 channels — a complex pattern. With the 18-channel encoding, the filter simply needs a positive weight on channel 0 (empty) — trivial to learn.
 
@@ -136,6 +146,9 @@ A 3×3 conv filter on the current 4-channel input would need to simultaneously d
 #### Step 2B: How Convolutional Filters Scan the Board & Connect to Policy and Value Heads
 
 To understand why a Convolutional Neural Network (CNN) dramatically outperforms a flattened Dense network on spatial games, let's visualize **how a $3 \times 3$ filter slides across the $10 \times 10 \times 18$ board tensor**, how stacked convolutions expand the **receptive field**, and how the shared feature map branches into the **Policy Head** and **Value Head**.
+
+<details>
+<summary>📐 Diagram: 1. HOW A 3×3×18 CONVOLUTION FILTER DETECTS AN ENCLOSURE AT CELL (x,y (click to expand ASCII)</summary>
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -164,7 +177,12 @@ To understand why a Convolutional Neural Network (CNN) dramatically outperforms 
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
+</details>
+
 #### Hierarchical Feature Extraction Across the 3 Conv Layers (Receptive Field Growth)
+
+<details>
+<summary>📐 Diagram: 2. HIERARCHICAL SPATIAL ABSTRACTION (32 → 64 → 64 FILTERS) (click to expand ASCII)</summary>
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -182,9 +200,14 @@ To understand why a Convolutional Neural Network (CNN) dramatically outperforms 
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
+</details>
+
 #### How the Shared Conv Trunk Connects to the Policy & Value Heads
 
 Once `Conv3` produces the `[B, 10, 10, 64]` spatial feature representation (where each cell `(x, y)` holds a 64-dimensional vector summarizing its $7 \times 7$ neighborhood), the network splits into two specialized heads that work together during **MCTS Search** and **Backpropagation**:
+
+<details>
+<summary>📐 Diagram: 3. DUAL-HEAD SYNERGY: POLICY (ACTOR) + VALUE (CRITIC) IN MCTS (click to expand ASCII)</summary>
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -225,6 +248,8 @@ Once `Conv3` produces the `[B, 10, 10, 64]` spatial feature representation (wher
 │                                           just greedy 1-move captures!       │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
+
+</details>
 
 **Why Dual-Head Co-Training Significantly Improves Performance:**
 1. **Shared Representation Regularization:** Because both heads backpropagate gradients into the same `Conv1 → Conv2 → Conv3` filters ($\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{policy}} + \mathcal{L}_{\text{value}}$), the convolutional filters must extract spatial features that simultaneously explain *where MCTS wants to play next* ($\pi$) and *who will ultimately win the game* ($z$). This prevents the Policy Head from memorizing superficial local patterns that lose in the endgame.

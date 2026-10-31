@@ -12,6 +12,9 @@
 
 **Implemented Actor-Critic Architecture (`ConvNetwork.cjs`):** Learn both policy ($\pi_\theta$) and value ($V_\theta \in [-1, +1]$) simultaneously on top of the shared convolutional trunk.
 
+<details>
+<summary>📐 Diagram: Actor-Critic Architecture (click to expand ASCII)</summary>
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    Actor-Critic Architecture                 │
@@ -34,6 +37,8 @@
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+</details>
 
 **Implementation Steps:**
 
@@ -73,6 +78,9 @@
 
 **Solution:** Batch normalization after each conv layer.
 
+<details>
+<summary>📐 Diagram: Deep Residual Network with BatchNorm (click to expand ASCII)</summary>
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │              Deep Residual Network with BatchNorm            │
@@ -93,6 +101,8 @@
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+</details>
 
 **Implementation Steps:**
 

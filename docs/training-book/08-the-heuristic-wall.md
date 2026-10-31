@@ -10,6 +10,9 @@
 
 After 22 brain.js experiments and 10+ TF.js experiments, a clear pattern emerged:
 
+<details>
+<summary>📐 Diagram: Performance Summary (click to expand ASCII)</summary>
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                   Performance Summary                        │
@@ -25,7 +28,12 @@ After 22 brain.js experiments and 10+ TF.js experiments, a clear pattern emerged
 └─────────────────────────────────────────────────────────────┘
 ```
 
+</details>
+
 ### Why Can't a Feedforward Network Beat Heuristic?
+
+<details>
+<summary>📐 Diagram: Heuristic Strategy (click to expand ASCII)</summary>
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -57,6 +65,8 @@ After 22 brain.js experiments and 10+ TF.js experiments, a clear pattern emerged
 └─────────────────────────────────────────────────────────────┘
 ```
 
+</details>
+
 #### Two Architectural Blind Spots: Why Even Vanilla AlphaZero MCTS Scored `0%`
 
 When we first diagnosed the Heuristic Wall after `exp22` and `TF-B4`, our initial hypothesis was simple: *"Add a Convolutional Actor-Critic (`TF-B5`) and standard AlphaZero MCTS (`TF-B8`–`TF-B10`), and the wall will fall."*
@@ -64,6 +74,9 @@ When we first diagnosed the Heuristic Wall after `exp22` and `TF-B4`, our initia
 **We were wrong.** Even after building the `10×10×18` ConvNet and fixing every gradient bug in standard MCTS-50 (`TF-B9` and `TF-B10`), our win rate against `Random` climbed to **`87.0%`**, yet our win rate against `HeuristicPlayer` remained **locked at `0.0%`!**
 
 Why did both a `2-Head ConvNet` (`TF-B5`) AND `Vanilla AlphaZero MCTS-50` (`TF-B10`) score `0%` against `Heuristic`? Because of two distinct domain mechanics in Triantica:
+
+<details>
+<summary>📐 Diagram: BLIND SPOT #1: SPATIAL TRANSLATION BLINDNESS (FLAT vs CONV vs TORUS) (click to expand ASCII)</summary>
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -117,6 +130,8 @@ Why did both a `2-Head ConvNet` (`TF-B5`) AND `Vanilla AlphaZero MCTS-50` (`TF-B
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
+
+</details>
 
 ### The 5-Stage Architectural Climb That Broke the Wall (`0% → 63% → 90% → 100%`)
 

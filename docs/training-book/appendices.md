@@ -53,6 +53,9 @@ node src/server/evaluate.cjs --network dashboard/data/TF-B15_best_network.json \
 
 ## Appendix B: Project Structure
 
+<details>
+<summary>📐 Diagram: triantica/ (click to expand ASCII)</summary>
+
 ```
 triantica/
 ├── src/
@@ -85,6 +88,8 @@ triantica/
 │   └── QUIESCENCE_MCTS.md         # Quiescence MCTS mathematical specification
 └── trainedAI_network.json         # Production champion weights (TF-B15 Cycle 7: 99% Raw / 100% +Safety)
 ```
+
+</details>
 
 ---
 

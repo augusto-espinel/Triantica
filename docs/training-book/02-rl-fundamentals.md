@@ -50,6 +50,9 @@ Reinforcement learning is different from supervised learning. There's no labeled
 
 A **policy** (denoted π) is the agent's strategy — it maps states to actions.
 
+<details>
+<summary>📐 Diagram: Policy Network (click to expand ASCII)</summary>
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    Policy Network                            │
@@ -72,6 +75,8 @@ A **policy** (denoted π) is the agent's strategy — it maps states to actions.
 Mathematical form: π(a|s) = P(taking action a | in state s)
 ```
 
+</details>
+
 **Key insight:** The policy network doesn't output a single "best move". It outputs a probability distribution over all possible moves. This allows:
 1. **Exploration**: Sometimes picking lower-probability moves to discover new strategies
 2. **Training**: We can reinforce good moves (increase their probability) and discourage bad ones
@@ -79,6 +84,9 @@ Mathematical form: π(a|s) = P(taking action a | in state s)
 ### Policy Gradient: How We Train
 
 The simplest RL algorithm is **policy gradient**. Here's how it works:
+
+<details>
+<summary>📐 Diagram: Policy Gradient Training (click to expand ASCII)</summary>
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -108,6 +116,8 @@ The simplest RL algorithm is **policy gradient**. Here's how it works:
 └─────────────────────────────────────────────────────────────┘
 ```
 
+</details>
+
 **Mathematical intuition:**
 
 ```
@@ -118,6 +128,9 @@ If reward is negative (lost): minimize -log(π) → decrease π
 ```
 
 ### Three Approaches to RL
+
+<details>
+<summary>📐 Diagram: THE 3 RL PARADIGMS BUILT IN TRIANTICA (click to expand ASCII)</summary>
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -147,11 +160,16 @@ If reward is negative (lost): minimize -log(π) → decrease π
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
+</details>
+
 Our initial feedforward network (`brain.js` and `TF-B1`–`TF-B4`) used pure **policy gradient** — the simplest approach. It worked for beating random players (`91%`), but scored `0%` against strategic opponents (`HeuristicPlayer`), hitting what we called the **"Heuristic Wall"** (see [Chapter 8](./08-the-heuristic-wall.md)). Over the course of the project, we systematically built all three paradigms: transitioning to a **2-Head Convolutional Actor-Critic** (`TF-B5`–`TF-B6`), integrating **AlphaZero-style MCTS** (`TF-B8`–`TF-B10`), and ultimately inventing **Quiescence MCTS + Toroidal Manifold Convolutions** (`TF-B12`–`TF-B15`) to reach **`99%` raw / `100%` +Safety** against the Heuristic master.
 
 ### Why Credit Assignment Fails in Triantica Without a Value Critic & Search
 
 Why did pure Policy Gradient hit an impenetrable `0%` ceiling against a tactical opponent, even after 45 training cycles? Because of **delayed catastrophic punishment**:
+
+<details>
+<summary>📐 Diagram: THE CREDIT ASSIGNMENT PROBLEM IN SNOWBALL GAMES (click to expand ASCII)</summary>
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -180,7 +198,12 @@ Why did pure Policy Gradient hit an impenetrable `0%` ceiling against a tactical
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
+</details>
+
 ### Exploration vs Exploitation
+
+<details>
+<summary>📐 Diagram: Exploration vs Exploitation (click to expand ASCII)</summary>
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -208,6 +231,8 @@ Why did pure Policy Gradient hit an impenetrable `0%` ceiling against a tactical
 └─────────────────────────────────────────────────────────────┘
 ```
 
+</details>
+
 In our project, how we balanced exploration and exploitation evolved alongside the architecture:
 1. **Stage 1 (Feedforward Policy Gradient):** Used **$\varepsilon$-greedy exploration** (`explorationRate = 0.1` to `0.3`) plus a `50%` random opening override on the first 3 plies to prevent deterministic self-play loops.
 2. **Stage 2 & 3 (AlphaZero / Quiescence MCTS):** Replaced naive random moves with **Dirichlet root noise** ($\text{Dir}(\alpha=0.3)$, $\varepsilon=0.25$) blended into the root prior $P(s,a)$, combined with **PUCT uncertainty bonuses** ($c_{\text{puct}} \cdot P(s,a) \frac{\sqrt{N(s)}}{1 + N(s,a)}$) and temperature-controlled visit sampling ($\tau = 1.0$ for moves $1\dots 15$, $\tau = 0.1$ thereafter). This ensures the agent explores *plausible tactical alternatives* rather than throwing away games with random blunders.
@@ -217,6 +242,9 @@ In our project, how we balanced exploration and exploitation evolved alongside t
 When training a reinforcement learning agent over hours of self-play, watching a single "Win Rate" number is like flying an airplane with only an altimeter. When the win rate stalls at `0%` or suddenly crashes from `54%` to `15%`, you need diagnostic instruments that separate **exploration health**, **optimization health**, **role symmetry**, and **true strategic dominance**.
 
 Throughout this guide, every experiment is tracked through six core telemetry signals on the Triantica Training Dashboard:
+
+<details>
+<summary>📐 Diagram: THE 6 CORE TELEMETRY SIGNALS & WHAT THEY DIAGNOSE (click to expand ASCII)</summary>
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -273,6 +301,8 @@ Throughout this guide, every experiment is tracked through six core telemetry si
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
+
+</details>
 
 ---
 
