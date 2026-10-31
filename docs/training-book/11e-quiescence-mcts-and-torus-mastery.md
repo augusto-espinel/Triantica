@@ -208,13 +208,11 @@ Warm-started from `TF-B13_network.json`, **`TF-B14`** tested the resolution of *
 
 Following the official release of the 2D baseline (`v1.0.0-2d`), **Phase 3 (`TF-B15`)** unified the board's topology and resolved **Bottlenecks 2, 3, and 4** simultaneously. Let's visualize how **Toroidal Circular Padding (`ToroidalPad2D`)** and the **Inference-Time Tactical Safety Filter** work under the hood before examining the 10-cycle telemetry:
 
-```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│     TOROIDAL TOPOLOGY — Seamless edge connections on T²
-
 ![Toroidal Wrap-Around — Seamless edge connections on T²](./assets/diagrams/toroidal-wrap.svg)
 
-WHY ZERO-PADDING BLINDED TF-B14 AT THE BORDER vs. TOROIDALPAD2D (TF-B15) │
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  WHY ZERO-PADDING BLINDED TF-B14 AT THE BORDER vs. TOROIDALPAD2D (TF-B15)    │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
 │  Suppose an enclosure cavity straddles the top/bottom seam (y = 0 ↔ y = 9): │

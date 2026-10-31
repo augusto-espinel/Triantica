@@ -54,7 +54,8 @@ body{font-family:var(--font-body);background:var(--bg-void);color:var(--text-bod
 .sidebar-overlay.visible{display:block}
 .content{margin-left:var(--sidebar-w);min-height:100vh;display:flex;flex-direction:column}
 @media(max-width:900px){.content{margin-left:0}}
-.article{max-width:var(--content-max);margin:0 auto;padding:48px 40px 24px;flex:1}
+.article{max-width:var(--content-max);width:100%;min-width:0;margin:0 auto;padding:48px 40px 24px;flex:1;overflow-wrap:break-word}
+.article pre,.article table,.article img,.article svg{max-width:100%}
 @media(max-width:640px){.article{padding:28px 18px 18px}}
 .splash{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;text-align:center;padding:40px}
 .splash-poly{margin-bottom:28px}
@@ -90,10 +91,10 @@ body{font-family:var(--font-body);background:var(--bg-void);color:var(--text-bod
 .article pre.ascii-diagram{border-color:rgba(0,240,255,.2);background:rgba(3,6,12,.8)}
 .article pre.ascii-diagram code{color:var(--cyan-muted);font-size:12px;line-height:1.55}
 .diagram-container{margin:24px 0;text-align:center}
-.diagram-container svg{max-width:100%;height:auto;border-radius:var(--radius);border:1px solid rgba(0,240,255,.15)}
+.diagram-container svg,.diagram-container img{max-width:100%;height:auto;border-radius:var(--radius);border:1px solid rgba(0,240,255,.15);background:var(--bg-surface)}
 .diagram-caption{font-family:var(--font-mono);font-size:11px;color:var(--text-dim);margin-top:10px;letter-spacing:.5px}
 .screenshot-container{margin:28px 0;text-align:center}
-.screenshot-container img{max-width:100%;border-radius:var(--radius);border:1px solid var(--border-dim);box-shadow:0 4px 30px rgba(0,0,0,.5)}
+.screenshot-container img{max-width:100%;max-height:480px;width:auto;height:auto;object-fit:contain;border-radius:var(--radius);border:1px solid var(--border-dim);box-shadow:0 4px 30px rgba(0,0,0,.5)}
 .screenshot-caption{font-family:var(--font-mono);font-size:11px;color:var(--text-dim);margin-top:10px;letter-spacing:.5px}
 .katex-display{margin:18px 0 !important;overflow-x:auto;overflow-y:hidden;padding:4px 0}
 .katex{color:var(--text-primary) !important;font-size:1.05em !important}

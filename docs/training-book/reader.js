@@ -74,11 +74,11 @@
     renderer.image = function (token) {
       const href = token.href || '';
       const text = token.text || '';
-      if (href.includes('assets/') || /\.(png|jpg|jpeg|webp|gif)$/i.test(href)) {
-        return `<div class="screenshot-container"><img src="${href}" alt="${escAttr(text)}" loading="lazy"><div class="screenshot-caption">${escHtml(text)}</div></div>`;
-      }
       if (/\.svg$/i.test(href)) {
         return `<div class="diagram-container"><img src="${href}" alt="${escAttr(text)}" loading="lazy"><div class="diagram-caption">${escHtml(text)}</div></div>`;
+      }
+      if (href.includes('assets/') || /\.(png|jpg|jpeg|webp|gif)$/i.test(href)) {
+        return `<div class="screenshot-container"><img src="${href}" alt="${escAttr(text)}" loading="lazy"><div class="screenshot-caption">${escHtml(text)}</div></div>`;
       }
       return origImage(token);
     };
@@ -98,13 +98,16 @@
       return origCode(token);
     };
 
-    // Headings → add IDs for TOC
+    // Headings → strip {#custom-id} and add IDs for TOC
     const origHeading = renderer.heading.bind(renderer);
     renderer.heading = function (token) {
-      const text = token.text || '';
+      const rawText = token.text || '';
+      const match = rawText.match(/\s*\{#([^}]+)\}\s*$/);
+      const cleanText = rawText.replace(/\s*\{#[^}]+\}\s*$/, '').trim();
       const depth = token.depth || 1;
-      const id = slugify(text);
-      return `<h${depth} id="${id}">${text}</h${depth}>`;
+      const id = match ? match[1] : slugify(cleanText);
+      const htmlContent = (this.parser && token.tokens) ? this.parser.parseInline(token.tokens).replace(/\s*\{#[^}]+\}\s*$/, '').trim() : cleanText;
+      return `<h${depth} id="${id}">${htmlContent}</h${depth}>`;
     };
 
     marked.setOptions({
@@ -518,6 +521,20 @@
     // Close sidebar on nav click (mobile)
     $navTree.addEventListener('click', e => {
       if (e.target.closest('.nav-item')) closeSidebar();
+    });
+
+    // Intercept in-page anchor clicks (#section-id) so they scroll smoothly instead of triggering hashchange
+    document.addEventListener('click', e => {
+      const a = e.target.closest('a[href^="#"]');
+      if (!a) return;
+      const href = a.getAttribute('href');
+      if (!href || href.startsWith('#/')) return; // let chapter navigation proceed
+      e.preventDefault();
+      const targetId = decodeURIComponent(href.slice(1));
+      const target = document.getElementById(targetId);
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
     });
   }
 
