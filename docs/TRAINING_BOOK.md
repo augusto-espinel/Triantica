@@ -3381,8 +3381,8 @@ To make the $T^2$ topology intuitive for human players while preserving the math
 │                 STRICT ENGINE / VIEW-PROJECTION SEPARATION                   │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
-│   CORE ENGINE & AI LAYER (`GridManager.js`, `ConvNetwork.js`, `MCTS.cjs`)    │
-│   ───────────────────────────────────────────────────────────────────────    │
+│   CORE ENGINE & AI LAYER (`GridManager.js`, `ConvNetwork.cjs`, `MCTS.cjs`)   │
+│   ────────────────────────────────────────────────────────────────────────   │
 │   • Canonical discrete `[10 × 10]` cell coordinates (`x, y ∈ {0..9}`)        │
 │   • Phase 2 (`v1.0.0-2d`): Planar corner placement + Toroidal flood-fill     │
 │   • Phase 3 (`TF-B15`): Full $T^2$ modulo vertex & edge adjacency (100       │
@@ -3408,8 +3408,8 @@ To make the $T^2$ topology intuitive for human players while preserving the math
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Continuous Learning from Human Play (`HumanGameLogger`)
-With `TF-B15` deployed to production (`trainedAI_network.json`) across **Easy**, **Medium** (`99.0%` Raw 1-ply ConvNet), and **Hard** (`100.0%` ConvNet + Tactical Safety Filter), the browser and server runtimes include `HumanGameLogger` (`/api/human-games`). Every completed human match records canonical 18-channel states, chosen actions, enclosure claims, and final outcomes—enabling future human-in-the-loop replay mixing without altering the core self-play pipeline.
+### Continuous Learning from Human Play (Human Match Telemetry Logger, `HumanGameLogger.js`)
+With `TF-B15` deployed to production (`trainedAI_network.json`) across **Easy**, **Medium** (`99.0%` Raw 1-ply ConvNet), and **Hard** (`100.0%` ConvNet + Tactical Safety Filter), the browser and server runtimes include a **human match telemetry logger** (`src/data/HumanGameLogger.js`, persisted via `/api/human-games`). Every completed human match records canonical 18-channel states, chosen actions, enclosure claims, and final outcomes—enabling future human-in-the-loop replay mixing without altering the core self-play pipeline.
 
 ---
 
