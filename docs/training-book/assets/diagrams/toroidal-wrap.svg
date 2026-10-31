@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 560" font-family="'Share Tech Mono', 'Courier New', monospace">
+  <defs>
+    <marker id="aC" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#00F0FF"/>
+    </marker>
+    <marker id="aR" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#FF4D6D"/>
+    </marker>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect width="800" height="560" fill="#03060C" rx="8"/>
+  <rect x="1" y="1" width="798" height="558" fill="none" stroke="#0D4054" rx="8"/>
+
+  <!-- Title -->
+  <text x="400" y="36" text-anchor="middle" fill="#00F0FF" font-size="15" font-weight="bold" filter="url(#glow)">TOROIDAL WRAP-AROUND — 10×10 T² Topology</text>
+  <text x="400" y="54" text-anchor="middle" fill="#5CE1E6" font-size="10">Edges connect seamlessly: (9,y)→(0,y) and (x,9)→(x,0)</text>
+
+  <!-- ══ LEFT: Flat Grid with Wrap Indicators ══ -->
+  <text x="200" y="80" text-anchor="middle" fill="#FFB800" font-size="12" font-weight="bold">2D Viewport (Shift+Drag to Pan)</text>
+
+  <!-- Grid -->
+  <g stroke="#0D4054" stroke-width="0.5" fill="none">
+    <!-- Vertical lines -->
+    <line x1="80" y1="100" x2="80" y2="440"/><line x1="120" y1="100" x2="120" y2="440"/>
+    <line x1="160" y1="100" x2="160" y2="440"/><line x1="200" y1="100" x2="200" y2="440"/>
+    <line x1="240" y1="100" x2="240" y2="440"/><line x1="280" y1="100" x2="280" y2="440"/>
+    <line x1="320" y1="100" x2="320" y2="440"/>
+    <!-- Horizontal lines -->
+    <line x1="80" y1="100" x2="320" y2="100"/><line x1="80" y1="140" x2="320" y2="140"/>
+    <line x1="80" y1="180" x2="320" y2="180"/><line x1="80" y1="220" x2="320" y2="220"/>
+    <line x1="80" y1="260" x2="320" y2="260"/><line x1="80" y1="300" x2="320" y2="300"/>
+    <line x1="80" y1="340" x2="320" y2="340"/><line x1="80" y1="380" x2="320" y2="380"/>
+    <line x1="80" y1="420" x2="320" y2="420"/>
+  </g>
+
+  <!-- Border (thicker, wrap seam) -->
+  <rect x="80" y="100" width="240" height="340" fill="none" stroke="#00F0FF" stroke-width="1.5" stroke-opacity="0.5"/>
+
+  <!-- Wrap arrows horizontal (top and bottom) -->
+  <path d="M70 270 L55 270" fill="none" stroke="#FF4D6D" stroke-width="2" marker-end="url(#aR)"/>
+  <path d="M330 270 L345 270" fill="none" stroke="#FF4D6D" stroke-width="2" marker-end="url(#aR)"/>
+  <text x="50" y="290" fill="#FF4D6D" font-size="9" text-anchor="middle">wrap</text>
+  <text x="350" y="290" fill="#FF4D6D" font-size="9" text-anchor="middle">wrap</text>
+
+  <!-- Wrap arrows vertical (left and right) -->
+  <path d="M200 90 L200 75" fill="none" stroke="#4D94FF" stroke-width="2" marker-end="url(#aC)"/>
+  <path d="M200 450 L200 465" fill="none" stroke="#4D94FF" stroke-width="2" marker-end="url(#aC)"/>
+  <text x="200" y="70" fill="#4D94FF" font-size="9" text-anchor="middle">wrap</text>
+  <text x="200" y="478" fill="#4D94FF" font-size="9" text-anchor="middle">wrap</text>
+
+  <!-- Cluster near right edge (wrapping) -->
+  <g fill="#FF4D6D" fill-opacity="0.6" stroke="#FF4D6D" stroke-width="1">
+    <polygon points="295,135 315,135 315,155 295,155"/><!-- rot 0 at (8,1) -->
+    <polygon points="335,135 315,135 315,155 335,155"/><!-- rot 2 at (9,1) wrapping visual -->
+  </g>
+  <g fill="#4D94FF" fill-opacity="0.6" stroke="#4D94FF" stroke-width="1">
+    <polygon points="80,395 100,395 100,415 80,415"/><!-- rot 3 at (0,8) wrapping from bottom -->
+  </g>
+
+  <!-- Ghost ring annotation -->
+  <rect x="55" y="435" width="290" height="30" rx="4" fill="rgba(0,240,255,0.04)" stroke="#0D4054" stroke-dasharray="4 3"/>
+  <text x="200" y="454" text-anchor="middle" fill="#5CE1E6" font-size="9">Ghost ring renders wrap-adjacent triangles</text>
+
+  <!-- ══ RIGHT: Torus Parametric Mapping ══ -->
+  <text x="580" y="80" text-anchor="middle" fill="#FFB800" font-size="12" font-weight="bold">3D Ring Torus Mapping</text>
+
+  <!-- Simplified torus illustration -->
+  <ellipse cx="580" cy="240" rx="150" ry="60" fill="none" stroke="#0D4054" stroke-width="1.5"/>
+  <ellipse cx="580" cy="240" rx="90" ry="35" fill="none" stroke="#0D4054" stroke-width="1" stroke-dasharray="4 3"/>
+  <!-- Outer surface -->
+  <path d="M430 240 Q430 140 580 120 Q730 140 730 240" fill="none" stroke="#00F0FF" stroke-width="1.5" stroke-opacity="0.5"/>
+  <path d="M730 240 Q730 340 580 360 Q430 340 430 240" fill="none" stroke="#00F0FF" stroke-width="1.5" stroke-opacity="0.5"/>
+  <!-- Inner surface -->
+  <path d="M490 240 Q490 200 580 185 Q670 200 670 240" fill="none" stroke="#4D94FF" stroke-width="1.5" stroke-opacity="0.5"/>
+  <path d="M670 240 Q670 280 580 295 Q490 280 490 240" fill="none" stroke="#4D94FF" stroke-width="1.5" stroke-opacity="0.5"/>
+
+  <!-- Point on torus -->
+  <circle cx="620" cy="195" r="4" fill="#FF4D6D" filter="url(#glow)"/>
+  <text x="640" y="188" fill="#FF4D6D" font-size="9">(x,y) → (θ,φ)</text>
+
+  <!-- Coordinate labels -->
+  <text x="750" y="244" fill="#5CE1E6" font-size="9">θ (x-axis)</text>
+  <text x="590" y="115" fill="#4D94FF" font-size="9">φ (y-axis)</text>
+
+  <!-- Parametric equations -->
+  <rect x="440" y="370" width="280" height="80" rx="6" fill="#071120" stroke="#0D4054"/>
+  <text x="580" y="392" text-anchor="middle" fill="#00F0FF" font-size="10" font-weight="bold">Parametric Surface</text>
+  <text x="580" y="410" text-anchor="middle" fill="#B8D4EA" font-size="9">θ = 2π·x/10,  φ = 2π·y/10</text>
+  <text x="580" y="428" text-anchor="middle" fill="#B8D4EA" font-size="9">X = (R + r·cosφ)·cosθ</text>
+  <text x="580" y="442" text-anchor="middle" fill="#4D94FF" font-size="9">R=2.5, r=1.0</text>
+
+  <!-- ══ BOTTOM: ToroidalPad2D ══ -->
+  <rect x="60" y="490" width="680" height="55" rx="6" fill="#071120" stroke="#00FF88" stroke-width="1"/>
+  <text x="400" y="512" text-anchor="middle" fill="#00FF88" font-size="11" font-weight="bold">ToroidalPad2D(1) — Circular Padding for Conv2D</text>
+  <text x="400" y="530" text-anchor="middle" fill="#B8D4EA" font-size="9">Top row padded from row 9, Bottom from row 0, Left from col 9, Right from col 0 → O(1) blunder rate → 100% equivariance</text>
+</svg>

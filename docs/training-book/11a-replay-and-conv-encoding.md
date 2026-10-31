@@ -90,6 +90,8 @@ This chapter walks through the step-by-step architectural roadmap that took Tria
 
 **Implemented Phase 2–6 Architecture (`ConvNetwork.cjs`):** `10×10×18 one-hot input → [ToroidalPad2D + 3×3 Conv2D + BatchNorm + ReLU] → Policy head + Value head`
 
+![2-Head ConvNet Architecture — Triantica Champion (TF-B15)](./assets/diagrams/convnet-architecture.svg)
+
 #### Step 2A: Canonical 1-to-1 Slot Encoding
 
 **Key principle:** Triantica is Markovian — only the current board state matters, not the order moves were played. Each possible placement is a discrete binary fact: present or absent. Empty slots deserve first-class representation, not implicit absence.

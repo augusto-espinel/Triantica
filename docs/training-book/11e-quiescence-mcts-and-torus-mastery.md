@@ -210,7 +210,11 @@ Following the official release of the 2D baseline (`v1.0.0-2d`), **Phase 3 (`TF-
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│     WHY ZERO-PADDING BLINDED TF-B14 AT THE BORDER vs. TOROIDALPAD2D (TF-B15) │
+│     TOROIDAL TOPOLOGY — Seamless edge connections on T²
+
+![Toroidal Wrap-Around — Seamless edge connections on T²](./assets/diagrams/toroidal-wrap.svg)
+
+WHY ZERO-PADDING BLINDED TF-B14 AT THE BORDER vs. TOROIDALPAD2D (TF-B15) │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
 │  Suppose an enclosure cavity straddles the top/bottom seam (y = 0 ↔ y = 9): │
@@ -292,6 +296,8 @@ Warm-started from `TF-B14_best_network.json`, **`TF-B15`** ran 10 cycles of 100%
 | **8** | `0.000106` | `25,974 / 45K` (`12,972`) | `3.699 → 3.010` | `53 / 47 / 0` | **100.0%** (`177.5 – 2.6`) | **`97.0%`** (`98% / 96%`) | `155.5 – 28.6` (`+126.9`) | **🛡️ `100.0%`** (`173.1 – 16.0`) | `4.41 / 1.89` |
 | **9** | `0.000087` | `38,862 / 45K` (`12,888`) | `3.679 → 3.073` | `45 / 53 / 2` | **100.0%** (`178.4 – 2.4`) | **`97.0%`** (`98% / 96%`) | **`159.8 – 24.3` (`+135.5`)** | **🛡️ `100.0%`** (`173.5 – 14.9`) | `4.66 / 1.89` |
 | **10** | `0.000080` | **`45,000 / 45K`** (`12,859`) | `3.754 → 3.106` | `59 / 41 / 0` | **100.0%** (`178.0 – 2.4`) | **🏆 `99.0%`** (`100% / 98%`) | `154.6 – 28.2` (`+126.4`) | **🛡️ `100.0%`** (`173.0 – 15.7`) | `4.18 / 1.88` |
+
+![TF-B15 Dashboard — Telemetry for the 100% Champion Run](./assets/triantica-dashboard-tf-b15.png)
 
 **Key Takeaways from `TF-B15` (Official Phase 3 Toroidal Champion):**
 1. **Toroidal Circular Padding (`ToroidalPad2D`) Eliminated Border Blind Spots (`95.9%` Avg Raw Policy vs `80.1%` in `TF-B14`):**

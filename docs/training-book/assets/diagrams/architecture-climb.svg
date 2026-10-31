@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 340" font-family="'Share Tech Mono', 'Courier New', monospace">
+  <defs>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <linearGradient id="progressG" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#FF4D6D"/>
+      <stop offset="25%" stop-color="#FFB800"/>
+      <stop offset="50%" stop-color="#4D94FF"/>
+      <stop offset="75%" stop-color="#00F0FF"/>
+      <stop offset="100%" stop-color="#00FF88"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="800" height="340" fill="#03060C" rx="8"/>
+  <rect x="1" y="1" width="798" height="338" fill="none" stroke="#0D4054" rx="8"/>
+
+  <text x="400" y="30" text-anchor="middle" fill="#00F0FF" font-size="14" font-weight="bold" filter="url(#glow)">THE 5-STAGE ARCHITECTURE CLIMB — Breaking the Heuristic Wall</text>
+
+  <!-- Progress bar -->
+  <rect x="60" y="50" width="680" height="8" rx="4" fill="#071120"/>
+  <rect x="60" y="50" width="680" height="8" rx="4" fill="url(#progressG)" opacity="0.8"/>
+  <text x="60" y="72" fill="#FF4D6D" font-size="10">0%</text>
+  <text x="400" y="72" text-anchor="middle" fill="#4D94FF" font-size="10">50%</text>
+  <text x="740" y="72" fill="#00FF88" font-size="10">100%</text>
+
+  <!-- Stage 1 -->
+  <rect x="40" y="90" width="130" height="100" rx="6" fill="#071120" stroke="#FF4D6D" stroke-width="1.5"/>
+  <text x="105" y="112" text-anchor="middle" fill="#FF4D6D" font-size="11" font-weight="bold">STAGE 1</text>
+  <text x="105" y="130" text-anchor="middle" fill="#B8D4EA" font-size="9">Dense MLP</text>
+  <text x="105" y="146" text-anchor="middle" fill="#4A6A8A" font-size="8">401→200→400</text>
+  <text x="105" y="164" text-anchor="middle" fill="#FF4D6D" font-size="10" font-weight="bold">0% vs H</text>
+  <text x="105" y="180" text-anchor="middle" fill="#4A6A8A" font-size="8">exp1–exp22</text>
+
+  <!-- Arrow 1→2 -->
+  <path d="M170 140 L195 140" fill="none" stroke="#5CE1E6" stroke-width="1.5"/>
+
+  <!-- Stage 2 -->
+  <rect x="195" y="90" width="130" height="100" rx="6" fill="#071120" stroke="#FFB800" stroke-width="1.5"/>
+  <text x="260" y="112" text-anchor="middle" fill="#FFB800" font-size="11" font-weight="bold">STAGE 2</text>
+  <text x="260" y="130" text-anchor="middle" fill="#B8D4EA" font-size="9">+ConvNet</text>
+  <text x="260" y="146" text-anchor="middle" fill="#4A6A8A" font-size="8">10×10×18 input</text>
+  <text x="260" y="164" text-anchor="middle" fill="#FFB800" font-size="10" font-weight="bold">0% vs H</text>
+  <text x="260" y="180" text-anchor="middle" fill="#4A6A8A" font-size="8">TF-B1→TF-B4</text>
+
+  <!-- Arrow 2→3 -->
+  <path d="M325 140 L350 140" fill="none" stroke="#5CE1E6" stroke-width="1.5"/>
+
+  <!-- Stage 3 -->
+  <rect x="350" y="90" width="130" height="100" rx="6" fill="#071120" stroke="#4D94FF" stroke-width="1.5"/>
+  <text x="415" y="112" text-anchor="middle" fill="#4D94FF" font-size="11" font-weight="bold">STAGE 3</text>
+  <text x="415" y="130" text-anchor="middle" fill="#B8D4EA" font-size="9">+Value Head</text>
+  <text x="415" y="146" text-anchor="middle" fill="#4A6A8A" font-size="8">Actor-Critic</text>
+  <text x="415" y="164" text-anchor="middle" fill="#4D94FF" font-size="10" font-weight="bold">0% vs H</text>
+  <text x="415" y="180" text-anchor="middle" fill="#4A6A8A" font-size="8">TF-B5→TF-B11</text>
+
+  <!-- Arrow 3→4 -->
+  <path d="M480 140 L505 140" fill="none" stroke="#5CE1E6" stroke-width="1.5"/>
+
+  <!-- Stage 4 -->
+  <rect x="505" y="90" width="130" height="100" rx="6" fill="#071120" stroke="#00F0FF" stroke-width="1.5"/>
+  <text x="570" y="112" text-anchor="middle" fill="#00F0FF" font-size="11" font-weight="bold">STAGE 4</text>
+  <text x="570" y="130" text-anchor="middle" fill="#B8D4EA" font-size="9">+Quiescence</text>
+  <text x="570" y="146" text-anchor="middle" fill="#4A6A8A" font-size="8">Cascade MCTS</text>
+  <text x="570" y="164" text-anchor="middle" fill="#00F0FF" font-size="10" font-weight="bold">63%→90%</text>
+  <text x="570" y="180" text-anchor="middle" fill="#4A6A8A" font-size="8">TF-B12→TF-B14</text>
+
+  <!-- Arrow 4→5 -->
+  <path d="M635 140 L660 140" fill="none" stroke="#5CE1E6" stroke-width="1.5"/>
+
+  <!-- Stage 5 -->
+  <rect x="660" y="85" width="110" height="110" rx="6" fill="#071120" stroke="#00FF88" stroke-width="2" filter="url(#glow)"/>
+  <text x="715" y="110" text-anchor="middle" fill="#00FF88" font-size="11" font-weight="bold">STAGE 5</text>
+  <text x="715" y="128" text-anchor="middle" fill="#B8D4EA" font-size="9">+T² Torus</text>
+  <text x="715" y="144" text-anchor="middle" fill="#4A6A8A" font-size="8">CircPad+Safety</text>
+  <text x="715" y="164" text-anchor="middle" fill="#00FF88" font-size="13" font-weight="bold">100%</text>
+  <text x="715" y="182" text-anchor="middle" fill="#4A6A8A" font-size="8">TF-B15 ★</text>
+
+  <!-- Key insight at bottom -->
+  <rect x="40" y="210" width="720" height="55" rx="6" fill="#071120" stroke="#0D4054"/>
+  <text x="400" y="232" text-anchor="middle" fill="#FFB800" font-size="11" font-weight="bold">🔑 KEY INSIGHT</text>
+  <text x="400" y="250" text-anchor="middle" fill="#B8D4EA" font-size="9">Stages 1-3 each improved vs Random (37%→52%→87%) but scored 0% vs Heuristic. Only Quiescence MCTS (Stage 4) broke through.</text>
+
+  <!-- Metric comparison -->
+  <rect x="40" y="275" width="720" height="55" rx="6" fill="#071120" stroke="#0D4054"/>
+  <text x="110" y="298" text-anchor="middle" fill="#FF4D6D" font-size="9">Dense: 91%R/0%H</text>
+  <text x="260" y="298" text-anchor="middle" fill="#FFB800" font-size="9">+Conv: 91%R/0%H</text>
+  <text x="400" y="298" text-anchor="middle" fill="#4D94FF" font-size="9">+Value: 87%R/0%H</text>
+  <text x="540" y="298" text-anchor="middle" fill="#00F0FF" font-size="9">+Quies: 100%R/90%H</text>
+  <text x="690" y="298" text-anchor="middle" fill="#00FF88" font-size="9">+T²: 100%R/100%H ★</text>
+  <text x="400" y="318" text-anchor="middle" fill="#4A6A8A" font-size="8">R = vs Random, H = vs Heuristic (with Safety Filter)</text>
+</svg>

@@ -37,6 +37,8 @@ const output = net.run(inputState);
 
 ### Phase 2: TensorFlow.js Migration
 
+![The 5-Stage Architecture Climb — Breaking the Heuristic Wall](./assets/diagrams/architecture-climb.svg)
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                Why TensorFlow.js?                           │

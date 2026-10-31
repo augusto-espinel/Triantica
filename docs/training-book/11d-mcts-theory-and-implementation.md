@@ -18,6 +18,11 @@ Monte Carlo Tree Search combines tree search with neural network evaluation. It'
 
 **The Four Phases of MCTS:**
 
+![PUCT MCTS Search â 4-Step Loop](./assets/diagrams/mcts-search-tree.svg)
+
+<details>
+<summary>ð ASCII Reference (original diagram)</summary>
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                 MCTS Search Loop                             │
@@ -50,6 +55,8 @@ Monte Carlo Tree Search combines tree search with neural network evaluation. It'
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+</details>
 
 **The UCT Formula (Upper Confidence Bound for Trees):**
 

@@ -4,6 +4,8 @@
 
 ## 1. The Game: Why Triantica is Interesting for RL {#1-the-game}
 
+![Triantica Main Menu — d20-inspired game entry screen](./assets/triantica-menu-d20.png)
+
 ### Game Rules in One Minute
 
 ```
@@ -24,6 +26,11 @@
 #### Cell Geometry & The 4 Triangle Rotations
 
 Every square cell `(x, y)` on the $10 \times 10$ board can hold up to **2 right-isosceles triangles**. Because two triangles in the same square cannot overlap, they must share the same diagonal cut (`╱` or `╲`):
+
+![Cell Geometry & 4 Triangle Rotations](./assets/diagrams/cell-geometry-rotations.svg)
+
+<details>
+<summary>📖 ASCII Reference (original box-drawing diagram)</summary>
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -54,6 +61,8 @@ Every square cell `(x, y)` on the $10 \times 10$ board can hold up to **2 right-
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
+</details>
+
 **Visual example of enclosure:**
 
 ```
@@ -75,6 +84,11 @@ When a move encloses $k \ge 1$ empty triangle slots via flood-fill (`claimEnclos
 2. The player earns **bonus turns** according to:
    $$\text{extraTurns} = \left\lfloor \frac{1 + k}{2} \right\rfloor$$
 
+![Enclosure Cascade Snowball Mechanic](./assets/diagrams/enclosure-cascade-snowball.svg)
+
+<details>
+<summary>📖 ASCII Reference (original box-drawing diagram)</summary>
+
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │                 THE ENCLOSURE CASCADE ("SNOWBALL") DYNAMICS                  │
@@ -94,6 +108,8 @@ When a move encloses $k \ge 1$ empty triangle slots via flood-fill (`claimEnclos
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
+</details>
+
 **Strategic & RL Consequence (Second-Mover Counter-Attack Edge):**
 - Even enclosing a **single triangle ($k = 1$)** yields $\lfloor 2/2 \rfloor = \mathbf{1\text{ extra turn}}$, making single-slot enclosures tempo-free ("free moves" that keep the initiative!).
 - Enclosing **$k = 3$ triangles** yields **2 extra turns**, allowing a player to chain multi-step enclosure cascades before the opponent ever gets to move again.
@@ -103,6 +119,12 @@ When a move encloses $k \ge 1$ empty triangle slots via flood-fill (`claimEnclos
 1. Which moves are legal (corner-touch + diagonal compatibility)
 2. Which moves create immediate enclosures and tempo-preserving bonus turns
 3. Which moves build toward future enclosures while **never leaving an unguarded 1-move cavity** for the opponent to chain-cascade!
+
+### The Game in Action
+
+![Triantica 2.5D Gameplay — Red and blue triangles on the toroidal board](./assets/triantica-gameplay-25d.png)
+
+The 2.5D tilted viewport shows both players' triangles in their canonical colors (Red = P1, Blue = P2), with the wrap-around toroidal seam visible at the board edges.
 
 ### Why This Game Exposes RL Challenges
 
@@ -183,6 +205,8 @@ To unlock spatial pattern recognition and eventually break the Heuristic Wall, o
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
+
+![Toroidal Wrap-Around — Seamless edge connections on T²](./assets/diagrams/toroidal-wrap.svg)
 
 ---
 

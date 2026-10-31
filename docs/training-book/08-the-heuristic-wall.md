@@ -6,6 +6,8 @@
 
 ### The Experiment That Changed Everything
 
+![Training Dashboard — Overview of experiment progress and metrics](./assets/triantica-dashboard-overview.png)
+
 After 22 brain.js experiments and 10+ TF.js experiments, a clear pattern emerged:
 
 ```
@@ -120,6 +122,11 @@ Why did both a `2-Head ConvNet` (`TF-B5`) AND `Vanilla AlphaZero MCTS-50` (`TF-B
 
 To turn this diagnosis into a complete engineering solution, we progressed through five distinct architectural stages—each solving the exact bottleneck exposed by the stage before it (see [Chapter 11](./11-deep-dive-convolutions-mcts.md) for full mathematical derivations and tensor traces):
 
+![The 5-Stage Architecture Climb — Breaking the Heuristic Wall](./assets/diagrams/architecture-climb.svg)
+
+<details>
+<summary>📖 ASCII Reference (full stage-by-stage details)</summary>
+
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │     STAGE-BY-STAGE BREAKTHROUGH PROGRESSION (vs Random & vs Heuristic)       │
@@ -158,6 +165,8 @@ To turn this diagnosis into a complete engineering solution, we progressed throu
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
+
+</details>
 
 ---
 

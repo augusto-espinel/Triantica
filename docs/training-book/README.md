@@ -48,6 +48,44 @@ This document is both a training journal and a comprehensive introduction to rei
 
 ---
 
+## Interactive Reader (Zero-Build SPA)
+
+This Training Book ships with a custom **Zero-Build Single-Page Application** reader that provides an enhanced reading experience on both GitHub Pages and local development:
+
+- **Open `index.html`** in any browser — no build step, no Node server required
+- Dynamic Markdown rendering via **Marked.js** with full **KaTeX** math support
+- **SPA hash routing** (`#/ch01`, `#/ch11e`) for deep-linkable chapters
+- **Full-text search** across all 18 chapter files (press `/` to focus)
+- **Reading progress** tracking via `localStorage`
+- **Syntax highlighting** (Highlight.js) for code blocks
+- **Mermaid.js** diagram rendering for flowcharts
+- **Neon Manifold** visual theme (Obsidian Void `#03060C` + Cyber-Glass accents)
+
+### Visual Assets
+
+| Type | Files | Purpose |
+|------|-------|---------|
+| **SVG Diagrams** | `assets/diagrams/*.svg` (7 files) | Vector architecture diagrams, topology visualizations, training loop flows |
+| **Screenshots** | `assets/*.png` (5 files) | In-game captures showing toroidal viewport, dashboard telemetry, gameplay |
+
+All diagrams are **pure SVG** — infinitely scalable, no rasterization artifacts. The original ASCII box-drawing versions are preserved inside collapsible `<details>` sections within each chapter for offline/reference reading.
+
+### Running Locally
+
+```bash
+# Option 1: Open directly
+open docs/training-book/index.html
+
+# Option 2: Python HTTP server (for GitHub Pages parity)
+cd docs/training-book && python3 -m http.server 8080
+# → http://localhost:8080
+
+# Option 3: Deploy to GitHub Pages
+# Push to main branch; the docs/ folder is served automatically
+```
+
+---
+
 *Last updated: 2026-10-31*  
 *Version: 4.1 (Modular Chapter Edition — Phase 1 to Phase 6 Full Torus $T^2$ Mastery)*  
 *Framework: TensorFlow.js (`@tensorflow/tfjs-node`) on Apple Silicon (AMX / Accelerate)*  

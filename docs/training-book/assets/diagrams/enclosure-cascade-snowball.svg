@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 300" width="100%">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&amp;family=Share+Tech+Mono&amp;family=Inter:wght@400;600;700&amp;display=swap');
+      .bg { fill: #03060C; }
+      .panel { fill: #071120; stroke: #0D4054; stroke-width: 1.5; }
+      .panel-cyan { fill: #071526; stroke: #00F0FF; stroke-width: 1.5; }
+      .panel-red { fill: #1A0812; stroke: #FF4D6D; stroke-width: 1.5; }
+      .panel-blue { fill: #06132E; stroke: #0088FF; stroke-width: 1.5; }
+      .panel-teal { fill: #051B1C; stroke: #00FFCC; stroke-width: 1.5; }
+      .panel-gold { fill: #1C1606; stroke: #FFB800; stroke-width: 1.5; }
+      .title { font-family: 'Orbitron', sans-serif; font-weight: 800; fill: #00F0FF; font-size: 16px; letter-spacing: 1.5px; }
+      .subtitle { font-family: 'Share Tech Mono', monospace; fill: #5CE1E6; font-size: 12px; }
+      .h-label { font-family: 'Orbitron', sans-serif; font-weight: 600; fill: #E6F9FF; font-size: 13px; letter-spacing: 0.8px; }
+      .mono { font-family: 'Share Tech Mono', monospace; fill: #E6F9FF; font-size: 12px; }
+      .mono-sm { font-family: 'Share Tech Mono', monospace; fill: #94B8D7; font-size: 11px; }
+      .mono-cyan { font-family: 'Share Tech Mono', monospace; fill: #00F0FF; font-size: 12px; font-weight: bold; }
+      .mono-red { font-family: 'Share Tech Mono', monospace; fill: #FF4D6D; font-size: 12px; font-weight: bold; }
+      .mono-teal { font-family: 'Share Tech Mono', monospace; fill: #00FFCC; font-size: 12px; font-weight: bold; }
+      .mono-gold { font-family: 'Share Tech Mono', monospace; fill: #FFB800; font-size: 12px; font-weight: bold; }
+      .body-txt { font-family: 'Inter', -apple-system, sans-serif; fill: #B8D4EA; font-size: 11.5px; }
+      .grid-line { stroke: #0D4054; stroke-width: 1; }
+      .tri-red { fill: #E6193C; fill-opacity: 0.82; stroke: #FF4D6D; stroke-width: 1.8; stroke-linejoin: round; }
+      .tri-blue { fill: #0066FF; fill-opacity: 0.82; stroke: #00F0FF; stroke-width: 1.8; stroke-linejoin: round; }
+      .tri-teal { fill: #00FFCC; fill-opacity: 0.35; stroke: #00FFCC; stroke-width: 1.8; stroke-dasharray: 4,2; stroke-linejoin: round; }
+      .arrow { stroke: #00F0FF; stroke-width: 2; fill: none; marker-end: url(#arrow-cyan); }
+      .arrow-red { stroke: #FF4D6D; stroke-width: 2; fill: none; marker-end: url(#arrow-red); }
+      .arrow-teal { stroke: #00FFCC; stroke-width: 2; fill: none; marker-end: url(#arrow-teal); }
+      .arrow-gold { stroke: #FFB800; stroke-width: 2; fill: none; marker-end: url(#arrow-gold); }
+    </style>
+    <marker id="arrow-cyan" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#00F0FF"/>
+    </marker>
+    <marker id="arrow-red" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#FF4D6D"/>
+    </marker>
+    <marker id="arrow-teal" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#00FFCC"/>
+    </marker>
+    <marker id="arrow-gold" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#FFB800"/>
+    </marker>
+    <filter id="glow-cyan" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+  <rect class="bg" width="920" height="300" rx="10" stroke="#00F0FF" stroke-width="1.5"/>
+  <text x="26" y="34" class="title">ENCLOSURE CASCADE ("SNOWBALL") &amp; EXTRA-TURN MECHANICS</text>
+  <text x="26" y="54" class="subtitle">Bonus Turns Formula: extraTurns = floor((1 + claimed) / 2) — Why a single 1-move cavity triggers a board sweep</text>
+
+  <!-- Step 1 -->
+  <rect x="24" y="76" width="195" height="150" rx="8" class="panel-red"/>
+  <text x="38" y="100" class="mono-red">1. UNGUARDED CAVITY</text>
+  <text x="38" y="122" class="body-txt">Player 1 makes a passive</text>
+  <text x="38" y="138" class="body-txt">move (claimed = 0) that</text>
+  <text x="38" y="154" class="body-txt">leaves a 3-sided pocket</text>
+  <text x="38" y="170" class="body-txt">open on the board.</text>
+  <text x="38" y="204" class="mono-sm" fill="#FF4D6D">Turn passes to Opponent ►</text>
+
+  <path d="M 220 150 L 252 150" class="arrow-red"/>
+
+  <!-- Step 2 -->
+  <rect x="256" y="76" width="200" height="150" rx="8" class="panel-cyan"/>
+  <text x="270" y="100" class="mono-cyan">2. 1-SLOT CAPTURE (k=1)</text>
+  <text x="270" y="122" class="body-txt">Opponent seals the pocket,</text>
+  <text x="270" y="138" class="body-txt">auto-claiming k = 1 slot.</text>
+  <rect x="270" y="150" width="172" height="32" rx="4" fill="#030B18" stroke="#00F0FF"/>
+  <text x="356" y="170" class="mono-teal" text-anchor="middle">floor((1+1)/2) = +1 Turn!</text>
+  <text x="270" y="204" class="mono-sm" fill="#00FFCC">Tempo-free! Keeps turn ►</text>
+
+  <path d="M 456 150 L 488 150" class="arrow-teal"/>
+
+  <!-- Step 3 -->
+  <rect x="492" y="76" width="200" height="150" rx="8" class="panel-teal"/>
+  <text x="506" y="100" class="mono-teal">3. MULTI-SLOT CHAIN (k=3)</text>
+  <text x="506" y="122" class="body-txt">Using the free turn, opponent</text>
+  <text x="506" y="138" class="body-txt">bridges two walls, enclosing</text>
+  <text x="506" y="154" class="body-txt">k = 3 empty slots at once!</text>
+  <rect x="506" y="164" width="172" height="28" rx="4" fill="#031818" stroke="#00FFCC"/>
+  <text x="592" y="182" class="mono-gold" text-anchor="middle">floor((1+3)/2) = +2 Turns!</text>
+  <text x="506" y="210" class="mono-sm" fill="#FFB800">Snowball accelerates ►</text>
+
+  <path d="M 692 150 L 724 150" class="arrow-gold"/>
+
+  <!-- Step 4 -->
+  <rect x="728" y="76" width="168" height="150" rx="8" class="panel-gold"/>
+  <text x="742" y="100" class="mono-gold">4. BOARD SWEEP</text>
+  <text x="742" y="122" class="body-txt">Cascading captures</text>
+  <text x="742" y="138" class="body-txt">sever P1's territory</text>
+  <text x="742" y="154" class="body-txt">and flood the torus.</text>
+  <text x="812" y="186" class="title" fill="#FFB800" text-anchor="middle">170 vs 4</text>
+  <text x="812" y="206" class="mono-sm" text-anchor="middle">Super-Cluster Win</text>
+
+  <!-- Summary Footer -->
+  <rect x="24" y="240" width="872" height="42" rx="6" class="panel"/>
+  <text x="42" y="266" class="mono">KEY INVARIANT: <tspan fill="#00FFCC">Enclosing moves (claimed &gt; 0) NEVER pass the turn (Risk = 0).</tspan> <tspan fill="#FF4D6D">Non-enclosing moves (claimed = 0) carry 100% of cascade risk.</tspan></text>
+</svg>

@@ -8,6 +8,11 @@
 
 Reinforcement learning is different from supervised learning. There's no labeled dataset — the agent learns by interacting with the environment.
 
+![RL Training Loop — Self-Play → Experience → Learn → Repeat](./assets/diagrams/rl-training-loop.svg)
+
+<details>
+<summary>📖 ASCII Reference (original diagram)</summary>
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    The RL Training Loop                      │
@@ -31,6 +36,8 @@ Reinforcement learning is different from supervised learning. There's no labeled
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+</details>
 
 **In Triantica:**
 - **Agent**: Neural network that outputs move probabilities

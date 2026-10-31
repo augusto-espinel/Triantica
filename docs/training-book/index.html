@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Triantica — A Practical Guide to Reinforcement Learning</title>
+<meta name="description" content="From Zero to RL Practitioner — Learning Through a Real Game AI Project">
+<meta property="og:title" content="Triantica Training Book">
+<meta property="og:description" content="A practical guide to reinforcement learning through a real game AI project — from 0% to 100% vs Heuristic.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;800&family=Share+Tech+Mono&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/atom-one-dark.min.css">
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<link rel="stylesheet" href="./triantica-book.css">
+</head>
+<body>
+
+<!-- ═══ Progress Bar ═══ -->
+<div id="progress-bar" class="progress-bar"><div class="progress-fill"></div></div>
+
+<!-- ═══ Mobile Header ═══ -->
+<header class="mobile-header">
+  <button id="sidebar-toggle" class="btn-icon" aria-label="Toggle navigation">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00F0FF" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <span class="mobile-title">TRIANTICA</span>
+  <button id="search-toggle-mobile" class="btn-icon" aria-label="Search">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00F0FF" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+  </button>
+</header>
+
+<!-- ═══ Sidebar ═══ -->
+<aside id="sidebar" class="sidebar" role="navigation" aria-label="Chapter navigation">
+  <div class="sidebar-header">
+    <div class="logo-mark">
+      <svg width="32" height="32" viewBox="0 0 40 40">
+        <polygon points="20,2 38,38 2,38" fill="none" stroke="#00F0FF" stroke-width="2"/>
+        <polygon points="20,10 32,34 8,34" fill="#E6193C" fill-opacity="0.6" stroke="#FF4D6D" stroke-width="1.5"/>
+        <polygon points="20,22 26,34 14,34" fill="#0066FF" fill-opacity="0.6" stroke="#00F0FF" stroke-width="1.5"/>
+      </svg>
+    </div>
+    <div class="logo-text">
+      <div class="logo-title">TRIANTICA</div>
+      <div class="logo-subtitle">Training Book</div>
+    </div>
+    <button id="sidebar-close" class="btn-icon sidebar-close-btn" aria-label="Close navigation">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5CE1E6" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+  <div class="sidebar-search">
+    <div class="search-input-wrap">
+      <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5CE1E6" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" id="search-input" placeholder="Search chapters…" autocomplete="off" spellcheck="false">
+      <kbd class="search-kbd">/</kbd>
+    </div>
+    <div id="search-results" class="search-results" role="listbox"></div>
+  </div>
+  <nav id="nav-tree" class="nav-tree" aria-label="Table of contents"></nav>
+  <div class="sidebar-footer">
+    <a href="https://github.com/augusto-espinel/Triantica" target="_blank" rel="noopener" class="sidebar-link">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="#5CE1E6"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.44 9.8 8.2 11.39.6.11.82-.26.82-.58v-2.03c-3.34.73-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.09-.75.08-.73.08-.73 1.2.08 1.84 1.24 1.84 1.24 1.07 1.83 2.81 1.3 3.5 1 .11-.78.42-1.3.76-1.6-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.12-.3-.54-1.52.12-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 016.01 0c2.3-1.55 3.3-1.23 3.3-1.23.66 1.66.24 2.88.12 3.18.77.84 1.24 1.91 1.24 3.22 0 4.61-2.81 5.63-5.48 5.92.43.37.81 1.1.81 2.22v3.29c0 .32.21.7.82.58A12.01 12.01 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+      <span>GitHub</span>
+    </a>
+    <span class="sidebar-version">v1.0.0</span>
+  </div>
+</aside>
+<div id="sidebar-overlay" class="sidebar-overlay"></div>
+
+<!-- ═══ Main Content ═══ -->
+<main id="content" class="content" role="main">
+  <div id="splash" class="splash">
+    <div class="splash-poly">
+      <svg width="80" height="80" viewBox="0 0 80 80">
+        <polygon points="40,4 76,76 4,76" fill="none" stroke="#00F0FF" stroke-width="2.5">
+          <animateTransform attributeName="transform" type="rotate" values="0 40 40;360 40 40" dur="12s" repeatCount="indefinite"/>
+        </polygon>
+        <polygon points="40,18 64,66 16,66" fill="#E6193C" fill-opacity="0.5" stroke="#FF4D6D" stroke-width="1.5">
+          <animateTransform attributeName="transform" type="rotate" values="0 40 40;-360 40 40" dur="8s" repeatCount="indefinite"/>
+        </polygon>
+        <polygon points="40,34 52,58 28,58" fill="#0066FF" fill-opacity="0.5" stroke="#00F0FF" stroke-width="1.5">
+          <animateTransform attributeName="transform" type="rotate" values="0 40 40;360 40 40" dur="6s" repeatCount="indefinite"/>
+        </polygon>
+      </svg>
+    </div>
+    <h1 class="splash-title">TRIANTICA</h1>
+    <p class="splash-subtitle">A Practical Guide to Reinforcement Learning</p>
+    <div class="splash-loader"><div class="loader-bar"></div></div>
+  </div>
+  <article id="article" class="article" style="display:none"></article>
+  <nav id="chapter-nav" class="chapter-nav" style="display:none" aria-label="Chapter navigation">
+    <a id="prev-chapter" class="chapter-nav-btn prev" href="">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+      <span id="prev-chapter-title">Previous</span>
+    </a>
+    <a id="toc-link" class="chapter-nav-btn toc" href="#/">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      <span>Index</span>
+    </a>
+    <a id="next-chapter" class="chapter-nav-btn next" href="">
+      <span id="next-chapter-title">Next</span>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+    </a>
+  </nav>
+</main>
+
+<script src="./reader.js"></script>
+</body>
+</html>

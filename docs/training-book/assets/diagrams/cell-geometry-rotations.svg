@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 390" width="100%">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&amp;family=Share+Tech+Mono&amp;family=Inter:wght@400;600;700&amp;display=swap');
+      .bg { fill: #03060C; }
+      .panel { fill: #071120; stroke: #0D4054; stroke-width: 1.5; }
+      .panel-cyan { fill: #071526; stroke: #00F0FF; stroke-width: 1.5; }
+      .panel-red { fill: #1A0812; stroke: #FF4D6D; stroke-width: 1.5; }
+      .panel-blue { fill: #06132E; stroke: #0088FF; stroke-width: 1.5; }
+      .panel-teal { fill: #051B1C; stroke: #00FFCC; stroke-width: 1.5; }
+      .panel-gold { fill: #1C1606; stroke: #FFB800; stroke-width: 1.5; }
+      .title { font-family: 'Orbitron', sans-serif; font-weight: 800; fill: #00F0FF; font-size: 16px; letter-spacing: 1.5px; }
+      .subtitle { font-family: 'Share Tech Mono', monospace; fill: #5CE1E6; font-size: 12px; }
+      .h-label { font-family: 'Orbitron', sans-serif; font-weight: 600; fill: #E6F9FF; font-size: 13px; letter-spacing: 0.8px; }
+      .mono { font-family: 'Share Tech Mono', monospace; fill: #E6F9FF; font-size: 12px; }
+      .mono-sm { font-family: 'Share Tech Mono', monospace; fill: #94B8D7; font-size: 11px; }
+      .mono-cyan { font-family: 'Share Tech Mono', monospace; fill: #00F0FF; font-size: 12px; font-weight: bold; }
+      .mono-red { font-family: 'Share Tech Mono', monospace; fill: #FF4D6D; font-size: 12px; font-weight: bold; }
+      .mono-teal { font-family: 'Share Tech Mono', monospace; fill: #00FFCC; font-size: 12px; font-weight: bold; }
+      .mono-gold { font-family: 'Share Tech Mono', monospace; fill: #FFB800; font-size: 12px; font-weight: bold; }
+      .body-txt { font-family: 'Inter', -apple-system, sans-serif; fill: #B8D4EA; font-size: 11.5px; }
+      .grid-line { stroke: #0D4054; stroke-width: 1; }
+      .tri-red { fill: #E6193C; fill-opacity: 0.82; stroke: #FF4D6D; stroke-width: 1.8; stroke-linejoin: round; }
+      .tri-blue { fill: #0066FF; fill-opacity: 0.82; stroke: #00F0FF; stroke-width: 1.8; stroke-linejoin: round; }
+      .tri-teal { fill: #00FFCC; fill-opacity: 0.35; stroke: #00FFCC; stroke-width: 1.8; stroke-dasharray: 4,2; stroke-linejoin: round; }
+      .arrow { stroke: #00F0FF; stroke-width: 2; fill: none; marker-end: url(#arrow-cyan); }
+      .arrow-red { stroke: #FF4D6D; stroke-width: 2; fill: none; marker-end: url(#arrow-red); }
+      .arrow-teal { stroke: #00FFCC; stroke-width: 2; fill: none; marker-end: url(#arrow-teal); }
+      .arrow-gold { stroke: #FFB800; stroke-width: 2; fill: none; marker-end: url(#arrow-gold); }
+    </style>
+    <marker id="arrow-cyan" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#00F0FF"/>
+    </marker>
+    <marker id="arrow-red" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#FF4D6D"/>
+    </marker>
+    <marker id="arrow-teal" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#00FFCC"/>
+    </marker>
+    <marker id="arrow-gold" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#FFB800"/>
+    </marker>
+    <filter id="glow-cyan" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+  <rect class="bg" width="920" height="390" rx="10" stroke="#00F0FF" stroke-width="1.5"/>
+  <text x="26" y="34" class="title">TRIANTICA CELL GEOMETRY &amp; THE 4 TRIANGLE ROTATIONS</text>
+  <text x="26" y="54" class="subtitle">Each 1×1 cell holds up to 2 right-isosceles triangles sharing either the Slash (╱) or Backslash (╲) diagonal</text>
+
+  <!-- Group 0 Box -->
+  <rect x="24" y="72" width="424" height="225" rx="8" class="panel-cyan"/>
+  <text x="42" y="98" class="h-label" fill="#00F0FF">GROUP 0: SLASH DIAGONAL (╱) — SLOT 0 &amp; 1</text>
+
+  <!-- Rot 0 -->
+  <text x="98" y="124" class="mono-red" text-anchor="middle">Rot 0 (0° Top-Left)</text>
+  <rect x="48" y="135" width="100" height="100" fill="#050B14" stroke="#0D4054" stroke-width="2"/>
+  <line x1="48" y1="235" x2="148" y2="135" stroke="#00F0FF" stroke-dasharray="4,3"/>
+  <polygon points="52,139 143,139 52,230" class="tri-red"/>
+  <text x="98" y="254" class="mono-sm" text-anchor="middle">Slot 0 (Ch 1–4)</text>
+
+  <text x="180" y="190" class="title" text-anchor="middle">+</text>
+
+  <!-- Rot 2 -->
+  <text x="262" y="124" class="mono-cyan" text-anchor="middle">Rot 2 (180° Bot-Right)</text>
+  <rect x="212" y="135" width="100" height="100" fill="#050B14" stroke="#0D4054" stroke-width="2"/>
+  <line x1="212" y1="235" x2="312" y2="135" stroke="#00F0FF" stroke-dasharray="4,3"/>
+  <polygon points="308,140 308,231 217,231" class="tri-blue"/>
+  <text x="262" y="254" class="mono-sm" text-anchor="middle">Slot 1 (Ch 10–13)</text>
+
+  <!-- Combined Group 0 -->
+  <text x="382" y="124" class="mono-teal" text-anchor="middle">Full Cell (╱)</text>
+  <rect x="336" y="135" width="92" height="100" fill="#050B14" stroke="#00F0FF" stroke-width="1.5"/>
+  <polygon points="340,139 423,139 340,230" class="tri-red"/>
+  <polygon points="424,140 424,231 341,231" class="tri-blue"/>
+  <text x="382" y="254" class="mono-sm" text-anchor="middle">Shared Hypotenuse</text>
+  <text x="236" y="282" class="body-txt" text-anchor="middle">Rule: If a cell contains Rot 0, only Rot 2 can be placed alongside it.</text>
+
+  <!-- Group 1 Box -->
+  <rect x="472" y="72" width="424" height="225" rx="8" class="panel-blue"/>
+  <text x="490" y="98" class="h-label" fill="#00F0FF">GROUP 1: BACKSLASH DIAGONAL (╲) — SLOT 0 &amp; 1</text>
+
+  <!-- Rot 1 -->
+  <text x="546" y="124" class="mono-red" text-anchor="middle">Rot 1 (90° Bot-Left)</text>
+  <rect x="496" y="135" width="100" height="100" fill="#050B14" stroke="#0D4054" stroke-width="2"/>
+  <line x1="496" y1="135" x2="596" y2="235" stroke="#00F0FF" stroke-dasharray="4,3"/>
+  <polygon points="500,140 500,231 591,231" class="tri-red"/>
+  <text x="546" y="254" class="mono-sm" text-anchor="middle">Slot 0 (Ch 1–4)</text>
+
+  <text x="628" y="190" class="title" text-anchor="middle">+</text>
+
+  <!-- Rot 3 -->
+  <text x="710" y="124" class="mono-cyan" text-anchor="middle">Rot 3 (270° Top-Right)</text>
+  <rect x="660" y="135" width="100" height="100" fill="#050B14" stroke="#0D4054" stroke-width="2"/>
+  <line x1="660" y1="135" x2="760" y2="235" stroke="#00F0FF" stroke-dasharray="4,3"/>
+  <polygon points="665,139 756,139 756,230" class="tri-blue"/>
+  <text x="710" y="254" class="mono-sm" text-anchor="middle">Slot 1 (Ch 10–13)</text>
+
+  <!-- Combined Group 1 -->
+  <text x="830" y="124" class="mono-teal" text-anchor="middle">Full Cell (╲)</text>
+  <rect x="784" y="135" width="92" height="100" fill="#050B14" stroke="#00F0FF" stroke-width="1.5"/>
+  <polygon points="788,140 788,231 871,231" class="tri-red"/>
+  <polygon points="789,139 872,139 872,230" class="tri-blue"/>
+  <text x="830" y="254" class="mono-sm" text-anchor="middle">Shared Hypotenuse</text>
+  <text x="684" y="282" class="body-txt" text-anchor="middle">Rule: If a cell contains Rot 1, only Rot 3 can be placed alongside it.</text>
+
+  <!-- Bottom Topological Rules Bar -->
+  <rect x="24" y="310" width="872" height="62" rx="8" class="panel-teal"/>
+  <text x="42" y="334" class="mono-teal">TOPOLOGICAL PLACEMENT vs. CLUSTER CONNECTIVITY RULES:</text>
+  <text x="42" y="355" class="body-txt">• <tspan fill="#00F0FF" font-weight="bold">Corner Touch (Legality):</tspan> Any move after Ply 1 must touch ≥1 vertex of an existing triangle (each T² vertex is shared by 12 triangle slots).</text>
+  <text x="485" y="355" class="body-txt">• <tspan fill="#FF4D6D" font-weight="bold">Full Edge Share (Clusters):</tspan> Contiguous clusters &amp; enclosures only propagate across shared full edges (3 edges/triangle).</text>
+</svg>

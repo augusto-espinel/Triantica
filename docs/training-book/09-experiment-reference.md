@@ -2,7 +2,9 @@
 
 ---
 
-## 9. Experiment Reference {#9-experiment-reference}
+## 9. Experiment Reference
+
+![RL Training Loop — Self-Play → Experience → Learn → Repeat](./assets/diagrams/rl-training-loop.svg) {#9-experiment-reference}
 
 ### Complete Results Table
 

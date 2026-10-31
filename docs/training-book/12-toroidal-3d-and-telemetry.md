@@ -4,6 +4,10 @@
 
 ## 12. Toroidal 3D Visualization, Dual-View Projection & Human Telemetry {#12-toroidal-visualization}
 
+![Toroidal Pan — Wrap-around seam visible on the tilted 2.5D viewport](./assets/triantica-toroidal-pan-seam.png)
+
+![Toroidal Wrap-Around — Seamless edge connections on T²](./assets/diagrams/toroidal-wrap.svg)
+
 To make the $T^2$ topology intuitive for human players while preserving the mathematical integrity of the core engine and AI tensor pipeline, Triantica enforces a strict **Engine-View Separation Architecture**:
 
 ```
