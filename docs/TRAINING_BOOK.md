@@ -1289,14 +1289,14 @@ Each cell `[x, y]` is split by one of two diagonals:
 ```
 
 **What Was Wrong:**
-When `GridManager` was extracted to `src/core/GridManager.js` for server training, the boolean negation `!` was accidentally dropped from the overlap check:
+When the core board state & rules engine (`src/core/GridManager.js`) was extracted for server training, the boolean negation `!` was accidentally dropped from the overlap check:
 ```javascript
-// WRONG (in src/core/GridManager.js & game.js:isValidMove):
+// WRONG (in the core rules engine, src/core/GridManager.js & game.js:isValidMove):
 if (newGroup === existingGroup || cell.triangles[0].rotation === rotation) {
   return false; // ❌ Forbids sharing the diagonal; forces 50% physical overlap!
 }
 
-// CORRECT (Consolidated in GridManager.isValidMove & placeTriangle):
+// CORRECT (Consolidated in the core rules engine, GridManager.isValidMove & placeTriangle):
 const existingRot = cell.triangles[0].rotation;
 const existingGroup = this.getDiagonalGroup(existingRot);
 const newGroup = this.getDiagonalGroup(rotation);
@@ -1304,14 +1304,14 @@ if (newGroup !== existingGroup || existingRot === rotation) {
   return false; // ✅ Must share the diagonal and have opposite rotation
 }
 ```
-**Why It Mattered:** Every server training run (`TF-B1` through `TF-B8-V2`) and MCTS search was playing a **mutated game** where two triangles in the same cell had to cross diagonals (overlapping by 50%), while browser `game.js:placeTriangle` enforced the real rule! Furthermore, we consolidated `getAdjacentTriangles()` so two triangles in the same cell only form a contiguous cluster if they share the diagonal edge (`newGroup === existingGroup && t.rotation !== rotation`).
+**Why It Mattered:** Every server training run (`TF-B1` through `TF-B8-V2`) and MCTS search was playing a **mutated game** where two triangles in the same cell had to cross diagonals (overlapping by 50%), while the browser placement routine (`game.js:placeTriangle`) enforced the real rule! Furthermore, we consolidated the neighbor adjacency logic (`getAdjacentTriangles()`) so two triangles in the same cell only form a contiguous cluster if they share the diagonal edge (`newGroup === existingGroup && t.rotation !== rotation`).
 
 #### Bug 7: MCTS Was Completely Blind to Enclosures & Extra Turns
 
 **What Was Wrong:**
-In `src/server/MCTS.cjs`, `MCTSNode.expand()` advanced the board state using raw `placeTriangle()` and unconditionally flipped `currentPlayer`:
+In the Monte Carlo Tree Search engine (`src/server/MCTS.cjs`), the tree node expansion step (`MCTSNode.expand()`) advanced the board state using raw triangle placement (`placeTriangle()`) and unconditionally flipped `currentPlayer`:
 ```javascript
-// WRONG (MCTSNode.expand before fix):
+// WRONG (MCTS tree expansion, MCTSNode.expand, before fix):
 const newGrid = this.grid.clone();
 newGrid.placeTriangle(move.x, move.y, move.rotation, this.player);
 newGrid.currentPlayer = this.player === 1 ? 2 : 1;
@@ -1319,24 +1319,24 @@ newGrid.currentPlayer = this.player === 1 ? 2 : 1;
 // ❌ Never granted extraTurns += Math.floor((1 + claimed) / 2)!
 ```
 **Why It Mattered:** Inside MCTS lookahead, **enclosing territory and earning bonus turns literally did not exist!** MCTS could not see that completing a boundary captures enclosed triangles and grants an immediate extra turn, nor could it see when it left an enclosure combo open for the `HeuristicPlayer`.
-- **The Fix (`grid.executeMove`):** We consolidated move placement, `claimEnclosedTriangles(pl)`, and `extraTurns += Math.floor((1 + claimed) / 2)` into a single method `GridManager.prototype.executeMove(x, y, rotation, player)` and called it everywhere (`MCTSNode.expand`, `train_tfjs.cjs`, `GameSession.js`, and evaluation scripts). Immediately after fixing this, AI cluster sizes jumped by **+60% to +85%** (from ~19 to ~35–40)!
+- **The Fix (Unified Move Execution, `grid.executeMove`):** We consolidated move placement, enclosure claiming (`claimEnclosedTriangles(pl)`), and bonus turn calculation (`extraTurns += Math.floor((1 + claimed) / 2)`) into a single atomic engine transition method (`GridManager.prototype.executeMove(x, y, rotation, player)`) and called it everywhere across tree expansion, training, game sessions, and evaluation (`MCTSNode.expand`, `train_tfjs.cjs`, `GameSession.js`, and evaluation scripts). Immediately after fixing this, AI cluster sizes jumped by **+60% to +85%** (from ~19 to ~35–40)!
 
 #### Bug 8: Canonical 18-Channel Encoding Dropped the 2nd Triangle in Every Full Cell
 
 **What Was Wrong:**
-`getStateCanonical` originally iterated `for (let group = 0; group < 2; group++)` and called `cell.triangles.find(t => grid.getDiagonalGroup(t.rotation) === group)`. Once Bug 6 was fixed, both triangles in a full cell belong to the **same** diagonal group (e.g., rotations `0` and `2` are both Group 0). Thus `.find()` only ever returned the first triangle and left the second 9-channel slot empty—**blinding the ConvNet to 50% of all triangles in completed cells!**
-- **The Fix (`grid.getCanonicalState`):** We indexed the two 9-channel slots by **rotation half** (`Slot 0: rotation < 2` i.e. $\{0, 1\}$, `Slot 1: rotation >= 2` i.e. $\{2, 3\}$). Since a valid cell can hold at most one triangle from $\{0, 1\}$ and at most one from $\{2, 3\}$, this guarantees **zero collisions, 100% visibility of both triangles, and strict move-order invariance**.
+The canonical tensor encoder (`getStateCanonical`) originally iterated `for (let group = 0; group < 2; group++)` and called `cell.triangles.find(t => grid.getDiagonalGroup(t.rotation) === group)`. Once Bug 6 was fixed, both triangles in a full cell belong to the **same** diagonal group (e.g., rotations `0` and `2` are both Group 0). Thus `.find()` only ever returned the first triangle and left the second 9-channel slot empty—**blinding the ConvNet to 50% of all triangles in completed cells!**
+- **The Fix (Canonical State Encoder, `grid.getCanonicalState`):** We indexed the two 9-channel slots by **rotation half** (`Slot 0: rotation < 2` i.e. $\{0, 1\}$, `Slot 1: rotation >= 2` i.e. $\{2, 3\}$). Since a valid cell can hold at most one triangle from $\{0, 1\}$ and at most one from $\{2, 3\}$, this guarantees **zero collisions, 100% visibility of both triangles, and strict move-order invariance**.
 
 #### Bug 9: Replay Buffer Zeroed Out All Historical Value Targets
 
 **What Was Wrong:**
-In `train_tfjs.cjs`, `ReplayBuffer` stored `(input, output, chosenIndex)` but omitted `valueTarget`. During replay training:
+In the self-play training pipeline (`train_tfjs.cjs`), the experience replay module (`ReplayBuffer.cjs`) stored `(input, output, chosenIndex)` but omitted `valueTarget`. During replay training:
 ```javascript
-// WRONG (train_tfjs.cjs before fix):
+// WRONG (in the self-play training pipeline, train_tfjs.cjs, before fix):
 const replayValueTargets = new Array(replayBatchSize).fill(0); // ❌ Forces Value Head to 0!
 ```
 With `replayRatio = 2.0`, **67% of all gradient updates trained the Value Head to predict `0.0` (draw) on every board position**, destroying its ability to evaluate winning vs losing states!
-- **The Fix:** Updated `ReplayBuffer.cjs` to store and sample `valueTarget` (`+1`, `0`, `-1`) alongside state and policy.
+- **The Fix:** Updated the experience replay module (`ReplayBuffer.cjs`) to store and sample `valueTarget` (`+1`, `0`, `-1`) alongside state and policy.
 
 #### Bug 10: Dual-Perspective Gradient Conflict in MCTS Self-Play
 
@@ -1384,10 +1384,10 @@ In a 20-game live verification test immediately after applying Bug 11's fix:
 - Value Head remained unsaturated and calibrated (`+0.2538` on mid-game boards).
 - Win rate vs Random jumped from `35–42%` to **`56.0%`** (`52% as P1`, `60% as P2`) in Cycle 1 alone!
 
-#### Bug 12: Browser Train/Test Distribution Mismatch (`game.js` 90% Heuristic Override)
+#### Bug 12: Browser Train/Test Distribution Mismatch (90% Heuristic Override in the Browser Game Loop (`game.js`))
 
 **What We Saw (2026-10-22 Night Audit):**
-When watching "AI vs AI" in the browser (`game.js`), both AIs appeared to play balanced, highly tactical games with large enclosure cascades—yet when we tested the exact same trained `brain.js` network in the server evaluation harness (`evaluate.cjs`), it lost `0–100` against `HeuristicPlayer`!
+When watching "AI vs AI" in the browser game controller (`game.js`), both AIs appeared to play balanced, highly tactical games with large enclosure cascades—yet when we tested the exact same trained `brain.js` network in the server evaluation harness (`evaluate.cjs`), it lost `0–100` against the deterministic heuristic opponent (`HeuristicPlayer`)!
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -1409,15 +1409,15 @@ When watching "AI vs AI" in the browser (`game.js`), both AIs appeared to play b
 
 - **The Fix (`76cece8` & Phase 6 Consolidation):** Aligned browser `AIPlayer` move selection directly with the pure neural network policy (`100%` network prediction during evaluation/play, with optional 1-ply safety filter toggle). Once the 90% heuristic crutch was removed, the browser immediately revealed the true state of the network—and later allowed us to verify `TF-B15`'s genuine `99%` raw / `100%` +Safety mastery in real time.
 
-#### Bug 13: The `eval_tfjs.cjs` Role-Swap Bug (Why Every Model Looked Locked at `50.0%`)
+#### Bug 13: The Standalone Evaluator Role-Swap Bug (`eval_tfjs.cjs` — Why Every Model Looked Locked at `50.0%`)
 
 **What We Saw (2026-10-28 Audit of `TF-B11` / `TF-B12` Standalone Evals):**
-During training inside `train_tfjs.cjs`, `TF-B12` achieved **`100.0%` vs Random** and **`63.0%` vs Heuristic**. Yet when we ran the standalone CLI evaluator `eval_tfjs.cjs` on the saved checkpoint, it reported **exactly `50.0%` (`50W / 50L`)** across every single model—even when evaluating against `RandomPlayer`!
+During training inside the self-play training pipeline (`train_tfjs.cjs`), `TF-B12` achieved **`100.0%` vs Random** and **`63.0%` vs Heuristic**. Yet when we ran the standalone CLI evaluation harness (`eval_tfjs.cjs`) on the saved checkpoint, it reported **exactly `50.0%` (`50W / 50L`)** across every single model—even when evaluating against `RandomPlayer`!
 
 **Root Cause:**
-In `eval_tfjs.cjs`, the evaluation loop alternated `aiPlayer = (i % 2 === 0) ? 1 : 2` for seat fairness, but instantiated the game session with fixed player objects `(aiPlayerObj, opponentObj)` without swapping their seats when `aiPlayer === 2`:
+In the standalone evaluation harness (`eval_tfjs.cjs`), the evaluation loop alternated `aiPlayer = (i % 2 === 0) ? 1 : 2` for seat fairness, but instantiated the game session with fixed player objects `(aiPlayerObj, opponentObj)` without swapping their seats when `aiPlayer === 2`:
 ```javascript
-// WRONG (in standalone eval_tfjs.cjs before fix):
+// WRONG (in the standalone evaluation harness, eval_tfjs.cjs, before fix):
 const aiPlayer = (i % 2 === 0) ? 1 : 2;
 // ❌ Passed (ai, opponent) in fixed order regardless of aiPlayer!
 // In odd games (aiPlayer === 2), the AI played as P1 while the harness
@@ -1425,7 +1425,7 @@ const aiPlayer = (i % 2 === 0) ? 1 : 2;
 ```
 Because P1/P2 wins were inverted on every odd-numbered game (`50` games normal + `50` games inverted), any deterministic win rate $w$ was averaged with $(1 - w)$:
 $$\text{Reported Win Rate} = \frac{1}{2} w + \frac{1}{2}(1 - w) = \mathbf{50.0\%}$$
-- **The Fix:** Consolidated all evaluation logic (`train_tfjs.cjs`, `eval_tfjs.cjs`, and `scripts/evaluate.cjs`) to bind player seats strictly by `aiPlayerNumber`, enforce **2-ply random opening seeding** (`1` random legal move per player so 100-game evals test 100 distinct board openings rather than 1 repeated deterministic trajectory), and report explicit **`as P1` vs `as P2` win splits**.
+- **The Fix:** Consolidated all evaluation logic across the training pipeline, standalone CLI evaluator, and tournament runner (`train_tfjs.cjs`, `eval_tfjs.cjs`, and `scripts/evaluate.cjs`) to bind player seats strictly by `aiPlayerNumber`, enforce **2-ply random opening seeding** (`1` random legal move per player so 100-game evals test 100 distinct board openings rather than 1 repeated deterministic trajectory), and report explicit **`as P1` vs `as P2` win splits**.
 
 ## 8. The Heuristic Wall: Understanding Architectural Limits & How We Broke It {#8-heuristic-wall}
 
@@ -1808,7 +1808,7 @@ This chapter outlines a prioritized plan to improve AI performance. Each phase b
 - Use `tf.data.Dataset` for efficient streaming
 - Store tensors in GPU memory when possible
 
-**Code Location:** `src/server/ReplayBuffer.js`
+**System Component:** Experience Replay Buffer Module (`src/server/ReplayBuffer.cjs`)
 
 ---
 
@@ -1998,7 +1998,7 @@ Once `Conv3` produces the `[B, 10, 10, 64]` spatial feature representation (wher
 - Batch size 64-128 (larger batches for conv)
 - Enable `tf.webgl.forceHalfFloat()` for faster computation
 
-**Code Location:** `src/server/ConvNetwork.js`
+**System Component:** 2-Head Convolutional Actor-Critic Network (`src/server/ConvNetwork.cjs`)
 
 ---
 
@@ -2322,15 +2322,15 @@ nohup node src/server/train_tfjs.cjs \
 1. **New All-Time TF.js Record vs Random (`87.0%` Peak & Final, `81.8%` 10-Cycle Mean):**
    - Overall 10-cycle average climbed from `69.9%` (`TF-B9`) to **`81.8%`** (`83.0%` as P1, `80.6%` as P2), peaking at **`92.0%` as P1** (Cycle 6) and **`88.0%` as P2** (Cycle 4).
    - Mean contiguous cluster size against Random reached **`79.2` triangles** in Cycle 8 (`76.5` in Cycle 10).
-   - Standalone 1-ply browser network verification (`verify_game_network.cjs` without MCTS) improved from `68%` (`TF-B9`) to **`76%` vs Random (`76W / 24L / 0D`)**.
+   - Standalone 1-ply browser network verification (via the standalone game verification script, `verify_game_network.cjs`, without MCTS) improved from `68%` (`TF-B9`) to **`76%` vs Random (`76W / 24L / 0D`)**.
 2. **Why `0.0%` vs `HeuristicPlayer` Persists Even With Mixed Opponent Training:**
-   - During the 50 Heuristic games per cycle, `HeuristicPlayer` chains 1-triangle enclosures (`Math.floor((1 + claimed) / 2) = 1` extra turn per single claim) from Move 3 onward, taking ~85% of the moves (`~14–16` AI turns per game vs `~70` in self-play).
-   - An inflection-point audit of `TF-B10` revealed that standard `MCTS.cjs` evaluates leaf states purely via the neural Value Head (which rated dangerous hole-creating moves at `+0.4794` vs safe moves at `+0.1060`). Without playing out forced enclosure cascades at the leaves, 50 MCTS simulations actively amplified single-move openings that `HeuristicPlayer` immediately exploited.
+   - During the 50 Heuristic games per cycle, the deterministic heuristic opponent (`HeuristicPlayer`) chains 1-triangle enclosures (`Math.floor((1 + claimed) / 2) = 1` extra turn per single claim) from Move 3 onward, taking ~85% of the moves (`~14–16` AI turns per game vs `~70` in self-play).
+   - An inflection-point audit of `TF-B10` revealed that the standard Monte Carlo Tree Search engine (`MCTS.cjs`) evaluates leaf states purely via the neural Value Head (which rated dangerous hole-creating moves at `+0.4794` vs safe moves at `+0.1060`). Without playing out forced enclosure cascades at the leaves, 50 MCTS simulations actively amplified single-move openings that `HeuristicPlayer` immediately exploited.
 
 #### TF-B12: Quiescence MCTS + Mixed-Opponent Training (`50% Network / 50% Heuristic`)
 
 **Architectural Principle — Let Quiescence Search Teach Both Enclosing Trains and Hole Avoidance:**
-Rather than complicating the neural network with auxiliary risk heads or artificial TD($\lambda$) reward shaping, **TF-B12** keeps the clean 2-head ConvNet (`Policy + Value`) and upgrades the MCTS teacher to **`QuiescenceMCTS`** (`src/server/QuiescenceMCTS.cjs`):
+Rather than complicating the neural network with auxiliary risk heads or artificial TD($\lambda$) reward shaping, **TF-B12** keeps the clean 2-head ConvNet (`Policy + Value`) and upgrades the MCTS teacher to the **Quiescence MCTS Engine** (`src/server/QuiescenceMCTS.cjs`):
 1. **Enclosing Moves Are Never Risky (`claimed > 0` $\implies$ `risk = 0`):** Because any move with `claimed > 0` grants `Math.floor((1 + claimed) / 2) >= 1` extra turns, the active player retains the turn and can immediately chain further enclosures ("enclosing trains") or patch any holes created. `QuiescenceMCTS` gives enclosing moves a positive bonus (`enclosureBonusWeight`) at both the root prior and leaf evaluation.
 2. **Penalize Single-Move Openings (`claimed === 0` with Opponent Enclosures):** Only non-enclosing moves that pass the turn to the opponent can be exploited. If a candidate move leaves enclosure opportunities for the opponent, `QuiescenceMCTS` plays out the deterministic greedy cascade at the leaf (`_runQuiescenceRollout`) and penalizes both the leaf Q-value and the root visit policy target (`_getRiskAdjustedPolicy`).
 3. **Batched Pre-Cascade Expansion + Post-Cascade Evaluation (`searchBatched` / `_runBatch`):** Leaf nodes are always expanded using the policy of `leaf.grid` (pre-cascade), while leaf values are evaluated on the quiescent post-cascade board in a single combined `batchPredict` GPU call.
@@ -2355,7 +2355,7 @@ Building directly on `TF-B12_network.json`, **TF-B13** introduced three targeted
 2. **75% Network / 25% Heuristic Curriculum + Fine-Tuning Schedule (`LR = 0.0005`, `riskPenalty = 0.25`):**
    Shifted the opponent mix to `75%` dual-side `QuiescenceMCTS-50` self-play and `25%` `HeuristicPlayer`, halved the Adam learning rate (`0.001` $\to$ `0.0005`), and raised `riskPenalty` (`0.20` $\to$ `0.25`) to sharpen punishment of single-move holes while stabilizing high-level self-play.
 3. **100-Opening Random 2-Ply Protocol Across All 10 Cycles & Browser Parity:**
-   Evaluated all 10 cycles using the 100-game random-first-2-plies protocol (50 as P1, 50 as P2) and updated `game.js` so browser AI/Heuristic games also play random first 2 plies (`this.totalMovesPlayed < 2`).
+   Evaluated all 10 cycles using the 100-game random-first-2-plies protocol (50 as P1, 50 as P2) and updated the browser game controller (`game.js`) so browser AI/Heuristic games also play random first 2 plies (`this.totalMovesPlayed < 2`).
 
 **Configuration (`TF-B13`):**
 ```bash
@@ -2429,7 +2429,7 @@ nohup node src/server/train_tfjs.cjs \
 - Use `tf.losses.meanSquaredError` with reduction=SUM
 - Value loss weight: 0.5 (tune after initial results)
 
-**Code Location:** `src/server/ActorCriticNetwork.js`
+**System Component:** Actor-Critic Value Head (integrated directly into the 2-Head Convolutional Network, `src/server/ConvNetwork.cjs`)
 
 ---
 
@@ -2485,7 +2485,7 @@ nohup node src/server/train_tfjs.cjs \
 - Use `training: true` in BatchNorm during training
 - Lower learning rate (0.001 → 0.0005) for stability
 
-**Code Location:** `src/server/ResidualBlock.js`
+**System Component:** Batch-Normalized Convolutional Trunk (integrated directly into the 2-Head Convolutional Network, `src/server/ConvNetwork.cjs`)
 
 ---
 
@@ -2827,15 +2827,15 @@ Based on AlphaGo Zero results and our current baseline:
 - Use Web Workers for parallel simulations
 - Virtual loss for parallel MCTS (add −1 to Q during search)
 
-**Code Location:** `src/server/MCTS.js`
+**System Component:** Monte Carlo Tree Search Engine (`src/server/MCTS.cjs`, extended by the Quiescence MCTS Engine, `src/server/QuiescenceMCTS.cjs`)
 
 ---
 
 #### MCTS Implementation Details
 
-**File Structure:**
+**Module Structure (`src/server/MCTS.cjs`):**
 ```
-src/server/MCTS.js
+MCTS Engine (src/server/MCTS.cjs)
 ├── class MCTSNode {
 │   ├── constructor(grid, move, parent, prior)
 │   ├── select(c = 1.0)           // UCT selection
@@ -2983,10 +2983,10 @@ This prevents the AI from playing the same opening every game.
 
 ### Phase 5.5: Quiescence MCTS — Why It Improves Over Simple MCTS
 
-**Status:** ✅ Completed (`src/server/QuiescenceMCTS.cjs`) — **Broke the Heuristic Wall in `TF-B12` (`63%` vs Heuristic), Reached `89%` Peak in `TF-B13`, and Achieved `90.0%` Peak (`88%` P1 / `92%` P2) & `80.1%` 10-Cycle Avg vs Heuristic in `TF-B14` (`100%` vs Random across all 30 cycles)**
+**Status:** ✅ Completed (Quiescence MCTS Engine, `src/server/QuiescenceMCTS.cjs`) — **Broke the Heuristic Wall in `TF-B12` (`63%` vs Heuristic), Reached `89%` Peak in `TF-B13`, and Achieved `90.0%` Peak (`88%` P1 / `92%` P2) & `80.1%` 10-Cycle Avg vs Heuristic in `TF-B14` (`100%` vs Random across all 30 cycles)**
 
 #### 1. The Horizon Effect & Why Simple MCTS Fails Against Deterministic Cascades
-In `TF-B10` (Simple MCTS-50 + 50% Heuristic opponents), the AI reached a record **87% vs Random**, yet remained at **0% vs `HeuristicPlayer`** (averaging only ~14 turns to Heuristic's ~96 turns per game). An inflection-point audit of `TF-B10` exposed two structural blind spots in simple MCTS (`MCTS.cjs`):
+In `TF-B10` (Simple MCTS-50 + 50% Heuristic opponents), the AI reached a record **87% vs Random**, yet remained at **0% vs `HeuristicPlayer`** (averaging only ~14 turns to Heuristic's ~96 turns per game). An inflection-point audit of `TF-B10` exposed two structural blind spots in the standard Monte Carlo Tree Search engine (`MCTS.cjs`):
 
 1. **The Horizon Effect at Unquiet Leaves:**
    Simple MCTS expands a leaf node $s_L$ after a single candidate move and immediately queries the neural Value Head $V_\theta(s_L)$. If $s_L$ is a **"noisy" (tactically unstable) position**—specifically, a single move (`claimed = 0`) that passes the turn to the opponent while leaving a 3-sided enclosure hole—`HeuristicPlayer` will deterministically claim that enclosure with probability $P(\text{capture}) = 1.0$, earn an extra turn via $\lfloor (1 + \text{claimed})/2 \rfloor$, and chain a 5–10 move capture cascade.
@@ -3025,7 +3025,7 @@ $$\text{extraTurns} = \left\lfloor \frac{1 + \text{claimed}}{2} \right\rfloor$$
   Only when `claimed === 0` (and `extraTurns === 0`) does the turn pass to the opponent. If that single move leaves enclosure opportunities for the opponent, the opponent can immediately exploit them and snowball extra turns.
 
 #### 3. Four Mechanisms That Make `QuiescenceMCTS` a Superior Teacher
-Recall that during evaluation (`getAIMove`) and browser play (`AIPlayer.js`), the AI uses a **single forward pass of the Policy Head** (no MCTS at test time). MCTS is the **training teacher** that generates target distributions $\pi_{\text{MCTS}}$ and value targets for the 2-head ConvNet. `QuiescenceMCTS` directly upgrades the teacher in four ways without needing a 3rd network head or artificial TD($\lambda$) reward shaping:
+Recall that during evaluation (`getAIMove`) and browser/mobile play (via the AI player controller, `AIPlayer.js`), the AI uses a **single forward pass of the Policy Head** (no MCTS at test time). MCTS is the **training teacher** that generates target distributions $\pi_{\text{MCTS}}$ and value targets for the 2-head ConvNet. The Quiescence MCTS engine (`QuiescenceMCTS.cjs`) directly upgrades the teacher in four ways without needing a 3rd network head or artificial TD($\lambda$) reward shaping:
 
 1. **Root Prior Shaping (`_expandRootWithRisk`):**
    At the root node, every legal child move records `child.claimed` and `child.enclosureRisk`.
@@ -3063,8 +3063,8 @@ Warm-started from `TF-B10_network.json`, `TF-B12` ran 10 cycles (100 games/cycle
 During `TF-B12`, we discovered a critical flaw in how `Eval vs Heuristic` had been measured since `TF-B1`:
 - Because both `getAIMove(..., exploration=0)` ( greedy argmax ) and `new HeuristicPlayer(..., { explorationFactor: 0 })` (with deterministic cell-order tie-breaking in `HeuristicPlayer.getMove`) are **100% deterministic**, running 100 evaluation games from an empty board was actually replaying **only 2 unique game trajectories** (50 identical copies of 1 game with AI as P1, and 50 identical copies of 1 game with AI as P2).
 - Consequently, `Eval vs Heuristic` could only ever output `0%`, `50%`, or `100%`! For example, in Cycle 9, the network lost its 2 canonical trajectories (`0%` deterministic), even though its raw 1-ply policy was actually winning **62.0% of games (`68%` as P1, `56%` as P2)** across diverse openings!
-- **Protocol Upgrade (Cycle 8 Onwards & Permanent Default in `train_tfjs.cjs`):**
-  Starting at Cycle 8 of `TF-B12` (and now permanently baked into `src/server/train_tfjs.cjs` and `scripts/eval_random_2ply.cjs`), `Eval vs Heuristic` plays **random moves for the first 2 plies (`m < 2`, i.e., 1 random opening triangle per player)** before switching to `exploration = 0` greedy policy vs deterministic `HeuristicPlayer`. This tests the trained network across **100 genuinely distinct opening board configurations** while keeping all mid-game and endgame play strictly deterministic.
+- **Protocol Upgrade (Cycle 8 Onwards & Permanent Default in the Self-Play Training Pipeline, `train_tfjs.cjs`):**
+  Starting at Cycle 8 of `TF-B12` (and now permanently baked into the self-play training pipeline, `src/server/train_tfjs.cjs`, and the 2-ply evaluation harness, `scripts/eval_random_2ply.cjs`), `Eval vs Heuristic` plays **random moves for the first 2 plies (`m < 2`, i.e., 1 random opening triangle per player)** before switching to `exploration = 0` greedy policy vs deterministic `HeuristicPlayer`. This tests the trained network across **100 genuinely distinct opening board configurations** while keeping all mid-game and endgame play strictly deterministic.
 - As validation, we also ran the exact same 100-game random-2-ply audit on `TF-B10_network.json` (Cycle 0 baseline): `TF-B10` still scored **`0.0%` (`0W / 100L`, mean cluster `7.8` vs `175.9`)**, proving that `TF-B12`'s jump from **`0.0%` → `50.0%` (C8) → `62.0%` (C9) → `63.0%` (C10)** is a genuine, massive architectural breakthrough driven by `QuiescenceMCTS`.
 
 #### 6. Experiment `TF-B13` Results: Scaling to `89.0%` Peak & `73.0%` Final vs Heuristic (`100%` vs Random)
@@ -3100,7 +3100,7 @@ While `TF-B13` reached **`89.0%` vs Heuristic** in Cycle 8 (using a raw 1-ply Co
    - **Next Step:** Implement a **sliding-window replay buffer** (`35,000–50,000` samples = last 3–4 cycles, AlphaZero style) + **cosine/step LR decay** (`0.0005 → 0.0001`) + automatic **`best_network.json` checkpointing** whenever `eval.vsHeuristic` sets a new high-water mark.
 
 2. **Bottleneck 2 — Edge Asymmetry in Corner Placement (`hasCorner`) vs. Toroidal Enclosures & Clusters:**
-   - In the current engine (`src/core/GridManager.js` and `game.js`), **edge adjacency** (`getAdjacentTriangles`) and **enclosure detection** (`isTriangleEnclosed`) wrap around the `10×10` grid toroidally via `(x ± 1 + cols) % cols` and `(y ± 1 + rows) % rows`.
+   - In the core board & rules engine (`src/core/GridManager.js` and `game.js`), **edge adjacency** (`getAdjacentTriangles`) and **enclosure detection** (`isTriangleEnclosed`) wrap around the `10×10` grid toroidally via `(x ± 1 + cols) % cols` and `(y ± 1 + rows) % rows`.
    - However, **corner placement legality** (`hasCorner(x, y)` + `getTriangleCorners(x, y, rotation)`) uses **unwrapped planar vertex coordinates** `cx ∈ [0..cols]`, `cy ∈ [0..rows]` and checks `if (cellX >= 0 && cellY >= 0 && cellX < this.cols && cellY < this.rows)`.
    - **Consequence:** A triangle placed on border `x = 0` places corners on vertex line `cx = 0`, which does **not** wrap to `cx = cols` (`10`). Thus, players **cannot** branch legal placements across the outer boundary based on corner contact alone, even though enclosures and cluster merges **do** wrap across the boundary!
    - **Topological Fix (True Torus $T^2$):** In a true $10 \times 10$ torus, vertex `(cols, y)` is identical to `(0, y)` and `(x, rows)` is identical to `(x, 0)` (there are exactly `rows × cols = 100` unique vertices, not `11 × 11 = 121`). Wrapping vertex coordinates modulo `(cols, rows)` inside `hasCorner`:
@@ -3325,7 +3325,7 @@ Warm-started from `TF-B14_best_network.json`, **`TF-B15`** ran 10 cycles of 100%
 - [ ] vs Heuristic 15%+ (from Phase 5's 10%)
 - [ ] No catastrophic forgetting (past skills retained)
 
-**Code Location:** `src/server/ModelPool.js`
+**System Component:** Automated Peak Checkpoint Promotion & Tournament Harness (`*_best_network.json` auto-promotion in `src/server/train_tfjs.cjs` and cross-checkpoint tournament mode in `src/server/evaluate.cjs`)
 
 ---
 
@@ -3500,7 +3500,7 @@ triantica/
 
 ## Appendix C: CLI & Dashboard Telemetry Parameters
 
-### 1. Training CLI Flags (`src/server/train_tfjs.cjs`)
+### 1. Self-Play Training Pipeline CLI Flags (`src/server/train_tfjs.cjs`)
 
 | CLI Flag | Default | Description |
 |----------|---------|-------------|
