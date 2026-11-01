@@ -22,6 +22,8 @@ By correlating the **17,928 deduplicated LLM API calls (`1.18 billion` billed pr
 
 ### 1. Model Efficiency Comparison: `z-ai/glm-5` vs. `google/gemini-4-argon`
 
+*Head-to-head billing analysis of the two foundation models that built Triantica. The cheaper model was not always the more economical one—the task determined the true cost.*
+
 Before examining the telemetry table, two foundational LLM infrastructure mechanisms govern the cost and reasoning characteristics of modern foundation models:
 
 > 💡 **Concept Callout: Prompt Caching & the KV-Cache (`cacheRead` vs. Uncached Input)**
@@ -85,7 +87,9 @@ Before examining the telemetry table, two foundational LLM infrastructure mechan
 
 </details>
 
-#### Architectural & Economic Findings (`GLM-5` vs. `Argon`)
+#### Architectural & Economic Findings
+
+*Why cache hit rate matters more than list price, why more reasoning tokens don't guarantee better results, and why the Day 9 model switch was the project's most consequential decision.*
 
 > 💡 **Concept Callout: Task Entropy & Optimal Model Selection**
 >
@@ -93,22 +97,24 @@ Before examining the telemetry table, two foundational LLM infrastructure mechan
 > - **Low-Entropy Tasks** have a constrained solution space and immediate syntactic feedback (e.g., scaffolding boilerplate, migrating API signatures, adjusting CSS layouts, formatting tables). A fast, high-cache-hit model (`GLM-5`) executes these at a fraction of the cost.
 > - **High-Entropy Tasks** involve coupled non-linear invariants where multiple bugs mask each other and symptoms appear far from the root cause (e.g., diagnosing why an AlphaZero MCTS tree with inverted backup signs and a `400×`-diluted cross-entropy loss learns against `RandomPlayer` yet scores `0.0%` against `HeuristicPlayer`). On high-entropy problems, a lower-tier model enters an expensive **trial-and-error thrashing loop**, whereas a frontier architect model (`Argon`) collapses the search space in a single analytical pass.
 
-1. **Unit-Token Economics Favor `GLM-5` by ~2.6× (`$0.243/1M` vs. `$0.623/1M` invoiced):**
+**Finding 1 — Unit-Token Economics Favor `GLM-5` by ~2.6×:**
    - `z-ai/glm-5` achieved a remarkable **94.4% prompt cache hit rate** (`526.7M` cached vs. `31.5M` uncached input tokens), keeping the average cost of an agentic request at **`$0.0163`**.
    - A full **33.3%** of `glm-5`'s output tokens were chain-of-thought reasoning (vs. only `14.2%` for `argon`), suggesting `glm-5` was doing substantial internal deliberation that still didn't suffice for the coupled MCTS/loss bugs.
    - During Phases 1–4 (`brain.js` exploration `exp12`–`exp22`, the `@tensorflow/tfjs-node` migration `TF-B1`–`TF-B7`, and the interactive telemetry dashboard), `glm-5` delivered 135 commits across 8 days (**Day 1 – Day 8**) for **$128.57** invoiced (`~$16.07/day`).
 
-2. **Reasoning Depth & Algorithmic Convergence Favor `Argon` on High-Entropy Math/Search Bugs:**
+**Finding 2 — `Argon`'s Reasoning Quality Outperforms `GLM-5`'s Reasoning Quantity on Coupled Math Bugs:**
    - Between **Day 6 and Day 8** (`TF-B5` through `TF-B8`), `glm-5` executed **`4,034` OR-server requests (`~263M` prompt tokens, `$60.31`)** while struggling to isolate coupled mathematical bugs across MCTS tree backup sign conventions (`Bug 5` & `Bug 6`), `1/400` policy cross-entropy dilution (`Bug 11`), and non-quiet leaf horizon blindness.
    - Switching the primary architect model to `google/gemini-4-argon` on **Day 9** immediately resolved the MCTS perspective/loss coupling (`TF-B9` → `84%` vs. Random), designed **Quiescence MCTS** (`TF-B12`–`TF-B14` → breaking the `0%` Heuristic Wall up to `90%`), formulated **Full $T^2$ Toroidal Circular Padding (`ToroidalPad2D`) + Top-12 Safety Filtering** (`TF-B15` → **`100.0%` mastery across `1,000` evaluation games**), and built the synchronized 2.5D/3D Torus UI (`Torus3DView.js`).
    - `Argon` also routed **96.9%** of its traffic through `google-vertex` (vs. `google-ai-studio` fallback), achieving a **75.9% cache hit** on Vertex—significantly better than the **56.6%** hit on AI Studio fallback.
 
-3. **Where Over-Spend Occurred (`Argon` on High-Frequency Mechanical Edits):**
+**Finding 3 — Over-Spend: Using `Argon` for Low-Entropy Mechanical Edits:**
    - While `argon` was dramatically more cost-effective per *algorithmic breakthrough*, using it as the default model for high-iteration UI/CSS tweaking, icon geometry adjustments, and multi-file documentation sweeps (e.g., **Day 13**: `525` `argon` OR-server requests costing **$21.25** in a single day) incurred a `2.7×` per-request premium where `glm-5` would have cost `~$8`.
 
 ---
 
-### 2. Daily Token Spend vs. Git Commits & Engineering Milestones (Authoritative OR Billing, Day 1 – Day 15)
+### 2. Daily Token Spend vs. Git Commits & Engineering Milestones
+
+*Day-by-day reconciliation of server-side billing, commit velocity, and the engineering achievements each dollar bought. The table below is the authoritative cost record—all figures are from the OpenRouter billing API.*
 
 | Day | #Cmt | GLM-5 OR Req / $ | Argon OR Req / $ | Uncached In | Cache % | Reas % | Day $ | $/Cmt | Key Milestone |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
@@ -233,9 +239,11 @@ Before examining the telemetry table, two foundational LLM infrastructure mechan
 
 ---
 
-### 3. OpenClaw Context Overhead & Why the Artificial ~100K Window Was Counterproductive
+### 3. Context Window Architecture: Startup Bloat, Compaction Thrashing & the Case for Wide Ceilings
 
-#### A. Dissecting the ~26.9K Token Startup Baseline
+*The hidden cost driver nobody measures: how the static prefix, daily memory injection, and an artificially low context ceiling created a three-part penalty that inflated per-turn cost by 4–10× during the busiest coding phases.*
+
+#### A. The Startup Tax: ~26.9K Tokens Before Reading a Single File
 Across 43 fresh sessions in the telemetry logs, **Turn 1 begins with an average of `26,907` uncached input tokens** before a single project file is read. That baseline consists of:
 
 1. **Tool Schema & Runtime System Prompt (`~8,500` tokens):** JSON schemas for `20+` tools (`exec`, `read`, `edit`, `write`, `sessions_spawn`, `cron`, `memory_*`, etc.) plus behavioral directives.
@@ -244,7 +252,7 @@ Across 43 fresh sessions in the telemetry logs, **Turn 1 begins with an average 
 
 Because agentic coding averages **7.5 tool calls per user message**, any bloat in the static startup prefix is multiplied across thousands of turns.
 
-#### B. The "Compaction Thrashing" Penalty of an Artificial ~108K Context Ceiling
+#### B. The Compaction Thrashing Penalty: 167 Cache-Destroying Events in 14 Days
 
 > 💡 **Concept Callout: Context Compaction & "Compaction Thrashing"**
 >
@@ -296,22 +304,24 @@ Prior to expanding `agents.defaults.contextTokens` to `400,000` on **Day 14**, t
 
 ---
 
-### 4. Architectural Playbook: Making Future RL & Software Projects 65–75% Less Token-Expensive
+### 4. The Cost-Reduction Playbook: Five Rules for 65–75% Savings
 
-1. **Modularize Large Documentation & Source Files Early (`< 500` lines per file):**
+*Distilled from the telemetry above—concrete, model-agnostic rules that apply to any agentic software + RL engineering project.*
+
+**Rule 1 — Modularize Early (target `< 500` lines per file):**
    - Splitting `TRAINING_BOOK.md` (`3,546` lines) into 18 modular chapter files under `docs/training-book/` reduced the per-edit file read footprint from `~45,000` tokens to `~2,500` tokens—a **94% reduction in context growth per edit**.
 
-2. **Tiered Model Routing by Task Entropy (Architect vs. Specialist Sub-Agents):**
+**Rule 2 — Route by Task Entropy, Not by Price:**
    - Reserve `google/gemini-4-argon` (`$0.62/1M` blended) strictly for **high-entropy architectural design, mathematical derivations, and subtle bug audits** (where its 1-shot accuracy prevents multi-hour debugging loops).
    - Delegate **low-entropy mechanical execution** (CSS layout adjustments, wrapping ASCII diagrams in `<details>`, syncing JSON files, writing unit tests) to `z-ai/glm-5` sub-agents (`$0.24/1M` blended, `~1.6¢/call`).
 
-3. **Keep Startup Context Lean (`< 10K` tokens) & Use On-Demand Recall:**
+**Rule 3 — Keep the Startup Prefix Lean (`< 10K` tokens):**
    - Keep `MEMORY.md` curated under `5 KB` (archiving historical tables to `memory/archive-*.md`) and set `startupContext.dailyMemoryDays` to `1` (relying on `memory_search` + `memory_get` only when prior session details are needed).
 
-4. **Wide Context Ceiling (`400K`) + Surgical Tool Reads (`offset`/`limit` & Python Inspection):**
+**Rule 4 — Pair a Wide Context Ceiling with Surgical Reads:**
    - Pairing a wide `400K` context ceiling (to eliminate mid-task compaction thrashing and preserve `90%+` KV-cache hit rates) with surgical line-bounded reads (`read` with `offset`/`limit` or compact `python3`/`grep` summaries) prevents raw file dumps from polluting the cached prefix.
 
-5. **Route Provider Traffic Deliberately:**
+**Rule 5 — Pin Provider Routing for Cache Consistency:**
    - OpenRouter auto-routes across providers, but cache hit rates vary dramatically. In this project, `google-vertex` achieved **75.9% cache hit** for `argon` vs. only **56.6%** on `google-ai-studio`. Where possible, pin to the provider with the best caching characteristics for your workload pattern.
 
 ---
