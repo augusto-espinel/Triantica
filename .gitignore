@@ -5,3 +5,6 @@ experiments/data/*.json
 experiments/logs/
 node_modules/
 trainedAI_network_v*.json
+
+# Draft articles (published externally, not for repo)
+docs/SUBSTACK_DRAFT*
