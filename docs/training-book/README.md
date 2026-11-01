@@ -44,7 +44,8 @@ This document is both a training journal and a comprehensive introduction to rei
 | **↳ 11D** | **[Phase 5: Monte Carlo Tree Search (MCTS) Theory & Implementation](./11d-mcts-theory-and-implementation.md)** | Complete PUCT MCTS derivation, 4-step search loop, M2 Ultra batched leaf evaluation, virtual loss, Dirichlet noise, and annotated `MCTS.cjs` code. |
 | **↳ 11E** | **[Phase 5.5 & 6: Quiescence MCTS, Full Torus ($T^2$) Mastery & Summary](./11e-quiescence-mcts-and-torus-mastery.md)** | Horizon effect & enclosure cascades, `QuiescenceMCTS.cjs` math, `TF-B14` (45K FIFO pure self-play), `TF-B15` (`ToroidalPad2D` + Safety Filter), and Phase 1–6 summary. |
 | **12** | **[Toroidal 3D Visualization, Dual-View Projection & Human Telemetry](./12-toroidal-3d-and-telemetry.md)** | Synchronized 2D viewport + interactive 3D ring torus (`Torus3DView.js`), parametric surface math, and continuous human match telemetry (`HumanGameLogger.js`). |
-| **Appendices** | **[Appendices A, B, C & D: Commands, Project Structure, Telemetry & Token Economics](./appendices.md)** | Reproducible CLI commands for all 6 phases, repository directory tree, dashboard JSON schema, and AI-assisted engineering token/cost analysis (`GLM-5` vs `Argon`). |
+| **Appendices** | **[Appendices A, B & C: Commands, Project Structure & Telemetry](./appendices.md)** | Reproducible CLI commands for all 6 phases, repository directory tree, and dashboard JSON schema. |
+| **↳ D** | **[AI-Assisted Engineering Token Economics (GLM-5 vs Argon)](./appendix_d.md)** | OpenRouter server-side billing reconciliation, model cost efficiency, daily spend vs. Git milestones, compaction thrashing diagnosis, and 65–75% reduction playbook. |
 
 ---
 
@@ -87,6 +88,6 @@ cd docs/training-book && python3 -m http.server 8080
 ---
 
 *Last updated: 2026-10-31*  
-*Version: 4.1 (Modular Chapter Edition — Phase 1 to Phase 6 Full Torus $T^2$ Mastery)*  
+*Version: 4.3 (Modular Chapter Edition — Phase 1 to Phase 6 Full Torus $T^2$ Mastery)*  
 *Framework: TensorFlow.js (`@tensorflow/tfjs-node`) on Apple Silicon (AMX / Accelerate)*  
 *Hardware: Mac Studio M2 Ultra (24-core CPU, 60-core GPU, 64GB Unified Memory)*

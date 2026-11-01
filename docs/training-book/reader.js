@@ -27,7 +27,8 @@
     { id: 'ch11d',      file: '11d-mcts-theory-and-implementation.md',  num: 'D',  title: 'MCTS Theory & Implementation', sub: true },
     { id: 'ch11e',      file: '11e-quiescence-mcts-and-torus-mastery.md', num: 'E', title: 'Quiescence MCTS & Torus Mastery', sub: true },
     { id: 'ch12',       file: '12-toroidal-3d-and-telemetry.md',        num: '12', title: 'Toroidal 3D & Telemetry',     sub: false },
-    { id: 'appendices', file: 'appendices.md',                          num: '★',  title: 'Appendices',                   sub: false },
+    { id: 'appendices', file: 'appendices.md',                          num: '★',  title: 'Appendices A–C',                sub: false },
+    { id: 'appendix_d',  file: 'appendix_d.md',                           num: 'D',  title: 'Token Economics (GLM-5 vs Argon)', sub: true },
   ];
 
   // ── State ──
