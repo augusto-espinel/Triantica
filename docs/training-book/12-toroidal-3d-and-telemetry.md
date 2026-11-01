@@ -61,7 +61,18 @@ To make the $T^2$ topology intuitive for human players while preserving the math
 ### Continuous Learning from Human Play (Human Match Telemetry Logger, `HumanGameLogger.js`)
 With `TF-B15` deployed to production (`trainedAI_network.json`) across **Easy** (high-temperature exploration sampling), **Medium** (`99.0%` Raw 1-ply ConvNet), and **Hard** (`100.0%` ConvNet + Top-12 Tactical Safety Filter), the browser and server runtimes include a **human match telemetry logger** (`src/data/HumanGameLogger.js`, persisted via `/api/human-games`).
 
-Every completed human match records canonical `10×10×18` ego-centric states, chosen action indices (`0..399`), immediate enclosure claims, and final cluster outcomes. Because human trajectories use the exact same canonical format as self-play MCTS trajectories, they can be injected directly into the `ReplayBuffer` (`src/server/ReplayBuffer.cjs`)—enabling continuous human-in-the-loop reinforcement learning without altering the core training pipeline.
+Every completed human match records canonical `10×10×18` ego-centric states, chosen action indices (`0..399`), immediate enclosure claims, and final cluster outcomes. Because human trajectories use the exact same canonical format as self-play MCTS trajectories, they can be injected directly into the experience replay buffer (`src/server/ReplayBuffer.cjs`)—enabling continuous human-in-the-loop reinforcement learning without altering the core training pipeline.
+
+#### Early Playtesting Findings & Next-Generation Strategic Horizons
+Early human playtesting against the `TF-B15` champion network at its peak setting (`Hard`: Master ConvNet + Tactical Safety Filter) reveals a **well-balanced, tactically sharp midgame**, but exposes **limits in multi-turn strategic depth during the late game**, highlighting exactly why human-in-the-loop trajectory logging is essential for the next training phase:
+
+1. **Late-Game Greedy Baiting & Forced Sacrifice Traps (Zugzwang / Tempo Counting):**
+   - In the late game, as free board space tightens, a human player can deliberately construct **bait traps**—offering the AI a small, immediately completable cluster (or forcing it to fill a minor cavity) in a way that compels the AI, on its subsequent turn, to play the final wall move that grants the human a much larger adjacent cluster.
+   - Because the browser inference engine (`src/ai/AIPlayer.js`) evaluates moves using the 1-ply policy head plus a 1-step tactical safety filter (`topK = 12`), and even training-time `QuiescenceMCTS.cjs` (`50` simulations) prioritizes immediate greedy enclosure rollouts, the AI currently lacks **non-greedy tempo counting**.
+   - **Strategic Remedy:** Rather than greedily claiming or filling a small cluster immediately, a deeper multi-ply search (or a policy refined on human trap trajectories) must count the remaining safe liberties and explicitly model the opponent's response—assuming the human will attempt to capture the larger cluster—and intentionally decline or delay the greedy capture to pass the unfavorable tempo back to the opponent.
+2. **Latent "Trains of Enclosures" (Multi-Cluster Chain-Reaction Seeding):**
+   - A second, even deeper strategic horizon involves placing seemingly disconnected triangles across the $T^2$ manifold so that, many turns later, they align into a **continuous "train" (daisy-chain) of sequential enclosures**—where closing one small territory automatically supplies the missing wall for the next adjacent cavity in a cascading domino effect.
+   - This long-horizon topological pattern is still an open frontier of mastery for both human play and the current neural network. Capturing human-vs-AI games via `HumanGameLogger.js` alongside deeper MCTS lookahead during future self-play cycles provides the ideal testbed for discovering, formalizing, and training these multi-stage enclosure trains.
 
 ---
 
