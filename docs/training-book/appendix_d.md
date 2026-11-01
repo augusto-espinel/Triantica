@@ -48,6 +48,8 @@ Before examining the telemetry table, two foundational LLM infrastructure mechan
 | **Average Cost per OR Request** | **$0.0163 / req** | **$0.0439 / req** (`~2.7×` higher per request) | **$0.0000** |
 | **Effective Blended Rate** | **$0.243 / 1M prompt tokens** | **$0.623 / 1M prompt tokens** (`~2.6×` higher per token) | **$0.000** |
 
+![Reasoning Token % & Completion Breakdown by Model](./assets/diagrams/token-economics-reasoning.svg)
+
 <details>
 <summary>📊 ASCII Plot: Reasoning Token Percentage & Completion Breakdown by Model (click to expand)</summary>
 
@@ -131,6 +133,8 @@ Before examining the telemetry table, two foundational LLM infrastructure mechan
 
 **Account status:** Credits `$630.00` — Used `$601.70` = **Remaining `$28.30`**
 
+![Daily KV-Cache Hit Rate Across Day 1–15](./assets/diagrams/token-economics-cache-hit.svg)
+
 <details>
 <summary>📈 ASCII Plot: Daily Cache Hit Rate (%) over Day 1 – Day 15 by Primary Model (click to expand)</summary>
 
@@ -160,6 +164,8 @@ Before examining the telemetry table, two foundational LLM infrastructure mechan
 ```
 
 </details>
+
+![Daily Spend & Cumulative Cost Trajectory Across Day 1–15](./assets/diagrams/token-economics-daily-spend.svg)
 
 <details>
 <summary>📊 ASCII Plot: Daily Spend ($) & Cumulative Spend Trajectory Across Day 1 – Day 15 (click to expand)</summary>
@@ -191,6 +197,8 @@ Before examining the telemetry table, two foundational LLM infrastructure mechan
 ```
 
 </details>
+
+![Cost per Git Commit by Architectural Phase](./assets/diagrams/token-economics-cost-per-commit.svg)
 
 <details>
 <summary>📊 ASCII Plot: Cost per Git Commit ($/Cmt) Across Project Architectural Phases (click to expand)</summary>
@@ -255,6 +263,8 @@ Prior to expanding `agents.defaults.contextTokens` to `400,000` on **Day 14**, t
    - Provider prompt caching relies on an **immutable token prefix**. Every time compaction summarized the middle of a transcript or a session reset occurred, the token prefix changed—invalidating the KV cache and forcing the next turn to bill `50K–80K` tokens at **100% uncached input rates**.
 3. **Rediscovery Amnesia Loop:**
    - After each compaction, the agent lost exact line numbers, tensor shapes, or CSS selectors from earlier in the hour, forcing it to re-run `read` and `grep` commands—re-filling the context window with the exact same file contents and triggering yet another compaction cycle.
+
+![108K Compaction Thrashing Loop vs. 400K Stable KV-Cache Window](./assets/diagrams/token-economics-compaction.svg)
 
 <details>
 <summary>📐 Diagram: The 108K Compaction Thrashing Loop vs. 400K Stable KV-Cache Window (click to expand ASCII)</summary>

@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 380" font-family="'Share Tech Mono', 'Courier New', monospace">
+  <defs>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <linearGradient id="phase1" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#4D94FF"/>
+      <stop offset="100%" stop-color="#1A3A7A"/>
+    </linearGradient>
+    <linearGradient id="phase2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#00F0FF"/>
+      <stop offset="100%" stop-color="#004455"/>
+    </linearGradient>
+    <linearGradient id="phase3" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FF4D6D"/>
+      <stop offset="100%" stop-color="#7A0033"/>
+    </linearGradient>
+    <linearGradient id="phase4" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#00FF88"/>
+      <stop offset="100%" stop-color="#005533"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="860" height="380" fill="#03060C" rx="8"/>
+  <rect x="1" y="1" width="858" height="378" fill="none" stroke="#0D4054" rx="8"/>
+
+  <!-- Title -->
+  <text x="430" y="28" text-anchor="middle" fill="#00F0FF" font-size="13" font-weight="bold" filter="url(#glow)">COST PER GIT COMMIT ($) — BY ARCHITECTURAL PHASE</text>
+  <text x="430" y="46" text-anchor="middle" fill="#5CE1E6" font-size="9">Wrong model for the task is always expensive: GLM-5 Phase 5 = $7.54/cmt vs Argon Phase 5.5-6 = $2.04/cmt</text>
+
+  <!-- Chart area: x=90..810, y=65..300 -->
+  <!-- Y scale: max $8, scale = 235/8 = 29.4 px/$ -->
+  <!-- y = 300 - (val * 29.4) -->
+
+  <!-- Grid lines -->
+  <g stroke="#0D4054" stroke-width="0.5" stroke-dasharray="3 4">
+    <line x1="90" y1="300" x2="810" y2="300"/>  <!-- $0 -->
+    <line x1="90" y1="241" x2="810" y2="241"/>  <!-- $2 -->
+    <line x1="90" y1="182" x2="810" y2="182"/>  <!-- $4 -->
+    <line x1="90" y1="123" x2="810" y2="123"/>  <!-- $6 -->
+    <line x1="90" y1="65" x2="810" y2="65"/>    <!-- $8 -->
+  </g>
+
+  <!-- Y-axis labels -->
+  <g fill="#4A6A8A" font-size="9">
+    <text x="82" y="304" text-anchor="end">$0</text>
+    <text x="82" y="245" text-anchor="end">$2</text>
+    <text x="82" y="186" text-anchor="end">$4</text>
+    <text x="82" y="127" text-anchor="end">$6</text>
+    <text x="82" y="69" text-anchor="end">$8</text>
+  </g>
+
+  <!-- Blended mean line ($1.29) → y = 300 - 1.29*29.4 = 300 - 37.9 = 262.1 -->
+  <line x1="90" y1="262.1" x2="810" y2="262.1" stroke="#FFB800" stroke-width="1" stroke-dasharray="8 4" opacity="0.6"/>
+  <text x="815" y="266" fill="#FFB800" font-size="8">$1.29</text>
+  <text x="815" y="276" fill="#4A6A8A" font-size="7">blended</text>
+
+  <!-- Phase bars (width=140, gap=20, start x=110) -->
+  <!-- Phase 1-4: $1.26/cmt, h=1.26*29.4=37.0 -->
+  <rect x="110" y="263" width="140" height="37" rx="3" fill="url(#phase1)" opacity="0.85"/>
+  <text x="180" y="285" text-anchor="middle" fill="#B8D4EA" font-size="11" font-weight="bold">$1.26</text>
+  <text x="180" y="318" text-anchor="middle" fill="#4D94FF" font-size="9" font-weight="bold">Phase 1-4</text>
+  <text x="180" y="332" text-anchor="middle" fill="#4A6A8A" font-size="8">brain.js exploration</text>
+  <text x="180" y="344" text-anchor="middle" fill="#4A6A8A" font-size="7">51 cmts · $64.22</text>
+
+  <!-- Phase 2-4: $0.72/cmt, h=0.72*29.4=21.2 -->
+  <rect x="280" y="278.8" width="140" height="21.2" rx="3" fill="url(#phase2)" opacity="0.85"/>
+  <text x="350" y="294" text-anchor="middle" fill="#B8D4EA" font-size="11" font-weight="bold">$0.72</text>
+  <text x="350" y="318" text-anchor="middle" fill="#00F0FF" font-size="9" font-weight="bold">Phase 2-4</text>
+  <text x="350" y="332" text-anchor="middle" fill="#4A6A8A" font-size="8">TF.js migration</text>
+  <text x="350" y="344" text-anchor="middle" fill="#4A6A8A" font-size="7">84 cmts · $60.31</text>
+
+  <!-- Phase 5: $3.07/cmt, h=3.07*29.4=90.3 (GLM-5 struggling) -->
+  <rect x="450" y="209.7" width="140" height="90.3" rx="3" fill="url(#phase3)" opacity="0.9"/>
+  <text x="520" y="260" text-anchor="middle" fill="#FFD4DD" font-size="11" font-weight="bold">$3.07</text>
+  <text x="520" y="318" text-anchor="middle" fill="#FF4D6D" font-size="9" font-weight="bold">Phase 5</text>
+  <text x="520" y="332" text-anchor="middle" fill="#4A6A8A" font-size="8">MCTS bugs (GLM-5)</text>
+  <text x="520" y="344" text-anchor="middle" fill="#4A6A8A" font-size="7">25 cmts · $76.79</text>
+  <!-- Struggling annotation -->
+  <text x="520" y="195" text-anchor="middle" fill="#FF4D6D" font-size="8">⚠ 4,034 requests</text>
+  <text x="520" y="206" text-anchor="middle" fill="#FF4D6D" font-size="7">circled coupled bugs</text>
+
+  <!-- Phase 6: $1.44/cmt, h=1.44*29.4=42.3 -->
+  <rect x="620" y="257.7" width="140" height="42.3" rx="3" fill="url(#phase4)" opacity="0.85"/>
+  <text x="690" y="283" text-anchor="middle" fill="#B8D4EA" font-size="11" font-weight="bold">$1.44</text>
+  <text x="690" y="318" text-anchor="middle" fill="#00FF88" font-size="9" font-weight="bold">Phase 6</text>
+  <text x="690" y="332" text-anchor="middle" fill="#4A6A8A" font-size="8">T² Champion + UI</text>
+  <text x="690" y="344" text-anchor="middle" fill="#4A6A8A" font-size="7">47 cmts · $67.81</text>
+
+  <!-- Arrow from Phase 5 to "Argon fix" -->
+  <path d="M520 200 L520 170 L690 170 L690 252" fill="none" stroke="#00FF88" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#arrowEnd)"/>
+  <defs>
+    <marker id="arrowEnd" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#00FF88"/>
+    </marker>
+  </defs>
+  <text x="605" y="164" text-anchor="middle" fill="#00FF88" font-size="8">Argon resolves in 62 cmts</text>
+
+  <!-- Key insight box -->
+  <rect x="90" y="355" width="720" height="20" rx="4" fill="#071120" stroke="#0D4054"/>
+  <text x="450" y="369" text-anchor="middle" fill="#FFB800" font-size="9" font-weight="bold">🔑 The wrong model for the task is always expensive — GLM-5 Phase 5 ($7.54 peak) vs Argon Phase 5.5-6 ($2.04) on HARDER work</text>
+</svg>

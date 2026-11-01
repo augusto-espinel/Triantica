@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 520" font-family="'Share Tech Mono', 'Courier New', monospace">
+  <defs>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <marker id="arrowCyan" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#5CE1E6"/>
+    </marker>
+    <marker id="arrowRed" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#FF4D6D"/>
+    </marker>
+    <marker id="arrowGreen" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#00FF88"/>
+    </marker>
+    <linearGradient id="bgLeft" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FF4D6D" stop-opacity="0.05"/>
+      <stop offset="100%" stop-color="#FF4D6D" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="bgRight" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#00FF88" stop-opacity="0.05"/>
+      <stop offset="100%" stop-color="#00FF88" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="900" height="520" fill="#03060C" rx="8"/>
+  <rect x="1" y="1" width="898" height="518" fill="none" stroke="#0D4054" rx="8"/>
+
+  <!-- Title -->
+  <text x="450" y="28" text-anchor="middle" fill="#00F0FF" font-size="13" font-weight="bold" filter="url(#glow)">CONTEXT COMPACTION: 108K THRASHING LOOP vs. 400K STABLE WINDOW</text>
+  <text x="450" y="46" text-anchor="middle" fill="#5CE1E6" font-size="9">167 compactions in 14 days under ~108K ceiling → 0 after expanding to 400K</text>
+
+  <!-- Left panel: 108K Thrashing Loop -->
+  <rect x="20" y="60" width="420" height="440" rx="6" fill="url(#bgLeft)" stroke="#FF4D6D" stroke-width="1" stroke-opacity="0.5"/>
+  <text x="230" y="82" text-anchor="middle" fill="#FF4D6D" font-size="12" font-weight="bold" filter="url(#glow)">☠ 108K CEILING — COMPACTION THRASHING</text>
+  <text x="230" y="96" text-anchor="middle" fill="#4A6A8A" font-size="8">12–23 compactions per day during peak coding</text>
+
+  <!-- Step 1: Startup -->
+  <rect x="40" y="110" width="380" height="40" rx="5" fill="#071120" stroke="#4D94FF"/>
+  <text x="50" y="130" fill="#4D94FF" font-size="9" font-weight="bold">① STARTUP</text>
+  <text x="150" y="130" fill="#B8D4EA" font-size="9">26.9K tokens (system + identity + memory)</text>
+
+  <!-- Arrow down -->
+  <path d="M230 150 L230 165" fill="none" stroke="#5CE1E6" stroke-width="1.5" marker-end="url(#arrowCyan)"/>
+
+  <!-- Step 2: File reads fill context -->
+  <rect x="40" y="170" width="380" height="40" rx="5" fill="#071120" stroke="#4D94FF"/>
+  <text x="50" y="190" fill="#4D94FF" font-size="9" font-weight="bold">② FILE READS</text>
+  <text x="170" y="190" fill="#B8D4EA" font-size="9">Read TRAINING_BOOK.md (~45K tokens)</text>
+
+  <!-- Arrow down -->
+  <path d="M230 210 L230 225" fill="none" stroke="#5CE1E6" stroke-width="1.5" marker-end="url(#arrowCyan)"/>
+
+  <!-- Step 3: Hits ceiling -->
+  <rect x="40" y="230" width="380" height="50" rx="5" fill="rgba(255,77,109,0.08)" stroke="#FF4D6D" stroke-width="1.5"/>
+  <text x="50" y="250" fill="#FF4D6D" font-size="10" font-weight="bold">③ HITS ~108K CEILING</text>
+  <text x="50" y="268" fill="#B8D4EA" font-size="8">Just 15–25 tool calls after startup!</text>
+
+  <!-- Arrow down (red) -->
+  <path d="M230 280 L230 300" fill="none" stroke="#FF4D6D" stroke-width="1.5" marker-end="url(#arrowRed)"/>
+
+  <!-- Step 4: Compaction destroys cache -->
+  <rect x="40" y="305" width="380" height="55" rx="5" fill="rgba(255,77,109,0.12)" stroke="#FF4D6D" stroke-width="2"/>
+  <text x="50" y="323" fill="#FF4D6D" font-size="10" font-weight="bold">④ COMPACTION DESTROYS KV-CACHE</text>
+  <text x="50" y="340" fill="#FF8C42" font-size="8">• Prefix rewritten → 60K–80K tokens billed uncached</text>
+  <text x="50" y="353" fill="#FF8C42" font-size="8">• Lossy summary → exact line numbers lost</text>
+
+  <!-- Arrow down (red) -->
+  <path d="M230 360 L230 378" fill="none" stroke="#FF4D6D" stroke-width="1.5" marker-end="url(#arrowRed)"/>
+
+  <!-- Step 5: Rediscovery amnesia -->
+  <rect x="40" y="383" width="380" height="45" rx="5" fill="rgba(255,77,109,0.08)" stroke="#FF4D6D"/>
+  <text x="50" y="401" fill="#FF4D6D" font-size="10" font-weight="bold">⑤ REDISCOVERY AMNESIA</text>
+  <text x="50" y="418" fill="#B8D4EA" font-size="8">Re-read same files → 30K–50K tokens re-injected</text>
+
+  <!-- Loop arrow back to Step 3 -->
+  <path d="M420 405 L440 405 L440 255 L425 255" fill="none" stroke="#FF4D6D" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#arrowRed)"/>
+  <text x="450" y="335" fill="#FF4D6D" font-size="8" transform="rotate(-90 450 335)">RE-TRIGGERS CEILING</text>
+
+  <!-- Penalty box -->
+  <rect x="40" y="440" width="380" height="50" rx="5" fill="#071120" stroke="#0D4054"/>
+  <text x="230" y="458" text-anchor="middle" fill="#FF4D6D" font-size="9" font-weight="bold">3 COMPOUNDING PENALTIES</text>
+  <text x="230" y="472" text-anchor="middle" fill="#B8D4EA" font-size="7">KV-cache invalidation (4-10x cost) + Lossy amnesia + Accelerated re-saturation</text>
+
+  <!-- Right panel: 400K Stable Window -->
+  <rect x="460" y="60" width="420" height="440" rx="6" fill="url(#bgRight)" stroke="#00FF88" stroke-width="1" stroke-opacity="0.5"/>
+  <text x="670" y="82" text-anchor="middle" fill="#00FF88" font-size="12" font-weight="bold" filter="url(#glow)">✓ 400K CEILING — STABLE KV-CACHE</text>
+  <text x="670" y="96" text-anchor="middle" fill="#4A6A8A" font-size="8">Zero mid-task compactions, 90%+ cache hit rate</text>
+
+  <!-- Step 1: Lean startup -->
+  <rect x="480" y="110" width="380" height="40" rx="5" fill="#071120" stroke="#4D94FF"/>
+  <text x="490" y="130" fill="#4D94FF" font-size="9" font-weight="bold">① LEAN STARTUP</text>
+  <text x="620" y="130" fill="#B8D4EA" font-size="9">&lt; 10K tokens (archived MEMORY.md)</text>
+
+  <!-- Arrow down -->
+  <path d="M670 150 L670 170" fill="none" stroke="#5CE1E6" stroke-width="1.5" marker-end="url(#arrowCyan)"/>
+
+  <!-- Step 2: Surgical reads -->
+  <rect x="480" y="175" width="380" height="55" rx="5" fill="#071120" stroke="#4D94FF"/>
+  <text x="490" y="195" fill="#4D94FF" font-size="9" font-weight="bold">② SURGICAL READS</text>
+  <text x="620" y="195" fill="#B8D4EA" font-size="9">offset/limit reads (~2.5K each)</text>
+  <text x="490" y="212" fill="#5CE1E6" font-size="8">→ 94% less context growth vs. 45K monolith dumps</text>
+
+  <!-- Arrow down -->
+  <path d="M670 230 L670 250" fill="none" stroke="#5CE1E6" stroke-width="1.5" marker-end="url(#arrowCyan)"/>
+
+  <!-- Step 3: Stable prefix caching -->
+  <rect x="480" y="255" width="380" height="70" rx="5" fill="rgba(0,255,136,0.06)" stroke="#00FF88" stroke-width="1.5"/>
+  <text x="490" y="275" fill="#00FF88" font-size="10" font-weight="bold">③ STABLE PREFIX = 90%+ CACHE HIT</text>
+  <text x="490" y="292" fill="#B8D4EA" font-size="8">• No mid-task compactions across 100+ turns</text>
+  <text x="490" y="305" fill="#B8D4EA" font-size="8">• Full line-number &amp; tensor-shape retention</text>
+  <text x="490" y="318" fill="#B8D4EA" font-size="8">• Provider KV-cache reused turn after turn</text>
+
+  <!-- Arrow down (green) -->
+  <path d="M670 325 L670 345" fill="none" stroke="#00FF88" stroke-width="1.5" marker-end="url(#arrowGreen)"/>
+
+  <!-- Step 4: Cost efficiency -->
+  <rect x="480" y="350" width="380" height="70" rx="5" fill="rgba(0,255,136,0.08)" stroke="#00FF88" stroke-width="1.5"/>
+  <text x="490" y="370" fill="#00FF88" font-size="10" font-weight="bold">④ RESULT: 65-75% COST REDUCTION</text>
+  <text x="490" y="387" fill="#B8D4EA" font-size="8">• Cached tokens billed at 10-25% of full rate</text>
+  <text x="490" y="400" fill="#B8D4EA" font-size="8">• Zero re-read penalty (no amnesia)</text>
+  <text x="490" y="413" fill="#B8D4EA" font-size="8">• Context grows linearly, not cyclically</text>
+
+  <!-- Bottom comparison box -->
+  <rect x="480" y="435" width="380" height="55" rx="5" fill="#071120" stroke="#0D4054"/>
+  <text x="670" y="453" text-anchor="middle" fill="#FFB800" font-size="9" font-weight="bold">PROJECT ECONOMICS</text>
+  <text x="670" y="468" text-anchor="middle" fill="#FF4D6D" font-size="8">108K era: $243.00 for 167 compactions (14 days)</text>
+  <text x="670" y="481" text-anchor="middle" fill="#00FF88" font-size="8">400K era: $24.00 for 0 compactions (1.5 days)</text>
+
+  <!-- VS divider -->
+  <text x="450" y="295" text-anchor="middle" fill="#FFB800" font-size="20" font-weight="bold">VS</text>
+</svg>

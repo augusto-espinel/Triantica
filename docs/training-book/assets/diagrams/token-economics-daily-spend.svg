@@ -1,0 +1,175 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 440" font-family="'Share Tech Mono', 'Courier New', monospace">
+  <defs>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <linearGradient id="spendBar" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#4D94FF"/>
+      <stop offset="100%" stop-color="#00F0FF"/>
+    </linearGradient>
+    <linearGradient id="cumLine" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#00FF88"/>
+      <stop offset="100%" stop-color="#FFB800"/>
+    </linearGradient>
+    <linearGradient id="switchGlow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFB800" stop-opacity="0.1"/>
+      <stop offset="100%" stop-color="#FFB800" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="860" height="440" fill="#03060C" rx="8"/>
+  <rect x="1" y="1" width="858" height="438" fill="none" stroke="#0D4054" rx="8"/>
+
+  <!-- Title -->
+  <text x="430" y="28" text-anchor="middle" fill="#00F0FF" font-size="13" font-weight="bold" filter="url(#glow)">DAILY SPEND &amp; CUMULATIVE COST TRAJECTORY — DAY 1 TO DAY 15</text>
+  <text x="430" y="46" text-anchor="middle" fill="#5CE1E6" font-size="9">Model switch on Day 9 produces peak daily spend ($32.88); total project cost $267.00</text>
+
+  <!-- Chart area: x=80..830, y=65..375 (310px height) -->
+  <!-- Daily spend (bars): max $35, scale = 310/35 = 8.86 px/$ -->
+  <!-- Cumulative (line): max $267, scale = 310/267 = 1.16 px/$ -->
+
+  <!-- Y-axis left: Daily spend -->
+  <text x="20" y="220" text-anchor="middle" fill="#4D94FF" font-size="9" transform="rotate(-90 20 220)">Daily Spend ($)</text>
+  <g fill="#4A6A8A" font-size="8">
+    <text x="72" y="378" text-anchor="end">$0</text>
+    <text x="72" y="312" text-anchor="end">$10</text>
+    <text x="72" y="245" text-anchor="end">$20</text>
+    <text x="72" y="179" text-anchor="end">$30</text>
+  </g>
+  <g stroke="#0D4054" stroke-width="0.5" stroke-dasharray="3 4">
+    <line x1="80" y1="310" x2="830" y2="310"/>
+    <line x1="80" y1="243" x2="830" y2="243"/>
+    <line x1="80" y1="177" x2="830" y2="177"/>
+  </g>
+
+  <!-- Y-axis right: Cumulative -->
+  <text x="845" y="220" text-anchor="middle" fill="#00FF88" font-size="9" transform="rotate(90 845 220)">Cumulative ($)</text>
+  <g fill="#4A6A8A" font-size="8">
+    <text x="838" y="378" text-anchor="start">$0</text>
+    <text x="838" y="275" text-anchor="start">$100</text>
+    <text x="838" y="172" text-anchor="start">$200</text>
+    <text x="838" y="68" text-anchor="start">$267</text>
+  </g>
+
+  <!-- X-axis: 15 days, spacing = 750/14 ≈ 53.6 -->
+  <!-- Bar width = 30, centered on day position -->
+
+  <!-- Day spend data: 9.22, 11.56, 14.55, 12.02, 16.87, 21.71, 21.38, 17.22, 32.88, 22.18, 21.73, 20.58, 24.10, 21.00, 2.13 -->
+  <!-- Cumulative: 9.22, 20.78, 35.33, 47.35, 64.22, 85.93, 107.31, 124.53, 157.41, 179.59, 201.32, 221.90, 246.00, 267.00, 267.00 -->
+
+  <!-- Model switch highlight zone (Day 9) -->
+  <rect x="502" y="65" width="30" height="310" fill="url(#switchGlow)"/>
+
+  <!-- Daily bars -->
+  <g opacity="0.85">
+    <!-- D1: $9.22, h=81.7 -->
+    <rect x="65" y="293.3" width="30" height="81.7" rx="2" fill="url(#spendBar)"/>
+    <!-- D2: $11.56, h=102.4 -->
+    <rect x="119" y="272.6" width="30" height="102.4" rx="2" fill="url(#spendBar)"/>
+    <!-- D3: $14.55, h=128.9 -->
+    <rect x="172" y="246.1" width="30" height="128.9" rx="2" fill="url(#spendBar)"/>
+    <!-- D4: $12.02, h=106.5 -->
+    <rect x="226" y="268.5" width="30" height="106.5" rx="2" fill="url(#spendBar)"/>
+    <!-- D5: $16.87, h=149.4 -->
+    <rect x="279" y="225.6" width="30" height="149.4" rx="2" fill="url(#spendBar)"/>
+    <!-- D6: $21.71, h=192.3 -->
+    <rect x="333" y="182.7" width="30" height="192.3" rx="2" fill="url(#spendBar)"/>
+    <!-- D7: $21.38, h=189.4 -->
+    <rect x="386" y="185.6" width="30" height="189.4" rx="2" fill="url(#spendBar)"/>
+    <!-- D8: $17.22, h=152.6 -->
+    <rect x="440" y="222.4" width="30" height="152.6" rx="2" fill="url(#spendBar)"/>
+    <!-- D9: $32.88, h=291.3 (PEAK - model switch) -->
+    <rect x="503" y="83.7" width="30" height="291.3" rx="2" fill="#FFB800" opacity="0.9"/>
+    <!-- D10: $22.18, h=196.5 -->
+    <rect x="556" y="178.5" width="30" height="196.5" rx="2" fill="url(#spendBar)"/>
+    <!-- D11: $21.73, h=192.5 -->
+    <rect x="610" y="182.5" width="30" height="192.5" rx="2" fill="url(#spendBar)"/>
+    <!-- D12: $20.58, h=182.3 -->
+    <rect x="663" y="192.7" width="30" height="182.3" rx="2" fill="url(#spendBar)"/>
+    <!-- D13: $24.10, h=213.5 -->
+    <rect x="717" y="161.5" width="30" height="213.5" rx="2" fill="url(#spendBar)"/>
+    <!-- D14: $21.00, h=186.1 -->
+    <rect x="770" y="188.9" width="30" height="186.1" rx="2" fill="url(#spendBar)"/>
+    <!-- D15: $2.13, h=18.9 -->
+    <rect x="824" y="356.1" width="26" height="18.9" rx="2" fill="url(#spendBar)" opacity="0.5"/>
+  </g>
+
+  <!-- Day labels -->
+  <g fill="#4A6A8A" font-size="8" text-anchor="middle">
+    <text x="80" y="392">D1</text>
+    <text x="134" y="392">D2</text>
+    <text x="187" y="392">D3</text>
+    <text x="241" y="392">D4</text>
+    <text x="294" y="392">D5</text>
+    <text x="348" y="392">D6</text>
+    <text x="401" y="392">D7</text>
+    <text x="455" y="392">D8</text>
+    <text x="518" y="392" fill="#FFB800" font-weight="bold">D9</text>
+    <text x="571" y="392">D10</text>
+    <text x="625" y="392">D11</text>
+    <text x="678" y="392">D12</text>
+    <text x="732" y="392">D13</text>
+    <text x="785" y="392">D14</text>
+    <text x="837" y="392">D15</text>
+  </g>
+
+  <!-- Day spend labels on bars -->
+  <g fill="#B8D4EA" font-size="7" text-anchor="middle">
+    <text x="80" y="289">$9</text>
+    <text x="134" y="268">$12</text>
+    <text x="187" y="242">$15</text>
+    <text x="241" y="264">$12</text>
+    <text x="294" y="221">$17</text>
+    <text x="348" y="178">$22</text>
+    <text x="401" y="181">$21</text>
+    <text x="455" y="218">$17</text>
+    <text x="518" y="78" fill="#FFB800" font-size="9" font-weight="bold">$33</text>
+    <text x="571" y="174">$22</text>
+    <text x="625" y="178">$22</text>
+    <text x="678" y="188">$21</text>
+    <text x="732" y="157">$24</text>
+    <text x="785" y="185">$21</text>
+    <text x="837" y="352">$2</text>
+  </g>
+
+  <!-- Cumulative line -->
+  <!-- Scale: 1.16 px/$, baseline y=375 -->
+  <!-- 9.22→10.7, 20.78→24.1, 35.33→41.0, 47.35→54.9, 64.22→74.5, 85.93→99.7, 107.31→124.5, 124.53→144.5, 157.41→182.6, 179.59→208.3, 201.32→233.5, 221.90→257.4, 246.00→285.4, 267.00→309.7 -->
+  <polyline points="80,364.3 134,350.9 187,334.0 241,320.1 294,300.5 348,275.3 401,250.5 455,230.5 518,192.4 571,166.7 625,141.5 678,117.6 732,89.6 785,65.3"
+    fill="none" stroke="url(#cumLine)" stroke-width="2" stroke-linejoin="round"/>
+
+  <!-- Cumulative dots -->
+  <circle cx="80" cy="364.3" r="3" fill="#00FF88"/>
+  <circle cx="134" cy="350.9" r="3" fill="#00FF88"/>
+  <circle cx="187" cy="334.0" r="3" fill="#00FF88"/>
+  <circle cx="241" cy="320.1" r="3" fill="#00FF88"/>
+  <circle cx="294" cy="300.5" r="3" fill="#00FF88"/>
+  <circle cx="348" cy="275.3" r="3" fill="#00FF88"/>
+  <circle cx="401" cy="250.5" r="3" fill="#00FF88"/>
+  <circle cx="455" cy="230.5" r="3" fill="#00FF88"/>
+  <circle cx="518" cy="192.4" r="4" fill="#FFB800" filter="url(#glow)"/>
+  <circle cx="571" cy="166.7" r="3" fill="#00FF88"/>
+  <circle cx="625" cy="141.5" r="3" fill="#00FF88"/>
+  <circle cx="678" cy="117.6" r="3" fill="#00FF88"/>
+  <circle cx="732" cy="89.6" r="3" fill="#00FF88"/>
+  <circle cx="785" cy="65.3" r="4" fill="#FFB800" filter="url(#glow)"/>
+
+  <!-- Final total label -->
+  <text x="785" y="58" text-anchor="middle" fill="#FFB800" font-size="10" font-weight="bold" filter="url(#glow)">$267.00</text>
+
+  <!-- Model switch annotation -->
+  <text x="518" y="72" text-anchor="middle" fill="#FFB800" font-size="8">Model Switch ▲</text>
+
+  <!-- Legend -->
+  <rect x="80" y="405" width="750" height="28" rx="4" fill="#071120" stroke="#0D4054"/>
+  <rect x="100" y="414" width="20" height="10" rx="2" fill="url(#spendBar)"/>
+  <text x="128" y="423" fill="#4D94FF" font-size="9">Daily spend</text>
+  <line x1="280" y1="419" x2="310" y2="419" stroke="#00FF88" stroke-width="2"/>
+  <circle cx="295" cy="419" r="3" fill="#00FF88"/>
+  <text x="318" y="423" fill="#00FF88" font-size="9">Cumulative spend</text>
+  <rect x="480" y="414" width="20" height="10" rx="2" fill="#FFB800" opacity="0.9"/>
+  <text x="508" y="423" fill="#FFB800" font-size="9">Model switch day (Day 9: $32.88 peak)</text>
+</svg>

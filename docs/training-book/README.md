@@ -66,7 +66,7 @@ This Training Book ships with a custom **Zero-Build Single-Page Application** re
 
 | Type | Files | Purpose |
 |------|-------|---------|
-| **SVG Diagrams** | `assets/diagrams/*.svg` (7 files) | Vector architecture diagrams, topology visualizations, training loop flows |
+| **SVG Diagrams** | `assets/diagrams/*.svg` (11 files) | Vector architecture diagrams, topology visualizations, training loop flows, token economics charts |
 | **Screenshots** | `assets/*.png` (5 files) | In-game captures showing toroidal viewport, dashboard telemetry, gameplay |
 
 All diagrams are **pure SVG** — infinitely scalable, no rasterization artifacts. The original ASCII box-drawing versions are preserved inside collapsible `<details>` sections within each chapter for offline/reference reading.

@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 400" font-family="'Share Tech Mono', 'Courier New', monospace">
+  <defs>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <linearGradient id="glmLine" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#4D94FF"/>
+      <stop offset="100%" stop-color="#00F0FF"/>
+    </linearGradient>
+    <linearGradient id="argLine" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#00FF88"/>
+      <stop offset="100%" stop-color="#00F0FF"/>
+    </linearGradient>
+    <linearGradient id="glmArea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#4D94FF" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#4D94FF" stop-opacity="0.02"/>
+    </linearGradient>
+    <linearGradient id="argArea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#00FF88" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#00FF88" stop-opacity="0.02"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="860" height="400" fill="#03060C" rx="8"/>
+  <rect x="1" y="1" width="858" height="398" fill="none" stroke="#0D4054" rx="8"/>
+
+  <!-- Title -->
+  <text x="430" y="28" text-anchor="middle" fill="#00F0FF" font-size="13" font-weight="bold" filter="url(#glow)">DAILY KV-CACHE HIT RATE (%) — DAY 1 TO DAY 15</text>
+  <text x="430" y="46" text-anchor="middle" fill="#5CE1E6" font-size="9">Cache hit rate drives unit economics: 94.4% (GLM-5) vs 75.4% (Argon) = 2.6x cost difference</text>
+
+  <!-- Chart area: x=80..820, y=70..340 -->
+  <!-- Y-axis: 55% to 100% → 270px range, 6px per % -->
+  <!-- y = 340 - (val - 55) * 6 -->
+
+  <!-- Grid lines -->
+  <g stroke="#0D4054" stroke-width="0.5" stroke-dasharray="3 4">
+    <line x1="80" y1="340" x2="820" y2="340"/>  <!-- 55% -->
+    <line x1="80" y1="310" x2="820" y2="310"/>  <!-- 60% -->
+    <line x1="80" y1="280" x2="820" y2="280"/>  <!-- 65% -->
+    <line x1="80" y1="250" x2="820" y2="250"/>  <!-- 70% -->
+    <line x1="80" y1="220" x2="820" y2="220"/>  <!-- 75% -->
+    <line x1="80" y1="190" x2="820" y2="190"/>  <!-- 80% -->
+    <line x1="80" y1="160" x2="820" y2="160"/>  <!-- 85% -->
+    <line x1="80" y1="130" x2="820" y2="130"/>  <!-- 90% -->
+    <line x1="80" y1="100" x2="820" y2="100"/>  <!-- 95% -->
+    <line x1="80" y1="70" x2="820" y2="70"/>    <!-- 100% -->
+  </g>
+
+  <!-- Y-axis labels -->
+  <text x="72" y="344" text-anchor="end" fill="#4A6A8A" font-size="9">55%</text>
+  <text x="72" y="314" text-anchor="end" fill="#4A6A8A" font-size="9">60%</text>
+  <text x="72" y="284" text-anchor="end" fill="#4A6A8A" font-size="9">65%</text>
+  <text x="72" y="254" text-anchor="end" fill="#4A6A8A" font-size="9">70%</text>
+  <text x="72" y="224" text-anchor="end" fill="#4A6A8A" font-size="9">75%</text>
+  <text x="72" y="194" text-anchor="end" fill="#4A6A8A" font-size="9">80%</text>
+  <text x="72" y="164" text-anchor="end" fill="#4A6A8A" font-size="9">85%</text>
+  <text x="72" y="134" text-anchor="end" fill="#4A6A8A" font-size="9">90%</text>
+  <text x="72" y="104" text-anchor="end" fill="#4A6A8A" font-size="9">95%</text>
+  <text x="72" y="74" text-anchor="end" fill="#4A6A8A" font-size="9">100%</text>
+
+  <!-- X-axis: 15 days, spacing = 740/14 ≈ 52.9px, start at x=80 -->
+  <!-- Day labels -->
+  <text x="80" y="358" text-anchor="middle" fill="#4A6A8A" font-size="8">D1</text>
+  <text x="133" y="358" text-anchor="middle" fill="#4A6A8A" font-size="8">D2</text>
+  <text x="186" y="358" text-anchor="middle" fill="#4A6A8A" font-size="8">D3</text>
+  <text x="239" y="358" text-anchor="middle" fill="#4A6A8A" font-size="8">D4</text>
+  <text x="292" y="358" text-anchor="middle" fill="#4A6A8A" font-size="8">D5</text>
+  <text x="344" y="358" text-anchor="middle" fill="#4A6A8A" font-size="8">D6</text>
+  <text x="397" y="358" text-anchor="middle" fill="#4A6A8A" font-size="8">D7</text>
+  <text x="450" y="358" text-anchor="middle" fill="#4A6A8A" font-size="8">D8</text>
+  <text x="503" y="358" text-anchor="middle" fill="#4A6A8A" font-size="8">D9</text>
+  <text x="556" y="358" text-anchor="middle" fill="#4A6A8A" font-size="8">D10</text>
+  <text x="609" y="358" text-anchor="middle" fill="#4A6A8A" font-size="8">D11</text>
+  <text x="661" y="358" text-anchor="middle" fill="#4A6A8A" font-size="8">D12</text>
+  <text x="714" y="358" text-anchor="middle" fill="#4A6A8A" font-size="8">D13</text>
+  <text x="767" y="358" text-anchor="middle" fill="#4A6A8A" font-size="8">D14</text>
+  <text x="820" y="358" text-anchor="middle" fill="#4A6A8A" font-size="8">D15</text>
+
+  <!-- Phase separator line (between Day 8 and Day 9) -->
+  <line x1="476" y1="65" x2="476" y2="345" stroke="#FFB800" stroke-width="1" stroke-dasharray="6 3" opacity="0.6"/>
+  <text x="278" y="82" text-anchor="middle" fill="#4D94FF" font-size="9" font-weight="bold">◄ GLM-5 Era</text>
+  <text x="650" y="82" text-anchor="middle" fill="#00FF88" font-size="9" font-weight="bold">Argon Era ►</text>
+
+  <!-- GLM-5 data: D1=89.4, D2=91.1, D3=90.5, D4=93.6, D5=93.3, D6=95.7, D7=96.5, D8=95.8 -->
+  <!-- y = 340 - (val - 55) * 6 -->
+  <!-- D1: 340-(34.4*6)=340-206.4=133.6  D2: 340-(36.1*6)=340-216.6=123.4  D3: 340-(35.5*6)=340-213=127 -->
+  <!-- D4: 340-(38.6*6)=340-231.6=108.4  D5: 340-(38.3*6)=340-229.8=110.2  D6: 340-(40.7*6)=340-244.2=95.8 -->
+  <!-- D7: 340-(41.5*6)=340-249=91  D8: 340-(40.8*6)=340-244.8=95.2 -->
+
+  <!-- GLM-5 area fill -->
+  <polygon points="80,133.6 133,123.4 186,127 239,108.4 292,110.2 344,95.8 397,91 450,95.2 450,340 80,340" fill="url(#glmArea)"/>
+
+  <!-- GLM-5 line -->
+  <polyline points="80,133.6 133,123.4 186,127 239,108.4 292,110.2 344,95.8 397,91 450,95.2"
+    fill="none" stroke="url(#glmLine)" stroke-width="2.5" stroke-linejoin="round"/>
+
+  <!-- GLM-5 dots -->
+  <circle cx="80" cy="133.6" r="4" fill="#4D94FF" filter="url(#glow)"/>
+  <circle cx="133" cy="123.4" r="4" fill="#4D94FF"/>
+  <circle cx="186" cy="127" r="4" fill="#4D94FF"/>
+  <circle cx="239" cy="108.4" r="4" fill="#4D94FF"/>
+  <circle cx="292" cy="110.2" r="4" fill="#4D94FF"/>
+  <circle cx="344" cy="95.8" r="4" fill="#4D94FF"/>
+  <circle cx="397" cy="91" r="5" fill="#00F0FF" filter="url(#glow)"/>  <!-- Peak -->
+  <circle cx="450" cy="95.2" r="4" fill="#4D94FF"/>
+
+  <!-- Peak annotation -->
+  <text x="397" y="82" text-anchor="middle" fill="#00F0FF" font-size="8" font-weight="bold">96.5%</text>
+
+  <!-- Argon data: D9=77.9, D10=89.5, D11=78.0, D12=72.5, D13=79.9, D14=81.4, D15=~56 -->
+  <!-- D9: 340-(22.9*6)=340-137.4=202.6  D10: 340-(34.5*6)=340-207=133  D11: 340-(23*6)=340-138=202 -->
+  <!-- D12: 340-(17.5*6)=340-105=235  D13: 340-(24.9*6)=340-149.4=190.6  D14: 340-(26.4*6)=340-158.4=181.6 -->
+  <!-- D15: 340-(1*6)=340-6=334 -->
+
+  <!-- Argon area fill -->
+  <polygon points="503,202.6 556,133 609,202 661,235 714,190.6 767,181.6 820,334 820,340 503,340" fill="url(#argArea)"/>
+
+  <!-- Argon line -->
+  <polyline points="503,202.6 556,133 609,202 661,235 714,190.6 767,181.6 820,334"
+    fill="none" stroke="url(#argLine)" stroke-width="2.5" stroke-linejoin="round"/>
+
+  <!-- Argon dots -->
+  <circle cx="503" cy="202.6" r="4" fill="#00FF88"/>
+  <circle cx="556" cy="133" r="4" fill="#00FF88"/>
+  <circle cx="609" cy="202" r="4" fill="#00FF88"/>
+  <circle cx="661" cy="235" r="5" fill="#FF8C42" filter="url(#glow)"/>  <!-- Trough -->
+  <circle cx="714" cy="190.6" r="4" fill="#00FF88"/>
+  <circle cx="767" cy="181.6" r="4" fill="#00FF88"/>
+  <circle cx="820" cy="334" r="4" fill="#FFB800" opacity="0.7"/>
+
+  <!-- Trough annotation -->
+  <text x="661" y="250" text-anchor="middle" fill="#FF8C42" font-size="8" font-weight="bold">72.5%</text>
+  <text x="661" y="262" text-anchor="middle" fill="#4A6A8A" font-size="7">UI editing</text>
+
+  <!-- Provider routing box -->
+  <rect x="530" y="88" width="160" height="50" rx="5" fill="#071120" stroke="#0D4054"/>
+  <text x="610" y="104" text-anchor="middle" fill="#FFB800" font-size="9" font-weight="bold">Provider Routing Gap</text>
+  <text x="610" y="118" text-anchor="middle" fill="#B8D4EA" font-size="8">Vertex: 75.9% cache hit</text>
+  <text x="610" y="130" text-anchor="middle" fill="#B8D4EA" font-size="8">AI Studio: 56.6% cache hit</text>
+
+  <!-- Legend -->
+  <rect x="80" y="372" width="700" height="22" rx="4" fill="#071120" stroke="#0D4054"/>
+  <line x1="100" y1="385" x2="130" y2="385" stroke="#4D94FF" stroke-width="2"/>
+  <circle cx="115" cy="385" r="3" fill="#4D94FF"/>
+  <text x="140" y="389" fill="#4D94FF" font-size="9">GLM-5 (94.4% avg)</text>
+  <line x1="310" y1="385" x2="340" y2="385" stroke="#00FF88" stroke-width="2"/>
+  <circle cx="325" cy="385" r="3" fill="#00FF88"/>
+  <text x="350" y="389" fill="#00FF88" font-size="9">Argon (75.4% avg)</text>
+  <line x1="510" y1="385" x2="540" y2="385" stroke="#FFB800" stroke-width="1" stroke-dasharray="6 3"/>
+  <text x="550" y="389" fill="#FFB800" font-size="9">Model switch (Day 8→9)</text>
+</svg>
