@@ -44,7 +44,7 @@ This document is both a training journal and a comprehensive introduction to rei
 | **↳ 11D** | **[Phase 5: Monte Carlo Tree Search (MCTS) Theory & Implementation](./training-book/11d-mcts-theory-and-implementation.md)** | Complete PUCT MCTS derivation, 4-step search loop, M2 Ultra batched leaf evaluation, virtual loss, Dirichlet noise, and annotated `MCTS.cjs` code. |
 | **↳ 11E** | **[Phase 5.5 & 6: Quiescence MCTS, Full Torus ($T^2$) Mastery & Summary](./training-book/11e-quiescence-mcts-and-torus-mastery.md)** | Horizon effect & enclosure cascades, `QuiescenceMCTS.cjs` math, `TF-B14` (45K FIFO pure self-play), `TF-B15` (`ToroidalPad2D` + Safety Filter), and Phase 1–6 summary. |
 | **12** | **[Toroidal 3D Visualization, Dual-View Projection & Human Telemetry](./training-book/12-toroidal-3d-and-telemetry.md)** | Synchronized 2D viewport + interactive 3D ring torus (`Torus3DView.js`), parametric surface math, and continuous human match telemetry (`HumanGameLogger.js`). |
-| **Appendices** | **[Appendices A, B & C: Commands, Project Structure & Telemetry Schema](./training-book/appendices.md)** | Reproducible CLI commands for all 6 phases, repository directory tree, and complete CLI flag & dashboard JSON schema reference. |
+| **Appendices** | **[Appendices A, B, C & D: Commands, Project Structure, Telemetry & Token Economics](./training-book/appendices.md)** | Reproducible CLI commands for all 6 phases, repository directory tree, dashboard JSON schema, and AI-assisted engineering token/cost analysis (`GLM-5` vs `Argon`). |
 
 ---
 
