@@ -451,7 +451,9 @@ class GridManager {
     }
 
     const claimed = this.claimEnclosedTriangles(pl);
-    this.extraTurns += Math.floor((1 + claimed) / 2);
+    if (claimed > 0) {
+      this.extraTurns += 1;
+    }
 
     if (this.extraTurns > 0) {
       this.extraTurns--;
@@ -1976,8 +1978,8 @@ class GameScene extends Phaser.Scene {
       const totalClaimed = placedTriangles + enclosedTriangles;
 
       if (enclosedTriangles > 0) {
-        this.gridManager.extraTurns += Math.floor((1 + enclosedTriangles) / 2);
-        console.log(`Player ${this.gridManager.currentPlayer} enclosed ${enclosedTriangles} triangle(s) and gets extra turn(s).`);
+        this.gridManager.extraTurns += 1;
+        console.log(`Player ${this.gridManager.currentPlayer} enclosed ${enclosedTriangles} triangle(s) and gets an extra turn.`);
       }
 
       // --- Log human move (using pre-move state snapshot) ---
@@ -2330,8 +2332,8 @@ triggerAIMove() {
                   this.totalMovesPlayed++;
                   const enclosed = this.gridManager.claimEnclosedTriangles(); // [cite: 139, 217]
                   if (enclosed > 0) {
-                    this.gridManager.extraTurns += Math.floor((1 + enclosed) / 2);
-                    console.log(`AI Player ${this.gridManager.currentPlayer} enclosed ${enclosed} triangle(s) and gets extra turn(s).`);
+                    this.gridManager.extraTurns += 1;
+                    console.log(`AI Player ${this.gridManager.currentPlayer} enclosed ${enclosed} triangle(s) and gets an extra turn.`);
                   }
                   
                   // --- Log AI move for human games (using pre-move state snapshot) ---
@@ -2466,8 +2468,8 @@ triggerAIMove() {
             this.totalMovesPlayed++;
             const enclosed = this.gridManager.claimEnclosedTriangles();
             if (enclosed > 0) {
-              this.gridManager.extraTurns += Math.floor((1 + enclosed) / 2);
-              console.log(`${playerType} Player ${this.gridManager.currentPlayer} enclosed ${enclosed} triangle(s) and gets extra turn(s).`);
+              this.gridManager.extraTurns += 1;
+              console.log(`${playerType} Player ${this.gridManager.currentPlayer} enclosed ${enclosed} triangle(s) and gets an extra turn.`);
             }
             
             // --- Log opponent move for human games (using pre-move state snapshot) ---
@@ -3307,7 +3309,7 @@ triggerAIMove() {
     if (placed) {
       const enclosed = this.gridManager.claimEnclosedTriangles();
       if (enclosed > 0) {
-        this.gridManager.extraTurns += Math.floor((1 + enclosed) / 2);
+        this.gridManager.extraTurns += 1;
       }
       this.redrawTriangles();
       this.updateScore();

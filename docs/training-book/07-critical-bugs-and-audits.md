@@ -303,10 +303,10 @@ const newGrid = this.grid.clone();
 newGrid.placeTriangle(move.x, move.y, move.rotation, this.player);
 newGrid.currentPlayer = this.player === 1 ? 2 : 1;
 // ❌ Never called claimEnclosedTriangles(this.player)!
-// ❌ Never granted extraTurns += Math.floor((1 + claimed) / 2)!
+// ❌ Never granted extraTurns += 1 when claimed > 0!
 ```
 **Why It Mattered:** Inside MCTS lookahead, **enclosing territory and earning bonus turns literally did not exist!** MCTS could not see that completing a boundary captures enclosed triangles and grants an immediate extra turn, nor could it see when it left an enclosure combo open for the `HeuristicPlayer`.
-- **The Fix (Unified Move Execution, `grid.executeMove`):** We consolidated move placement, enclosure claiming (`claimEnclosedTriangles(pl)`), and bonus turn calculation (`extraTurns += Math.floor((1 + claimed) / 2)`) into a single atomic engine transition method (`GridManager.prototype.executeMove(x, y, rotation, player)`) and called it everywhere across tree expansion, training, game sessions, and evaluation (`MCTSNode.expand`, `train_tfjs.cjs`, `GameSession.js`, and evaluation scripts). Immediately after fixing this, AI cluster sizes jumped by **+60% to +85%** (from ~19 to ~35–40)!
+- **The Fix (Unified Move Execution, `grid.executeMove`):** We consolidated move placement, enclosure claiming (`claimEnclosedTriangles(pl)`), and bonus turn calculation (`if (claimed > 0) extraTurns += 1`) into a single atomic engine transition method (`GridManager.prototype.executeMove(x, y, rotation, player)`) and called it everywhere across tree expansion, training, game sessions, and evaluation (`MCTSNode.expand`, `train_tfjs.cjs`, `GameSession.js`, and evaluation scripts). Immediately after fixing this, AI cluster sizes jumped by **+60% to +85%** (from ~19 to ~35–40)!
 
 #### Bug 8: Canonical 18-Channel Encoding Dropped the 2nd Triangle in Every Full Cell
 

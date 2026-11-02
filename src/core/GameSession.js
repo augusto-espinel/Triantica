@@ -112,8 +112,10 @@ export class GameSession {
         this.config.onMove(moveRecord, this.gridManager);
       }
 
-      // Handle extra turns
-      this.gridManager.extraTurns += Math.floor((1 + claims) / 2);
+      // Handle extra turns (1 extra turn whenever 1+ triangles are enclosed)
+      if (claims > 0) {
+        this.gridManager.extraTurns += 1;
+      }
 
       // Switch player
       if (this.gridManager.extraTurns > 0) {

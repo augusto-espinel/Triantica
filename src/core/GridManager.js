@@ -369,7 +369,9 @@ export class GridManager {
     }
 
     const claimed = this.claimEnclosedTriangles(pl);
-    this.extraTurns += Math.floor((1 + claimed) / 2);
+    if (claimed > 0) {
+      this.extraTurns += 1;
+    }
 
     if (this.extraTurns > 0) {
       this.extraTurns--;

@@ -327,8 +327,10 @@ async function _runGameVsOpponent(aiPlayer, opponent, gridManager, gradientIsola
     let claimed = 0;
     if (success) {
       claimed = gridManager.claimEnclosedTriangles(currentPlayer);
-      // Handle extra turns (same logic as AIPlayer.runSelfPlayGame)
-      gridManager.extraTurns += Math.floor((1 + claimed) / 2);
+      // Handle extra turns (1 extra turn whenever 1+ triangles are enclosed)
+      if (claimed > 0) {
+        gridManager.extraTurns += 1;
+      }
     }
     
     // Update claimed in history entries

@@ -47,7 +47,7 @@
   </defs>
   <rect class="bg" width="920" height="300" rx="10" stroke="#00F0FF" stroke-width="1.5"/>
   <text x="26" y="34" class="title">ENCLOSURE CASCADE ("SNOWBALL") &amp; EXTRA-TURN MECHANICS</text>
-  <text x="26" y="54" class="subtitle">Bonus Turns Formula: extraTurns = floor((1 + claimed) / 2) — Why a single 1-move cavity triggers a board sweep</text>
+  <text x="26" y="54" class="subtitle">Bonus Turn Rule: Any Enclosure (claimed &gt;= 1) Grants +1 Extra Turn — Why a single 1-move cavity triggers a board sweep</text>
 
   <!-- Step 1 -->
   <rect x="24" y="76" width="195" height="150" rx="8" class="panel-red"/>
@@ -66,19 +66,19 @@
   <text x="270" y="122" class="body-txt">Opponent seals the pocket,</text>
   <text x="270" y="138" class="body-txt">auto-claiming k = 1 slot.</text>
   <rect x="270" y="150" width="172" height="32" rx="4" fill="#030B18" stroke="#00F0FF"/>
-  <text x="356" y="170" class="mono-teal" text-anchor="middle">floor((1+1)/2) = +1 Turn!</text>
+  <text x="356" y="170" class="mono-teal" text-anchor="middle">claimed &gt;= 1 → +1 Turn!</text>
   <text x="270" y="204" class="mono-sm" fill="#00FFCC">Tempo-free! Keeps turn ►</text>
 
   <path d="M 456 150 L 488 150" class="arrow-teal"/>
 
   <!-- Step 3 -->
   <rect x="492" y="76" width="200" height="150" rx="8" class="panel-teal"/>
-  <text x="506" y="100" class="mono-teal">3. MULTI-SLOT CHAIN (k=3)</text>
+  <text x="506" y="100" class="mono-teal">3. CHAINED ENCLOSURE</text>
   <text x="506" y="122" class="body-txt">Using the free turn, opponent</text>
-  <text x="506" y="138" class="body-txt">bridges two walls, enclosing</text>
-  <text x="506" y="154" class="body-txt">k = 3 empty slots at once!</text>
+  <text x="506" y="138" class="body-txt">seals the next pocket, claiming</text>
+  <text x="506" y="154" class="body-txt">more slots &amp; keeping the turn!</text>
   <rect x="506" y="164" width="172" height="28" rx="4" fill="#031818" stroke="#00FFCC"/>
-  <text x="592" y="182" class="mono-gold" text-anchor="middle">floor((1+3)/2) = +2 Turns!</text>
+  <text x="592" y="182" class="mono-gold" text-anchor="middle">claimed &gt;= 1 → +1 Turn!</text>
   <text x="506" y="210" class="mono-sm" fill="#FFB800">Snowball accelerates ►</text>
 
   <path d="M 692 150 L 724 150" class="arrow-gold"/>

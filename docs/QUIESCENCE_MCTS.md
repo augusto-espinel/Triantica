@@ -10,7 +10,7 @@
 ### Observed Behavior (`TF-B10` Audit)
 When the AI makes a single non-enclosing move that leaves a 3-sided "hole", `HeuristicPlayer` immediately chains multiple enclosure captures consecutively:
 1. AI places a piece (`claimed = 0`) that leaves an enclosure opportunity on the board and passes the turn to the opponent.
-2. `HeuristicPlayer` claims 1+ enclosed triangles → earns extra turns via `Math.floor((1 + claimed) / 2)` (even `claimed = 1` grants 1 full extra turn!).
+2. `HeuristicPlayer` claims 1+ enclosed triangles → earns an immediate extra turn (`claimed > 0` grants 1 full extra turn!).
 3. More enclosures become available → claim → extra turns → cascade.
 4. In `TF-B10` audit games, the AI averaged only **14 turns** vs `HeuristicPlayer`'s **96 turns** in a 110-move game.
 
@@ -26,9 +26,9 @@ An inflection-point audit of `TF-B10` revealed why standard MCTS (`MCTS.cjs`) fa
 
 A critical rule of Triantica governs enclosure risk:
 
-$$\text{extraTurns} = \left\lfloor \frac{1 + \text{claimed}}{2} \right\rfloor$$
+$$\text{extraTurns} = \begin{cases} 1 & \text{if } \text{claimed} \ge 1 \\ 0 & \text{if } \text{claimed} = 0 \end{cases}$$
 
-- **Case A — Enclosing Move (`claimed > 0`):** Any move that claims at least 1 enclosed triangle awards **at least 1 extra turn** (`floor((1+1)/2) = 1`), so the active player **retains the turn** (`nextPlayer === player`). Because the mover immediately plays again, they can either continue an **enclosing train** in their own favor or patch any newly created holes before the opponent ever gets to move. **Therefore, an enclosing move (`claimed > 0`) NEVER has opponent enclosure risk (`risk = 0`).**
+- **Case A — Enclosing Move (`claimed > 0`):** Any move that claims at least 1 enclosed triangle awards **1 extra turn**, so the active player **retains the turn** (`nextPlayer === player`). Because the mover immediately plays again, they can either continue an **enclosing train** in their own favor or patch any newly created holes before the opponent ever gets to move. **Therefore, an enclosing move (`claimed > 0`) NEVER has opponent enclosure risk (`risk = 0`).**
 - **Case B — Non-Enclosing Single Move (`claimed === 0`):** If `extraTurns === 0`, the turn passes immediately to the opponent (`nextPlayer !== player`). If this single move leaves 1 or more enclosure opportunities on the board for the opponent, the opponent can deterministically exploit them and trigger an extra-turn cascade. **Only non-enclosing moves that pass the turn can carry opponent enclosure risk (`risk > 0`).**
 
 ---

@@ -159,7 +159,7 @@ async function main() {
     
     // Extra turns
     const prevExtra = grid.extraTurns;
-    grid.extraTurns += Math.floor((1 + enclosed) / 2);
+    if (enclosed > 0) grid.extraTurns += 1;
     if (grid.extraTurns > 0) grid.extraTurns--;
     else cur = cur === 1 ? 2 : 1;
     

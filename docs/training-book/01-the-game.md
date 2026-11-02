@@ -15,8 +15,8 @@ Triantica is a two-player territorial strategy game played on a **$10 \times 10$
   - **Group 1 (`╲` backslash diagonal):** Rotation `1` (Bottom-Left `◣`) and Rotation `3` (Top-Right `◥`).
 - **Corner-Touch Placement Rule (`getValidMoves`):** After the opening move, every newly placed triangle must touch at least one vertex of an already-placed triangle anywhere in the 8-cell toroidal neighborhood.
 - **Enclosure & Automatic Capture (`claimEnclosedTriangles`):** Whenever a placement seals off a pocket of $k \ge 1$ empty triangle slots so they can no longer reach the wider open board across unblocked edges, all $k$ enclosed slots are **automatically filled** with the active player's triangles.
-- **Extra-Turn Snowball Mechanic:** Capturing an enclosure of $k$ triangles immediately awards bonus turns before the opponent can respond:
-  $$\text{extraTurns} = \left\lfloor \frac{1 + k}{2} \right\rfloor$$
+- **Extra-Turn Snowball Mechanic:** Capturing an enclosure of $k \ge 1$ triangles immediately awards **1 extra turn** before the opponent can respond:
+  $$\text{extraTurns} = \begin{cases} 1 & \text{if } k \ge 1 \\ 0 & \text{if } k = 0 \end{cases}$$
 - **Victory Condition (Largest Contiguous Cluster):** When all 200 triangle slots on the $10 \times 10$ board are filled, each player's score is the size of their **single largest contiguous cluster** of triangles connected across shared edges (corner contact alone does not connect a cluster).
 
 <details>
@@ -31,8 +31,7 @@ Triantica is a two-player territorial strategy game played on a **$10 \times 10$
 │      Group 1 (╲): Rot 1 (Bottom-Left) & Rot 3 (Top-Right)│
 │  • Must touch an existing corner to be a legal placement │
 │  • Enclose empty triangle slots to auto-claim them       │
-│  • Capturing enclosures grants extra turns:              │
-│      extraTurns += floor((1 + claimed) / 2)              │
+│  • Capturing 1+ enclosures grants an immediate extra turn│
 │  • Largest contiguous cluster of triangles wins!         │
 └──────────────────────────────────────────────────────────┘
 ```
@@ -102,8 +101,7 @@ Before move:          After move (enclosure):
 
 When a move encloses $k \ge 1$ empty triangle slots via flood-fill (`claimEnclosedTriangles`), two things happen simultaneously:
 1. All $k$ enclosed slots are immediately filled with the active player's triangles (expanding their contiguous cluster).
-2. The player earns **bonus turns** according to:
-   $$\text{extraTurns} = \left\lfloor \frac{1 + k}{2} \right\rfloor$$
+2. The player earns an **immediate extra turn** (`extraTurns = 1` whenever $k \ge 1$).
 
 ![Enclosure Cascade Snowball Mechanic](./assets/diagrams/enclosure-cascade-snowball.svg)
 
@@ -117,11 +115,11 @@ When a move encloses $k \ge 1$ empty triangle slots via flood-fill (`claimEnclos
 │                                                                              │
 │   Blunder (Leaves 1 Hole) ──► Opponent Caps 1 Slot (k=1)                     │
 │                                     │                                        │
-│                                     ▼  extraTurns = floor((1+1)/2) = +1 Turn │
+│                                     ▼  k >= 1 ──► +1 Extra Turn!             │
 │                               Opponent Places Free Piece                     │
 │                                     │                                        │
-│                                     ▼  Creates New Enclosure (k=3 Slots!)    │
-│                               extraTurns = floor((1+3)/2) = +2 Turns!        │
+│                                     ▼  Creates New Enclosure (k >= 1 Slots!) │
+│                               k >= 1 ──► +1 Extra Turn (Chain Continues!)    │
 │                                     │                                        │
 │                                     ▼                                        │
 │                         Cascading Board Sweep (170 vs 4)                     │
@@ -132,8 +130,8 @@ When a move encloses $k \ge 1$ empty triangle slots via flood-fill (`claimEnclos
 </details>
 
 **Strategic & RL Consequence (Second-Mover Counter-Attack Edge):**
-- Even enclosing a **single triangle ($k = 1$)** yields $\lfloor 2/2 \rfloor = \mathbf{1\text{ extra turn}}$, making single-slot enclosures tempo-free ("free moves" that keep the initiative!).
-- Enclosing **$k = 3$ triangles** yields **2 extra turns**, allowing a player to chain multi-step enclosure cascades before the opponent ever gets to move again.
+- Even enclosing a **single triangle ($k = 1$)** yields **1 extra turn**, making single-slot enclosures tempo-free ("free moves" that keep the initiative!).
+- Because **every enclosure grants another turn**, a player can chain multi-step enclosure cascades for as long as new pockets can be sealed, sweeping large sections of the board before the opponent ever gets to move again.
 - **P2 Counter-Attack Dynamics:** In early deterministic openings without random 2-ply seeding, Player 2 reacts directly to Player 1's opening placement, using the first defensive wall to trigger the initial enclosure cascade. Because winning is determined by the **largest single contiguous edge-sharing cluster** (out of 200 total triangles when the board fills), a single mid-game cascade can sever the opponent's cluster in two while merging the attacker's pieces into a 140+ triangle super-cluster.
 
 **Key insight:** The game has **400 possible actions** per turn (100 cells × 4 rotations), but only ~50 are typically valid. The AI must learn:

@@ -732,7 +732,9 @@ class AIPlayer {
                 //opponentClusterSize: opponentPlayerClusterSize // << Opponent's cluster size AFTER move
             });
 
-            this.gridManager.extraTurns += Math.floor((1 + claimed) / 2);
+            if (claimed > 0) {
+                this.gridManager.extraTurns += 1;
+            }
 
             if (this.gridManager.extraTurns > 0) {
                 this.gridManager.extraTurns--;

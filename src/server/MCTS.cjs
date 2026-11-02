@@ -128,7 +128,9 @@ class MCTSNode {
         newGrid.currentPlayer = this.player;
         newGrid.placeTriangle(move.x, move.y, move.rotation, this.player);
         claimed = newGrid.claimEnclosedTriangles(this.player);
-        newGrid.extraTurns += Math.floor((1 + claimed) / 2);
+        if (claimed > 0) {
+          newGrid.extraTurns += 1;
+        }
         if (newGrid.extraTurns > 0) {
           newGrid.extraTurns--;
         } else {

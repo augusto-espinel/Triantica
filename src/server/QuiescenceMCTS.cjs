@@ -5,7 +5,7 @@
  * Both single (`search`) and batched (`searchBatched` / `_runBatch`) paths
  * run tactical quiescence evaluation at every leaf and adjust root policy targets:
  * 
- * 1. Enclosing moves (`claimed > 0`) grant extra turns (`floor((1 + claimed) / 2)`),
+ * 1. Enclosing moves (`claimed > 0`) grant an immediate extra turn (`extraTurns = 1`),
  *    allowing the active player to immediately patch any newly created holes or
  *    continue cascading enclosures. Therefore, enclosing moves NEVER have opponent
  *    risk (`risk = 0`) and receive a positive enclosure bonus.
@@ -76,7 +76,7 @@ function findEnclosureOpportunities(grid, player) {
           opportunities.push({
             x, y, rotation,
             claimed,
-            extraTurns: Math.floor((1 + claimed) / 2)
+            extraTurns: 1
           });
         }
       }

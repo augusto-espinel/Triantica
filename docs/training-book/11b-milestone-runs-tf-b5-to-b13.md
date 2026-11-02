@@ -268,7 +268,7 @@ In naive self-play without an experience replay buffer, moving from Valley 1 $\t
 
 **Diagnostic Root Cause — Why Pure Self-Play (`TF-B9`) Loses to `HeuristicPlayer`:**
 A move-by-move trace between `TF-B9_network.json` (P1) and `HeuristicPlayer` (P2) revealed the exact tactical mechanism behind the Heuristic Wall:
-- Because `executeMove` grants extra turns via `Math.floor((1 + claimed) / 2)`, **even a 1-triangle enclosure (`claimed = 1`) awards a full extra turn**.
+- Because `executeMove` grants an extra turn whenever `claimed > 0`, **even a 1-triangle enclosure (`claimed = 1`) awards a full extra turn**.
 - `HeuristicPlayer` explicitly evaluates 1-step enclosure claims (`+0.3 × claimed`), contiguous cluster growth (`+0.1 × largestCluster`), and relative lead (`+0.2 × (newLead - currentLead)`). Starting as early as **Move 3**, `HeuristicPlayer` chains 6–8 consecutive `claimed = 1` moves in a single turn sequence (`P2_clust` snowballing `1 → 3 → 5 → 19 → 55` by Move 38 while `P1_clust` remains at `1`), getting `96` moves to the AI's `14` moves across a 110-move game.
 - In pure self-play (`TF-B9`), neither side played this hyper-aggressive early 1-triangle enclosure chain, so the network's policy and value heads never encountered (or learned to block/contest) early extra-turn snowballs.
 
@@ -305,14 +305,14 @@ nohup node src/server/train_tfjs.cjs \
    - Mean contiguous cluster size against Random reached **`79.2` triangles** in Cycle 8 (`76.5` in Cycle 10).
    - Standalone 1-ply browser network verification (via the standalone game verification script, `verify_game_network.cjs`, without MCTS) improved from `68%` (`TF-B9`) to **`76%` vs Random (`76W / 24L / 0D`)**.
 2. **Why `0.0%` vs `HeuristicPlayer` Persists Even With Mixed Opponent Training:**
-   - During the 50 Heuristic games per cycle, the deterministic heuristic opponent (`HeuristicPlayer`) chains 1-triangle enclosures (`Math.floor((1 + claimed) / 2) = 1` extra turn per single claim) from Move 3 onward, taking ~85% of the moves (`~14–16` AI turns per game vs `~70` in self-play).
+   - During the 50 Heuristic games per cycle, the deterministic heuristic opponent (`HeuristicPlayer`) chains 1-triangle enclosures (`+1` extra turn per claim) from Move 3 onward, taking ~85% of the moves (`~14–16` AI turns per game vs `~70` in self-play).
    - An inflection-point audit of `TF-B10` revealed that the standard Monte Carlo Tree Search engine (`MCTS.cjs`) evaluates leaf states purely via the neural Value Head (which rated dangerous hole-creating moves at `+0.4794` vs safe moves at `+0.1060`). Without playing out forced enclosure cascades at the leaves, 50 MCTS simulations actively amplified single-move openings that `HeuristicPlayer` immediately exploited.
 
 #### TF-B12: Quiescence MCTS + Mixed-Opponent Training (`50% Network / 50% Heuristic`)
 
 **Architectural Principle — Let Quiescence Search Teach Both Enclosing Trains and Hole Avoidance:**
 Rather than complicating the neural network with auxiliary risk heads or artificial TD($\lambda$) reward shaping, **TF-B12** keeps the clean 2-head ConvNet (`Policy + Value`) and upgrades the MCTS teacher to the **Quiescence MCTS Engine** (`src/server/QuiescenceMCTS.cjs`):
-1. **Enclosing Moves Are Never Risky (`claimed > 0` $\implies$ `risk = 0`):** Because any move with `claimed > 0` grants `Math.floor((1 + claimed) / 2) >= 1` extra turns, the active player retains the turn and can immediately chain further enclosures ("enclosing trains") or patch any holes created. `QuiescenceMCTS` gives enclosing moves a positive bonus (`enclosureBonusWeight`) at both the root prior and leaf evaluation.
+1. **Enclosing Moves Are Never Risky (`claimed > 0` $\implies$ `risk = 0`):** Because any move with `claimed > 0` grants an immediate extra turn (`extraTurns = 1`), the active player retains the turn and can immediately chain further enclosures ("enclosing trains") or patch any holes created. `QuiescenceMCTS` gives enclosing moves a positive bonus (`enclosureBonusWeight`) at both the root prior and leaf evaluation.
 2. **Penalize Single-Move Openings (`claimed === 0` with Opponent Enclosures):** Only non-enclosing moves that pass the turn to the opponent can be exploited. If a candidate move leaves enclosure opportunities for the opponent, `QuiescenceMCTS` plays out the deterministic greedy cascade at the leaf (`_runQuiescenceRollout`) and penalizes both the leaf Q-value and the root visit policy target (`_getRiskAdjustedPolicy`).
 3. **Batched Pre-Cascade Expansion + Post-Cascade Evaluation (`searchBatched` / `_runBatch`):** Leaf nodes are always expanded using the policy of `leaf.grid` (pre-cascade), while leaf values are evaluated on the quiescent post-cascade board in a single combined `batchPredict` GPU call.
 

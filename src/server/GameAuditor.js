@@ -97,11 +97,11 @@ class GameAuditor {
           message: `Move ${moveNum}: P${player} placement failed at (${move.x},${move.y}) r${move.rotation}`
         });
       } else {
-        // Claim enclosed and track extra turns (same logic as AIPlayer.runSelfPlayGame)
+        // Claim enclosed and track extra turns (1 extra turn whenever 1+ triangles are enclosed)
         const enclosed = replayGrid.claimEnclosedTriangles(player);
-        replayGrid.extraTurns += Math.floor((1 + enclosed) / 2);
         if (enclosed > 0) {
-          trace.push(`Move ${moveNum}: P${player} enclosed ${enclosed} triangles (+${Math.floor((1 + enclosed) / 2)} extra turns)`);
+          replayGrid.extraTurns += 1;
+          trace.push(`Move ${moveNum}: P${player} enclosed ${enclosed} triangles (+1 extra turn)`);
         }
         
         // Verify claimed count matches history (if recorded)
