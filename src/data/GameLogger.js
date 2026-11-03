@@ -156,10 +156,12 @@ export class GameLogger {
  * HumanGameLogger - FIFO rotating buffer for Human vs. AI match telemetry
  *
  * Persists completed Human vs. AI matches in localStorage (up to maxGames)
- * with deduplication and manual export-and-flush.
- * Captures PRE-MOVE 10x10x18 canonical state (1,800 floats, player-relative)
- * and 401-float legacy state for each ply, along with actionIndex (0..399)
- * and terminal valueTarget (+1, 0, -1).
+ * using a lossless Run-Length Encoded (RLE) compact board representation
+ * (~40 KB/game instead of ~730 KB/game) so all 100 games fit well inside
+ * the 5 MB browser localStorage quota.
+ * Automatically migrates any legacy uncompressed games on load and hydrates
+ * full 1,800-float canonicalState + 401-float legacyState on exportAndFlush()
+ * or lazy property access.
  */
 export class HumanGameLogger {
   constructor(config = {}) {
@@ -174,7 +176,32 @@ export class HumanGameLogger {
     try {
       if (!this.storage) return [];
       const stored = this.storage.getItem(this.storageKey);
-      return stored ? JSON.parse(stored) : [];
+      if (!stored) return [];
+      const parsed = JSON.parse(stored);
+      let migrated = false;
+      for (const game of parsed) {
+        const rows = game.gridDimensions?.rows || 10;
+        const cols = game.gridDimensions?.cols || 10;
+        if (Array.isArray(game.moves)) {
+          for (const m of game.moves) {
+            if (!m.compactState && Array.isArray(m.legacyState)) {
+              m.compactState = this._encodeCompactFromLegacy(m.legacyState, rows, cols);
+              delete m.state;
+              delete m.legacyState;
+              migrated = true;
+            }
+            this._attachLazyStateGetters(m, rows, cols);
+          }
+        }
+      }
+      if (migrated) {
+        try {
+          this.storage.setItem(this.storageKey, JSON.stringify(parsed));
+        } catch (_) {
+          // Ignore quota error during migration; _save() handles eviction if needed
+        }
+      }
+      return parsed;
     } catch (e) {
       return [];
     }
@@ -190,6 +217,147 @@ export class HumanGameLogger {
         this._save();
       }
     }
+  }
+
+  _encodeCompactBoard(gridManager, player) {
+    const rows = gridManager?.rows || 10;
+    const cols = gridManager?.cols || 10;
+    const tokens = [];
+    let emptyRun = 0;
+
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const tris = gridManager.grid[r][c].triangles;
+        for (let i = 0; i < 2; i++) {
+          const t = tris[i];
+          if (!t) {
+            emptyRun++;
+          } else {
+            if (emptyRun > 0) {
+              tokens.push(emptyRun === 1 ? '.' : `.${emptyRun}`);
+              emptyRun = 0;
+            }
+            const code = (t.player === player ? 1 : 5) + t.rotation;
+            tokens.push(String.fromCharCode(64 + code));
+          }
+        }
+      }
+    }
+    if (emptyRun > 0) {
+      tokens.push(emptyRun === 1 ? '.' : `.${emptyRun}`);
+    }
+    return tokens.join('');
+  }
+
+  _encodeCompactFromLegacy(legacyState, rows = 10, cols = 10) {
+    if (!legacyState || legacyState.length < rows * cols * 4) return '.200';
+    const tokens = [];
+    let emptyRun = 0;
+    for (let cellIdx = 0; cellIdx < rows * cols; cellIdx++) {
+      for (let i = 0; i < 2; i++) {
+        const pNorm = legacyState[cellIdx * 4 + i * 2];
+        const rNorm = legacyState[cellIdx * 4 + i * 2 + 1];
+        if (!pNorm || rNorm < 0) {
+          emptyRun++;
+        } else {
+          if (emptyRun > 0) {
+            tokens.push(emptyRun === 1 ? '.' : `.${emptyRun}`);
+            emptyRun = 0;
+          }
+          const rot = Math.round(rNorm * 4);
+          const code = (pNorm === 1 ? 1 : 5) + rot;
+          tokens.push(String.fromCharCode(64 + code));
+        }
+      }
+    }
+    if (emptyRun > 0) {
+      tokens.push(emptyRun === 1 ? '.' : `.${emptyRun}`);
+    }
+    return tokens.join('');
+  }
+
+  _decodeCompactBoard(compactStr, rows = 10, cols = 10) {
+    const entries = [];
+    let i = 0;
+    while (i < compactStr.length) {
+      const ch = compactStr[i];
+      if (ch === '.') {
+        i++;
+        let numStr = '';
+        while (i < compactStr.length && compactStr[i] >= '0' && compactStr[i] <= '9') {
+          numStr += compactStr[i++];
+        }
+        const count = numStr ? parseInt(numStr, 10) : 1;
+        for (let k = 0; k < count; k++) entries.push(null);
+      } else {
+        const code = ch.charCodeAt(0) - 64;
+        const isSelf = code <= 4;
+        const rotation = isSelf ? (code - 1) : (code - 5);
+        entries.push({ isSelf, rotation });
+        i++;
+      }
+    }
+
+    const canonical = new Float32Array(rows * cols * 18);
+    const legacy = new Array(rows * cols * 4 + 1);
+
+    for (let cellIdx = 0; cellIdx < rows * cols; cellIdx++) {
+      const t1 = entries[cellIdx * 2] || null;
+      const t2 = entries[cellIdx * 2 + 1] || null;
+
+      const legOff = cellIdx * 4;
+      legacy[legOff] = t1 ? (t1.isSelf ? 1 : -1) : 0;
+      legacy[legOff + 1] = t1 ? t1.rotation / 4.0 : -1;
+      legacy[legOff + 2] = t2 ? (t2.isSelf ? 1 : -1) : 0;
+      legacy[legOff + 3] = t2 ? t2.rotation / 4.0 : -1;
+
+      const cellOffset = cellIdx * 18;
+      const cellTris = [];
+      if (t1) cellTris.push(t1);
+      if (t2) cellTris.push(t2);
+
+      for (let slot = 0; slot < 2; slot++) {
+        const slotOffset = cellOffset + slot * 9;
+        const tri = cellTris.find(t => (slot === 0 ? t.rotation < 2 : t.rotation >= 2));
+        if (!tri) {
+          canonical[slotOffset] = 1;
+        } else {
+          const ownerOffset = tri.isSelf ? 0 : 4;
+          canonical[slotOffset + 1 + ownerOffset + tri.rotation] = 1;
+        }
+      }
+    }
+    legacy[rows * cols * 4] = 1;
+
+    return {
+      canonicalState: Array.from(canonical),
+      legacyState: legacy
+    };
+  }
+
+  _attachLazyStateGetters(moveRecord, rows = 10, cols = 10) {
+    if (!moveRecord || !moveRecord.compactState) return moveRecord;
+    const self = this;
+    let decodedCache = null;
+    const ensureDecoded = () => {
+      if (!decodedCache) {
+        decodedCache = self._decodeCompactBoard(moveRecord.compactState, rows, cols);
+      }
+      return decodedCache;
+    };
+    Object.defineProperties(moveRecord, {
+      state: {
+        get() { return ensureDecoded().canonicalState; },
+        enumerable: false,
+        configurable: true
+      },
+      legacyState: {
+        get() { return ensureDecoded().legacyState; },
+        enumerable: false,
+        configurable: true
+      }
+    });
+    return moveRecord;
   }
 
   startGame(gameMode, difficulty, humanPlayerNumber, gridManager) {
@@ -208,33 +376,63 @@ export class HumanGameLogger {
   }
 
   capturePreMoveState(gridManager, player) {
-    return {
-      canonicalState: this._getCanonicalState(gridManager, player),
-      legacyState: this._getLegacyState(gridManager, player)
+    const rows = gridManager?.rows || 10;
+    const cols = gridManager?.cols || 10;
+    const compactState = this._encodeCompactBoard(gridManager, player);
+    const self = this;
+    let decodedCache = null;
+    const ensureDecoded = () => {
+      if (!decodedCache) {
+        decodedCache = self._decodeCompactBoard(compactState, rows, cols);
+      }
+      return decodedCache;
     };
+    const snapshot = { compactState };
+    Object.defineProperties(snapshot, {
+      canonicalState: {
+        get() { return ensureDecoded().canonicalState; },
+        enumerable: false,
+        configurable: true
+      },
+      legacyState: {
+        get() { return ensureDecoded().legacyState; },
+        enumerable: false,
+        configurable: true
+      }
+    });
+    return snapshot;
   }
 
   logMove(preMoveSnapshot, move, player, claimed, gridManager = null) {
     if (!this.currentGame) return;
 
-    const snapshot = (preMoveSnapshot && preMoveSnapshot.canonicalState)
-      ? preMoveSnapshot
-      : this.capturePreMoveState(gridManager || preMoveSnapshot, player);
-
+    const rows = this.currentGame.gridDimensions?.rows || 10;
     const cols = this.currentGame.gridDimensions?.cols || 10;
+
+    let compactState;
+    if (preMoveSnapshot && typeof preMoveSnapshot.compactState === 'string') {
+      compactState = preMoveSnapshot.compactState;
+    } else if (preMoveSnapshot && Array.isArray(preMoveSnapshot.legacyState)) {
+      compactState = this._encodeCompactFromLegacy(preMoveSnapshot.legacyState, rows, cols);
+    } else {
+      const snap = this.capturePreMoveState(gridManager || preMoveSnapshot, player);
+      compactState = snap.compactState;
+    }
+
     const actionIndex = (move.y * cols + move.x) * 4 + move.rotation;
 
-    this.currentGame.moves.push({
+    const moveRecord = {
       ply: this.currentGame.moves.length,
       player: player,
       isHuman: player === this.currentGame.humanPlayer,
-      state: snapshot.canonicalState,
-      legacyState: snapshot.legacyState,
+      compactState: compactState,
       move: { x: move.x, y: move.y, rotation: move.rotation },
       actionIndex: actionIndex,
       claimed: claimed || 0,
       timestamp: Date.now()
-    });
+    };
+    this._attachLazyStateGetters(moveRecord, rows, cols);
+    this.currentGame.moves.push(moveRecord);
   }
 
   _getCanonicalState(gridManager, player) {
@@ -340,17 +538,42 @@ export class HumanGameLogger {
       return null;
     }
 
+    const hydratedGames = this.games.map(g => {
+      const rows = g.gridDimensions?.rows || 10;
+      const cols = g.gridDimensions?.cols || 10;
+      return {
+        ...g,
+        moves: (g.moves || []).map(m => {
+          const decoded = m.compactState
+            ? this._decodeCompactBoard(m.compactState, rows, cols)
+            : { canonicalState: m.state || [], legacyState: m.legacyState || [] };
+          return {
+            ply: m.ply,
+            player: m.player,
+            isHuman: m.isHuman,
+            state: decoded.canonicalState,
+            legacyState: decoded.legacyState,
+            move: m.move,
+            actionIndex: m.actionIndex,
+            claimed: m.claimed,
+            timestamp: m.timestamp,
+            valueTarget: m.valueTarget
+          };
+        })
+      };
+    });
+
     const exportData = {
       schemaVersion: '2.0-canonical',
       exportedAt: new Date().toISOString(),
-      gameCount: this.games.length,
+      gameCount: hydratedGames.length,
       stateEncoding: {
         state: '10x10x18 canonical one-hot (1800 floats, pre-move, player-relative)',
         legacyState: '10x10x4 + 1 legacy vector (401 floats, pre-move, rotation=r/4.0)',
         actionIndex: '(y * 10 + x) * 4 + rotation (0..399)',
         valueTarget: '+1 if move.player won, -1 if lost, 0 if draw'
       },
-      games: this.games
+      games: hydratedGames
     };
 
     if (typeof window !== 'undefined' && typeof document !== 'undefined') {

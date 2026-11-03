@@ -264,7 +264,44 @@ async function runTests() {
 
     const exported = hLogger.exportAndFlush();
     assertEqual(exported.gameCount, 2, 'Exported 2 games');
+    assertEqual(exported.games[0].moves[0].state.length, 1800, 'Exported game hydrates 1800 canonical floats');
+    assertEqual(exported.games[0].moves[0].legacyState.length, 401, 'Exported game hydrates 401 legacy floats');
     assertEqual(hLogger.getStatus().count, 0, 'Buffer flushed after export');
+
+    // Verify compact RLE storage fits 100 games well under 5 MB localStorage quota
+    let quotaBytesUsed = 0;
+    const quotaStore = new Map();
+    const quotaMockStorage = {
+      getItem: (k) => quotaStore.get(k) || null,
+      setItem: (k, v) => {
+        if (v.length > 5 * 1024 * 1024) {
+          throw new Error('QuotaExceededError');
+        }
+        quotaBytesUsed = v.length;
+        quotaStore.set(k, v);
+      },
+      removeItem: (k) => quotaStore.delete(k)
+    };
+    const hLogger100 = new HumanGameLogger({ maxGames: 100, storage: quotaMockStorage });
+    for (let g = 0; g < 100; g++) {
+      gm.reset();
+      hLogger100.startGame('HvAI', 'hard', 1, gm);
+      // Simulate 20 moves per game
+      let p = 1;
+      for (let m = 0; m < 20; m++) {
+        const moves = gm.getValidMoves(p);
+        if (moves.length === 0) break;
+        const mv = moves[0];
+        const s = hLogger100.capturePreMoveState(gm, p);
+        gm.placeTriangle(mv.x, mv.y, mv.rotation, p);
+        const cl = gm.claimEnclosedTriangles(p);
+        hLogger100.logMove(s, mv, p, cl);
+        p = p === 1 ? 2 : 1;
+      }
+      hLogger100.endGame(gm);
+    }
+    assertEqual(hLogger100.getStatus().count, 100, 'All 100 games retained without quota eviction');
+    assertEqual(quotaBytesUsed < 5 * 1024 * 1024, true, 'Compact RLE payload stays under 5 MB');
   });
 
   // Baseline experiment: 20 games Random vs Random
