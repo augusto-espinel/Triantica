@@ -6,5 +6,7 @@ experiments/logs/
 node_modules/
 trainedAI_network_v*.json
 
-# Draft articles (published externally, not for repo)
+# Draft articles and Substack visuals (published externally, not for repo)
 docs/SUBSTACK_DRAFT*
+docs/substack/
+docs/training-book/gen_d.py

@@ -144,9 +144,30 @@
     let experiments = [], cycleData = {}, charts = {}, selectedCompare = new Set();
     const PALETTE = ['#58a6ff','#3fb950','#f85149','#d29922','#bc8cff','#db6d28','#79c0ff','#56d364'];
     
+    function getExperimentSortRank(e) {
+      const id = e.id || '';
+      const dateMs = Date.parse(e.date || '1970-01-01') || 0;
+      const tfMatch = id.match(/^TF-B(\d+)(?:[-_](.+))?$/i);
+      if (tfMatch) {
+        const num = parseInt(tfMatch[1], 10);
+        const sub = (tfMatch[2] || '').toLowerCase();
+        const subRank = sub === 'pure' || sub === 'mixed' || sub === 'cluster' ? 1
+          : sub === 'optimized' ? 2
+          : sub === 'v2' || sub === 'v3' ? 3 : 4;
+        return dateMs + 100000 + num * 100 + subRank;
+      }
+      const expMatch = id.match(/^exp(\d+)/i);
+      if (expMatch) {
+        return dateMs + parseInt(expMatch[1], 10);
+      }
+      return dateMs;
+    }
+
     async function init() {
       const resp = await fetch('experiments.json?_' + Date.now());
       experiments = await resp.json();
+      // Sort reverse-chronologically (newest / most advanced experiments first, earliest experiments last)
+      experiments.sort((a, b) => getExperimentSortRank(b) - getExperimentSortRank(a));
       
       for (const exp of experiments) {
         if (exp.dataFile) {
@@ -228,8 +249,9 @@
       showView('detail');
       
       document.getElementById('detail-title').textContent = exp.name;
-      const prevIdx = experiments.indexOf(exp) - 1;
-      const prevParams = prevIdx >= 0 ? experiments[prevIdx].parameters : {};
+      // Since experiments are sorted newest-first, the chronological predecessor is at index + 1
+      const prevIdx = experiments.indexOf(exp) + 1;
+      const prevParams = prevIdx < experiments.length ? experiments[prevIdx].parameters : {};
       
       document.getElementById('params-table').innerHTML = Object.entries(exp.parameters).map(([k,v]) => {
         const changed = prevParams[k] !== undefined && prevParams[k] !== v;
