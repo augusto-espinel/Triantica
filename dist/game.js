@@ -1105,12 +1105,34 @@ class GameScene extends Phaser.Scene {
     this.tutorialActive = false;
     this.tutorialStep = 0;
     this.tutorialRotateCount = 0;
+    this.tutorialSteps = null;
+    this.tutorialCardBounds = null;
+    this.hideTutorialCursor = false;
     this.gridManager.reset();
     this.gridManager.winRounds = { 1: 0, 2: 0 };
   }
 
   async create() {
     console.log(`Creating GameScene in mode: ${this.gameMode} (difficulty: ${this.aiDifficulty}, human: P${this.humanPlayerNumber})`);
+
+    // Defense-in-depth: explicitly destroy any stale tutorial UI from a previous
+    // scene run that Phaser may not have fully cleaned up during shutdown.
+    const staleTutorialObjects = [
+      this.tutorialHighlightGfx, this.tutorialCardGfx, this.tutorialExitGfx,
+      this.tutorialExitText, this.tutorialTitleText, this.tutorialBodyText,
+      this.tutorialPromptText, this.tutorialCardZone
+    ];
+    for (const obj of staleTutorialObjects) {
+      if (obj && !obj.scene) obj.destroy();
+    }
+    this.tutorialHighlightGfx = null;
+    this.tutorialCardGfx = null;
+    this.tutorialExitGfx = null;
+    this.tutorialExitText = null;
+    this.tutorialTitleText = null;
+    this.tutorialBodyText = null;
+    this.tutorialPromptText = null;
+    this.tutorialCardZone = null;
 
     // --- Function to handle AI initialization (including preload check) ---
     const initializeAI = async (playerNumber, difficultyOverride = null) => {
@@ -1520,7 +1542,7 @@ class GameScene extends Phaser.Scene {
         humanGameLogger.abortGame();
       }
       this.time.removeAllEvents();
-      this.scene.start('Menu');
+      this.time.delayedCall(0, () => this.scene.start('Menu'));
     });
 
     this.menuReturnBg.on('pointerover', () => drawMenuBtn(true));
@@ -3188,7 +3210,10 @@ triggerAIMove() {
     this.tutorialExitGfx.on('pointerout', () => drawExitBtn(false));
     this.tutorialExitGfx.on('pointerdown', () => {
       this.time.removeAllEvents();
-      this.scene.start('Menu');
+      // Defer scene transition to next frame to avoid Phaser 3 bug where
+      // calling scene.start() from within a pointerdown handler leaves stale
+      // interactive hit areas in the InputPlugin, breaking input in the next scene.
+      this.time.delayedCall(0, () => this.scene.start('Menu'));
     });
 
     this.tutorialBodyText = this.add.text(cx, cardY + 4, '', {
@@ -3222,7 +3247,7 @@ triggerAIMove() {
         this.setTutorialStep(this.tutorialStep + 1);
       } else if (step.type === 'done') {
         this.time.removeAllEvents();
-        this.scene.start('Menu');
+        this.time.delayedCall(0, () => this.scene.start('Menu'));
       }
     });
 
