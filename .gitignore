@@ -6,3 +6,4 @@ experiments/logs/
 node_modules/
 trainedAI_network_v*.json
 docs/training-book/gen_d.py
+game_vault/
