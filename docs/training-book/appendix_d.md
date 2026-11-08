@@ -8,7 +8,7 @@ Alongside the reinforcement learning telemetry captured by the self-play trainin
 
 By correlating the **17,928 deduplicated LLM API calls (`1.18 billion` billed prompt + completion tokens)** recorded in the local agent session transcripts (`~/.openclaw/agents/main/sessions/*.jsonl`) and the **OpenRouter server-side billing API** (`/api/v1/activity`, reconciled across **Day 1 – Day 15**) against the **207 Git commits** (including 190 primary feature commits) and **6 architectural phases (`exp12` → `TF-B15`)**, we can evaluate the end-to-end token economics of building a zero-to-mastery AlphaZero system.
 
-> **Data reconciliation note:** Local `.jsonl` logs include compaction checkpoint re-evaluations and sub-agent spawns that inflate call counts beyond OpenRouter's per-day per-model aggregates. Cost figures below are **OpenRouter-authoritative** (actual invoiced spend). Local call counts are provided for operational context.
+> **Data reconciliation note:** Local `.jsonl` logs include compaction checkpoint re-evaluations and sub-agent spawns that inflate call counts beyond OpenRouter's per-day per-model aggregates. Cost figures below are **OpenRouter-authoritative** (actual invoiced spend). Local call counts are provided for operational context. For the narrative essay exploring these findings and the "Flipped Apprenticeship" workflow, see the companion Substack article: **[*"How I Overspent on Tokens to Build a Game Nobody Might Ever Play and Trained It to Beat Me — And Why I Would Encourage You to Try the Same"*](https://substack.com/home/post/p-223955141)** ([canonical URL](https://epsilen.substack.com/p/how-i-overspent-on-tokens-to-build)).
 
 > 💡 **Concept Callout: The Agentic Turn Billing Model (Why Token Volume Explodes)**
 >

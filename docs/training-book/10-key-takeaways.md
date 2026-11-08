@@ -62,6 +62,9 @@
 
 ### Further Reading
 
+**Triantica Narrative Essay:**
+- [How I Overspent on Tokens to Build a Game Nobody Might Ever Play and Trained It to Beat Me — And Why I Would Encourage You to Try the Same (Substack)](https://substack.com/home/post/p-223955141) ([canonical link](https://epsilen.substack.com/p/how-i-overspent-on-tokens-to-build))
+
 **Reinforcement Learning:**
 - [Sutton & Barto: Reinforcement Learning: An Introduction](http://incompleteideas.net/book/the-book.html)
 - [OpenAI Spinning Up](https://spinningup.openai.com/)

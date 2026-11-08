@@ -19,6 +19,8 @@ This document is both a training journal and a comprehensive introduction to rei
 
 **Prerequisites:** Basic programming knowledge. No ML background required.
 
+> 📰 **Companion Narrative Essay (Substack):** Want the story behind the 15-day engineering sprint, the Ljubljana debugging moments, and the token economics in plain prose? Read **[*"How I Overspent on Tokens to Build a Game Nobody Might Ever Play and Trained It to Beat Me — And Why I Would Encourage You to Try the Same"*](https://substack.com/home/post/p-223955141)** ([canonical Substack URL](https://epsilen.substack.com/p/how-i-overspent-on-tokens-to-build)).
+
 > **Modular Chapter Layout:** To make updates fast and prevent LLM context-window saturation, the Training Book is organized into standalone chapter files under `docs/training-book/` (with Chapter 11 further split into 5 sub-parts `11a`–`11e`, keeping every file under 500 lines).
 
 ---
